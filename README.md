@@ -1,6 +1,6 @@
 # Genetic Drug Targeting and Mutant Allele Classification
 ### Project aim
-In order to prioritize drug targets, particular mutant alleles, which could be loss-of-function (LoF) or gain-of-function (GoF) mutations, should be classified on whether they are either benign or malignant. Furthermore, for the malignant mutant alleles, we can perform further prioritization by looking at clinical trial outcome data for compounds targeting that allele. 
+In order to prioritize drug targets, particular mutant alleles, which could be loss-of-function (LoF) or gain-of-function (GoF) mutations, should be classified on whether they are either benign or malignant. Furthermore, for the malignant mutant alleles, we can perform downstream prioritization by looking at clinical trial outcome data for compounds targeting that allele. 
 ### Data
 - DrugBank: Clinical trial data targeting diseased pathways/targets 
 
