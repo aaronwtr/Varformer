@@ -10,4 +10,4 @@ In order to prioritize drug targets, particular mutant alleles, which could be l
 ### Methods 
 - Mutant allele classification: For the LoF and GoF classification, we will build a simple logistic regression model taking inspiration from previous work at the Centre for Translational Bioinformatics. Logistic regression is a nice first step as this architecture allows for binary classification via a threshold, e.g. risk > 50% = malignant mutation, else benign. Moreover, the raw risk probability can be used to prioritize the targets amongst each other, where the targets with the biggest malignant risk would be the most obvious targets. 
 
-- Clinical trial outcome prioritization: ...
+- Clinical trial outcome prioritization: T.B.D
