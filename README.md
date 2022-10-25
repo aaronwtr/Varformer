@@ -1,6 +1,11 @@
 # Genetic Drug Targeting and Mutant Allele Classification
 ### Project aim
 In order to prioritize drug targets, particular mutant alleles, which could be loss-of-function (LoF) or gain-of-function (GoF) mutations, should be classified on whether they are either benign or malignant. Furthermore, for the malignant mutant alleles, we can perform downstream prioritization by looking at clinical trial outcome data for compounds targeting that allele. 
+
+### Methods 
+- Mutant allele classification: For the LoF and GoF classification, we will build a simple logistic regression model taking inspiration from previous work at the Centre for Translational Bioinformatics. Logistic regression is an intuitive first step as this architecture is simple to construct, should inform us whether any meaningful prediction can be done, and allows for binary classification via a threshold, e.g. risk > 50% = malignant mutation, else benign. Moreover, the risk probabilities can be used to prioritize the targets in rank order, where the targets with the biggest malignant risk would be the most obvious targets. Alternatively, previous work by Daniel Rhodes showed via TPOT-mediated model selection that random forest models perform best for this task. This couls be a starting point and eventual baseline as well. 
+
+- Clinical trial outcome-based drug target prioritization: T.B.D
 ### Data
 - Genomic data
   - East London Genes and Health (ELGH) contains around 50,000 whole exomes of primarily Bangladeshi and Pakistani population. Also contains electronic health records. https://www.genesandhealth.org/research/scientific-data-downloads
@@ -16,9 +21,3 @@ In order to prioritize drug targets, particular mutant alleles, which could be l
   - ClinicalTrials.gov has an API that is queryable. However, organisation seems unstructured compared to DrugBank. https://clinicaltrials.gov/api/gui
   - DGIdb has a druggability assessment tool and drug-gene interaction search engine. The database is queryable through API. https://www.dgidb.org/api
   - Open Targets Genetics is a comprehensive tool highlighting variant-centric statistical evidence to allow both prioritisation of candidate causal variants at trait-associated loci and identification of potential drug targets. Accessible via GraphQL API. https://genetics-docs.opentargets.org/data-access/graphql-api
-
-
-### Methods 
-- Mutant allele classification: For the LoF and GoF classification, we will build a simple logistic regression model taking inspiration from previous work at the Centre for Translational Bioinformatics. Logistic regression is an intuitive first step as this architecture is simple to construct, should inform us whether any meaningful prediction can be done, and allows for binary classification via a threshold, e.g. risk > 50% = malignant mutation, else benign. Moreover, the risk probabilities can be used to prioritize the targets in rank order, where the targets with the biggest malignant risk would be the most obvious targets. Alternatively, previous work by Daniel Rhodes showed via TPOT-mediated model selection that random forest models perform best for this task. This couls be a starting point and eventual baseline as well. 
-
-- Clinical trial outcome-based drug target prioritization: T.B.D
