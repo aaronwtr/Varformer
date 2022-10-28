@@ -1,2 +1,18 @@
 
 .idea/
+
+data/elgh/__MACOSX/
+
+*.gz
+
+data/elgh/all_chrs.HC_LoF.genotype_counts.after_genotype_filtering.csv
+
+data/elgh/data_summary.gatk_PASS.after_genotype_filtering.LoFs.genotype_counts.any_cohort.any_transcript.xlsx
+
+*.docx
+
+data/elgh/KnockoutGenes_BiB_Sept2019.txt
+
+data/elgh/KnockoutGenes_Birm_Sept2019.txt
+
+data/elgh/KnockoutGenes_ELGH_Sept2019.txt
