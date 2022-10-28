@@ -2,6 +2,8 @@ import pandas as pd
 import requests
 from tqdm import tqdm
 import os
+from Bio import SeqIO
+
 
 def get_data():
     """
@@ -45,5 +47,10 @@ def get_msa(uniprot_ids_dict):
 
 
 if __name__ == "__main__":
-    uni_ids = get_data()
-    get_msa(uni_ids)
+    preprocess = True
+    if preprocess:
+        uni_ids = get_data()
+        get_msa(uni_ids)
+        msa = list(SeqIO.parse("elgh_HC_LoF_MSA.fasta", "fasta"))
+    else:
+        msa = list(SeqIO.parse("elgh_HC_LoF_MSA.fasta", "fasta"))
