@@ -70,34 +70,40 @@ class DataPreprocessing:
             print("Data preprocessing completed!")
             return list(SeqIO.parse(self.msa_output, "fasta"))
         else:
-            # TODO: THIS IS GOING WRONG
-            print("Data preprocessing was previously started but is incomplete. Continuing from where it left off.")
-            all_variants = list(uniprot_ids_dict.values())
-            incomplete_variants = all_variants[cont_idx:]
-            incomplete_variants_dict = {}
-            print("Creating dictionary of the variants that still need parsing...")
-            for gene, variants in tqdm(uniprot_ids_dict.items()):
-                for variant in variants:
-                    for incomplete_variant in incomplete_variants:
-                        if variant in incomplete_variant:
-                            if gene not in incomplete_variants_dict:
-                                incomplete_variants_dict[gene] = [variant]
-                            else:
-                                incomplete_variants_dict[gene].append(variant)
-                print(incomplete_variants_dict)
-            uniprot_ids_dict = incomplete_variants_dict
-
+            print("Data preprocessing incomplete. Continuing from where it left off.")
+            with open("preprocessing_log.txt", "r") as f:
+                last_processed_gene, last_processed_variant = f.read().split("\t")
+            f.close()
+            new_uniprot_ids_dict = {}
+            found_gene = False
+            for gene_name in uniprot_ids_dict:
+                if found_gene:
+                    new_uniprot_ids_dict[gene_name] = uniprot_ids_dict[gene_name]
+                if gene_name == last_processed_gene:
+                    new_uniprot_ids_dict[gene_name] = uniprot_ids_dict[gene_name][uniprot_ids_dict[gene_name].index(
+                        last_processed_variant) + 1:]
+                    found_gene = True
+            uniprot_ids_dict = new_uniprot_ids_dict
         print("Parsing the data...")
         with open(self.msa_output, "a") as f:
             for gene_name in tqdm(uniprot_ids_dict):
                 for uniprot_id in uniprot_ids_dict[gene_name]:
                     url = f"https://www.uniprot.org/uniparc/{uniprot_id}.fasta"
                     response = requests.get(url)
-                    fasta_msa = response.text
+                    if response.status_code == 200:
+                        fasta_msa = response.text
+                    elif str(uniprot_id) == "nan":
+                        continue
+                    else:
+                        raise ValueError(f"{response.status_code} Could not retrieve the MSA for variant {uniprot_id}"
+                                         f" in gene {gene_name}.")
                     fasta_msa = fasta_msa.replace("status=active", "")
                     fasta_msa = fasta_msa.replace("status=inactive", "")
                     fasta_msa = f"{fasta_msa[0:14]}|{gene_name}{fasta_msa[14:]}"
                     f.write(fasta_msa)
+                    with open("preprocessing_log.txt", "w") as log:
+                        log.write(f"{gene_name}\t{uniprot_id}")
+                    log.close()
         f.close()
         print("Data preprocessing completed!")
         return list(SeqIO.parse(self.msa_output, "fasta"))
@@ -123,8 +129,7 @@ class DataPreprocessing:
 
 
 if __name__ == "__main__":
-    ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-    ROOT_DIR = ROOT_DIR.replace("\\", "/")
+    ROOT_DIR = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
     UNIPARC_PATH = f"{ROOT_DIR}/all_chrs.HC_LoF.genotype_counts.after_genotype_filtering.csv"
     UNIPARC_PATH = os.path.normpath(UNIPARC_PATH)
     MSA_OUTPUT = f"{ROOT_DIR}/elgh_HC_LoF_MSA.fasta"
