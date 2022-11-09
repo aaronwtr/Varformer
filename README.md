@@ -8,7 +8,7 @@ This project is separated into two related research:
 These two are not mutually exclusive but rather set up in parallel. Most of the methods and ideas for the GDT project should be transferrable to the VaPaD project. Hence, in the end, these two projects should be reconciled into one drug target prediction model that incorporates variant pathogenicity.
 
 ### Genomic Drug Target Prediction
-For the GDT project, the idea is to build a database including, but not limited to, the following data: 
+For the GDT project, the idea is to build a database for each variant of interest including, but not limited to, the following data: 
 
 | Data type                                 |Description                                                                          |
 |-------------------------------------------|-------------------------------------------------------------------------------------|
