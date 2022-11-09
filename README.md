@@ -1,14 +1,14 @@
-# Genetic Drug Targeting and Mutant Allele Classification
+# Genomic Drug Target Prediction
 ### Project aim
 This project is separated into two related research directions: 
 
-1) Genomic drug target prediction (GDT) 
-2) Variant pathogenicity and drug target prediction (VaPaD)
+1) LoF and GoF variant drug target prediction (LoGoV DTP) 
+2) Missense variant pathogenicity drug target prediction (MiVaP DTP)
 
 These two are not mutually exclusive but rather set up in parallel. Most of the methods and ideas for the GDT project should be transferrable to the VaPaD project. Hence, in the end, these two projects should be reconciled into one drug target prediction model that incorporates variant pathogenicity.
 
 ### Genomic Drug Target Prediction
-For the GDT project, the idea is to build a database for each variant of interest including, but not limited to, the following data: 
+For the GDT project, we focus in particular on LoF and GoF variants that are very likely to be pathogenic, e.g. by virtue of early truncations or misfolding. The idea is to build a database for each variant of interest including, but not limited to: 
 
 | Data type                                 |Description                                                                          |
 |-------------------------------------------|-------------------------------------------------------------------------------------|
@@ -22,7 +22,7 @@ For the GDT project, the idea is to build a database for each variant of interes
 
 This data will be used to build an ML model to that predicts <em>druggability (target variable)</em>. This means ground truth labels for druggability are needed. We can start building and training this model on pre-existing datasets without taking pathogenicity into account. In the end, we can reconcile this model with the pathogenicity prediction to find high quality (i.e. high druggability score) and high impact (i.e. highly pathogenic) targets for all structural variants. The outlined dataset can be built from the sources in [Data](#data). 
 
-### Variant pathogenicity and drug target prediction
+### Missense variant pathogenicity and drug target prediction
 Predicting pathogenicity of a particular target is important to identify high impact targets, i.e. genes that are causally involved in severe disease indications. With recent advances in large language and generative AI models, now seems like an ideal time to incorporate sequence-based pathogenicity predictions into the drug discovery pipeline. In the end, sequence-based pathogenicty prediction can alleviate sparse and unreliable pathogenicity annotations in existing databases as they are already showing tremendous ability to generalize, e.g. [https://pubmed.ncbi.nlm.nih.gov/34707284/](https://pubmed.ncbi.nlm.nih.gov/34707284/) and [https://www.biorxiv.org/content/10.1101/2022.08.25.505311v1](https://www.biorxiv.org/content/10.1101/2022.08.25.505311v1). When successful, sequence-based pathogenicity will be an important measure in guiding drug target discovery and druggability because we want to maximize both the target quality, i.e. can the proposed target be succesfully targeted, and target impact, i.e. is this target associated with a diseased phenotype? 
 
 <b>{To be worked out in more detail in collaboration with W. Lin out of the [Orengo lab](https://www.ucl.ac.uk/orengo-group/welcome-christine-orengos-group) at UCL.}</b>
