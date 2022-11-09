@@ -1,6 +1,6 @@
 # Genetic Drug Targeting and Mutant Allele Classification
 ### Project aim
-This project is separated into two related research: 
+This project is separated into two related research directions: 
 
 1) Genomic drug target prediction (GDT) 
 2) Variant pathogenicity and drug target prediction (VaPaD)
