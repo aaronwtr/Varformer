@@ -1,16 +1,25 @@
-# Genomic Drug Target Prediction
+# Clinically Informed Genomic Drug Target Prediction
 ### Project aim
-This project is separated into two related research directions: 
+In this work, we develop a machine learning model that prioritizes drug targets on gene-level. This prioritization is done by considering features that are informative of the success of a drug in clinical trials and learning their appropiate feature weights using by target associated clinical trial decisions as training data. Ground truth clinical trial data will not exist for all genes but by training on a subset of targets, we can develop a model that will be able to perform the druggability predictions for all genes. Some external validation sources will be needed to assess the accuracy of this method *(What data to use for this purpose?)*. The model will have a two main modules. The first module is a gene characterization module. In this module, we collect features that characterize a gene as idiosyncratically as possible. This module will be used to assess the target quality, i.e. how likely will this target react positively to drugs without hindering normal function? We further distinguish the gene characterization module in two submodules:
+
+1) Cell-type agnostic gene characterization 
+2) Cell-type specific gene characterization. 
+
+This is done for practical reasons as the two datasets associated with these submodules will not be homogeneous. The second module is a pathogenicity module. This module is able to probe what we call the impact of a target, i.e. is this target likely to be causally implicated in disease? This second module will also be separated into two submodules: 
 
 1) LoF and GoF variant drug target prediction (LoGoVa) 
 2) Missense variant drug target prediction (MiVa)
 
-These two are not orthogonal but rather set up in parallel. Most of the methods and ideas for the LoGoVa project should be transferrable to the MiVa project. The reason for the distinction between the two is that assessing pathogenicity of missense variants is not as straightforward as for LoF and GoF mutations. Still, missense variants are important to incorporate into the drug targeting prediction model as the vast majority of coding variants are actually missense variants (https://onlinelibrary.wiley.com/doi/10.1002/humu.24309). To that end, we aim to develop a SOTA missense variant effect prediction model in collaboration with W. Lin out of the Orengo lab at UCL. In the end, these two projects should be reconciled into one drug target prediction model that incorporates variant pathogenicity for both LoGoVas and MiVas.
+The reason for the distinction between the two is that assessing pathogenicity of missense variants is not as straightforward as for LoF and GoF mutations. For LoF and GoF mutations there already exist great variant effect predictors (ADD SOURCES, gnomAD, VEP) whereas there are few comprehensive variant effect predictors for missense mutations that can generalize well. Historically, missense variants have been mostly looked over in the drug discovery literature due to the difficulty in characterizing them. However, missense variants are important to incorporate into drug discovery pipelines as the vast majority of coding variants actually are missense variants (https://onlinelibrary.wiley.com/doi/10.1002/humu.24309). With recent advances in large language AI models, sequence-based pathogenicity prediction methods have shown to be able to characterize missense variants accurately as well as showing promise when it comes to generalizability [https://pubmed.ncbi.nlm.nih.gov/34707284/](https://pubmed.ncbi.nlm.nih.gov/34707284/) and [https://www.biorxiv.org/content/10.1101/2022.08.25.505311v1](https://www.biorxiv.org/content/10.1101/2022.08.25.505311v1). In the end, sequence-based missense pathogenicty prediction will help us to alleviate sparse and unreliable pathogenicity annotations in existing databases which in turn allows us to incorporate missense variant effects into our druggability assessments. To that end, we integrate a SOTA missense variant effect prediction model out of the Orengo Structural Biology lab at UCL into our druggability prediction model in order to include missense variant effects in prioritization.
+
+TO-DO: Draw architecture diagram with data sources and all modules
+
+TO-DO: Reformat below headers in agreement with newly defined model architecture
 
 ## LoGoVa drug target prediction
 For the LoGoVa project, we focus in particular on LoF and GoF variants that are very likely to be pathogenic, e.g. by virtue of early truncations or likely misfolding leading to functional change. The idea is to build a database for each variant of interest including, but not limited to: 
 
-### Cell-type agnostic model
+### Cell-type agnostic module
 The first base model will contain 2 features that should be highly predictive of druggability. Ideally we'd want to incorporate genetic sequence in here as well as this would allow for the most generalizability. Maybe via AlphaFold? 
 | Data type                                                    |Description                                                                  |Source |
 |--------------------------------------------------------------|-----------------------------------------------------------------------------|-------|
