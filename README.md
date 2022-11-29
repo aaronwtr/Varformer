@@ -30,7 +30,7 @@ The first module will contain cell type agnostic features that are correlated to
 Cell type-specific module extends the cell type-agnostic module with features that are cell type-specific. This brings along with it extra overhead because it needs data that has been resolved on a cell type-specific resolution. 
 | Data type                                                    |Description                                                                  |Source |
 |--------------------------------------------------------------|-----------------------------------------------------------------------------|-------|
-| Target efficacy, chromatin accessibility and gene expression | Probe target efficacy by calculating the expression and chromatin accessibility of the target (Binary)| [Enformer](https://www.nature.com/articles/s41592-021-01252-x) or [OpenTargets](https://platform.opentargets.org/target/ENSG00000198911)|
+| Target efficacy, chromatin accessibility and gene expression | Probe target efficacy by calculating the expression and chromatin accessibility of the target (Binary)| [Enformer](https://www.nature.com/articles/s41592-021-01252-x) or [OpenTargets](https://platform.opentargets.org/target/ENSG00000198911), or experimental: DNAse, Meuleman DHS, GTEx|
 | Stringency of gene regulatory sequences                      | Regulatory sequences play a big role in gene expression and so defects in stringent gene regulatory sequences can have pathogenic consequences. How to go about quantifying this (eQTLs)? (Continuous) | Check whether mutation is 1) in non-coding region, 2) significant (p-value in https://www.ebi.ac.uk/eqtl/Data_access/ ) | 
 
 ### Removed features
