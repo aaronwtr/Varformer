@@ -2,3 +2,5 @@
 *.fasta
 
 data/elgh/preprocessing_log.txt
+
+objects/
