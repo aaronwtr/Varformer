@@ -50,7 +50,7 @@ When it comes to missense variants, inferring pathogenicity is a lot more diffic
 <b>{To be worked out in more detail in collaboration with W. Lin out of the [Orengo lab](https://www.ucl.ac.uk/orengo-group/welcome-christine-orengos-group) at UCL.}</b>
 
 ## Feature Engineering
-![feature engineering](https://github.com/aaronwtr/genomic_drug_target_prediction/blob/main/feature_engineering.png?raw=true)
+[Feature engineering overview](feature_engineering.pdf)
 
 ## Potential Data Sources
 
