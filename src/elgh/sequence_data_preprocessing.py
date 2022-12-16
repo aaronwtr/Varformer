@@ -5,7 +5,7 @@ import os
 from Bio import SeqIO
 
 
-class DataPreprocessing:
+class SequenceDataPreprocessing:
     def __init__(self, uniparc_path, msa_output):
         """
         :param uniparc_path: path to the UNIPARC dataset.
@@ -135,6 +135,6 @@ if __name__ == "__main__":
     MSA_OUTPUT = f"{ROOT_DIR}/elgh_HC_LoF_MSA.fasta"
     MSA_OUTPUT = os.path.normpath(MSA_OUTPUT)
 
-    DPP = DataPreprocessing(UNIPARC_PATH, MSA_OUTPUT)
+    DPP = SequenceDataPreprocessing(UNIPARC_PATH, MSA_OUTPUT)
     raw_data = DPP.data_reader()
     msa_data = DPP.parse_data(raw_data)

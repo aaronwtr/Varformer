@@ -1,6 +1,12 @@
 
 *.fasta
 
-data/elgh/preprocessing_log.txt
+src/elgh/*.txt
+
+src/elgh/*.xlsx
+
+src/elgh/*.csv
 
 objects/
+
+src/elgh/__MACOSX/._data_summary.gatk_PASS.after_genotype_filtering.LoFs.genotype_counts.any_cohort.any_transcript.xlsx
