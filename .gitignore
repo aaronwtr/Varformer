@@ -9,4 +9,26 @@ src/elgh/*.csv
 
 objects/
 
-src/elgh/__MACOSX/._data_summary.gatk_PASS.after_genotype_filtering.LoFs.genotype_counts.any_cohort.any_transcript.xlsx
+data/elgh/__MACOSX/._data_summary.gatk_PASS.after_genotype_filtering.LoFs.genotype_counts.any_cohort.any_transcript.xlsx
+
+data/.DS_Store
+
+*.csv
+
+*.xlsb
+
+data/gnomad_genomic_constraint
+
+data/mousePhenotypes/.DS_Store
+
+data/mousePhenotypes/part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet
+
+data/STRING_PPIs
+
+data/Tractability/.DS_Store
+
+src/.DS_Store
+
+src/preprocessing_log.txt
+
+.DS_Store
