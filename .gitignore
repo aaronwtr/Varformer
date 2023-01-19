@@ -17,13 +17,13 @@ data/.DS_Store
 
 *.xlsb
 
-data/gnomad_genomic_constraint
+data/gnomad_genomic_constraint.txt
 
 data/mousePhenotypes/.DS_Store
 
 data/mousePhenotypes/part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet
 
-data/STRING_PPIs
+data/STRING_PPIs.txt
 
 data/Tractability/.DS_Store
 
@@ -32,3 +32,7 @@ src/.DS_Store
 src/preprocessing_log.txt
 
 .DS_Store
+
+preprocessing_log.txt
+
+src/__pycache__/dataloader.cpython-38.pyc

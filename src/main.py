@@ -1,4 +1,5 @@
-from dataloader import SequenceDataPreprocessing
+from dataloader import VariantLoader, GeneCharacterisation
+import os
 
 
 def load_proteins():
@@ -9,17 +10,22 @@ def load_proteins():
     MSAs.
 
     """
-    ROOT_DIR = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
-    UNIPARC_PATH = f"{ROOT_DIR}/all_chrs.HC_LoF.genotype_counts.after_genotype_filtering.csv"
+    ELGH_DIR = "data/elgh/"
+    UNIPARC_PATH = f"{ELGH_DIR}all_chrs.HC_LoF.genotype_counts.after_genotype_filtering.csv"
     UNIPARC_PATH = os.path.normpath(UNIPARC_PATH)
-    MSA_OUTPUT = f"{ROOT_DIR}/elgh_HC_LoF_MSA.fasta"
+    MSA_OUTPUT = f"{ELGH_DIR}elgh_HC_LoF_MSA.fasta"
     MSA_OUTPUT = os.path.normpath(MSA_OUTPUT)
 
-    DPP = SequenceDataPreprocessing(UNIPARC_PATH, MSA_OUTPUT)
-    raw_data = DPP.data_reader()
-    msa_data = DPP.parse_data(raw_data)
+    VL = VariantLoader(UNIPARC_PATH, MSA_OUTPUT)
+    raw_data = VL.data_reader()
+    msa_data = VL.parse_data(raw_data)
     return msa_data
 
 
+def gene_characterisation():
+    gc = GeneCharacterisation()
+    return 0
+
+
 if __name__ == "__main__":
-    msa_data = load_proteins()
+    gene_characteristics = gene_characterisation()
