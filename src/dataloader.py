@@ -5,7 +5,7 @@ import os
 from Bio import SeqIO
 
 
-class SequenceDataPreprocessing:
+class VariantLoader:
     def __init__(self, uniparc_path, msa_output):
         """
         :param uniparc_path: path to the UNIPARC dataset.
@@ -126,3 +126,45 @@ class SequenceDataPreprocessing:
         else:
             cont_idx = 0
         return cont_idx, num_variants
+
+
+class GeneCharacterisation:
+    """
+    This class loads and combines the different datasources into a single feature matrix to be fed into our model.
+    """
+
+    def __init__(self):
+        self.files_and_dirs = os.listdir("data")
+        self.files = self._get_files()
+        print(self.files)
+
+    def _get_files(self):
+        """
+        Get the files from the data directory.
+        """
+        files = []
+        exclude = ['.DS_Store', 'elgh']
+
+        for file in self.files_and_dirs:
+            if "." in file and file not in exclude:
+                files.append(f"data/{file}")
+            elif file not in exclude:
+                file_path = f"data/{file}"
+                _file = self._dir_parser(file_path)
+                files.append(_file)
+        return files
+
+    def _dir_parser(self, path):
+        """
+        Recursive algorithm to parse the directory to get the files and their paths.
+        """
+        exclude = ['.DS_Store', 'elgh']
+        subfiles = os.listdir(path)
+        for subfile in subfiles:
+            excl = '\t'.join(exclude)
+            if "." in subfile and subfile not in excl:
+                path = f"{path}/{subfile}"
+                return f"{path}"
+            elif subfile not in excl:
+                path = f"{path}/{subfile}"
+                self._dir_parser(path)
