@@ -136,7 +136,10 @@ class GeneCharacterisation:
     def __init__(self):
         self.files_and_dirs = os.listdir("data")
         self.files = self._get_files()
-        print(self.files)
+        # TODO: If file already opened, i.e. pickle files exist, open those. Else make a function to save to data to
+        #  pickle files.
+        self.datasets = self._load_data()
+        print(self.datasets)
 
     def _get_files(self):
         """
@@ -168,3 +171,19 @@ class GeneCharacterisation:
             elif subfile not in excl:
                 path = f"{path}/{subfile}"
                 self._dir_parser(path)
+
+    def _load_data(self):
+        """
+        Load the data from the files.
+        """
+        datasets = []
+        for file in self.files:
+            if any(word in file for word in ["csv", "txt"]):
+                datasets.append(pd.read_csv(file))
+            elif "xlsb" in file:
+                datasets.append(pd.read_excel(file))
+            elif "parquet" in file:
+                datasets.append(pd.read_parquet(file))
+            else:
+                raise ValueError("The file format is not supported. Make sure data is .csv, .txt, Excel or parquet.")
+        return datasets
