@@ -139,7 +139,7 @@ class GeneCharacterisation:
         # TODO: If file already opened, i.e. pickle files exist, open those. Else make a function to save to data to
         #  pickle files.
         self.datasets = self._load_data()
-        print(self.datasets)
+        # TIP: Use Hail (https://hail.is/) to work with the gnomad dataset
 
     def _get_files(self):
         """
@@ -185,5 +185,5 @@ class GeneCharacterisation:
             elif "parquet" in file:
                 datasets.append(pd.read_parquet(file))
             else:
-                raise ValueError("The file format is not supported. Make sure data is .csv, .txt, Excel or parquet.")
+                raise ValueError("The file format is not supported. Make sure data is .csv, .txt, Excel, or parquet.")
         return datasets
