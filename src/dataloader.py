@@ -1,6 +1,7 @@
 import pandas as pd
 import requests
 from tqdm import tqdm
+import pickle as pkl
 import os
 from Bio import SeqIO
 
@@ -135,10 +136,19 @@ class GeneCharacterisation:
 
     def __init__(self):
         self.files_and_dirs = os.listdir("data")
+        self.data_name_mapping = {
+            "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
+            "gnomad.exomes.v2.1.1.lof_metrics.by_gene.csv": "gnomAD Exomes Loss-of-Function Metrics",
+            "STRING_PPIs.txt": "STRING Protein-Protein Interactions",
+            "tractability.xlsb": "Tractability Scores",
+            "FDA_approved_drug_targets_2022.xlsb": "FDA Approved Drug Targets",
+            "part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet": "Mouse Knockout Phenotypes"
+        }
         self.files = self._get_files()
         # TODO: If file already opened, i.e. pickle files exist, open those. Else make a function to save to data to
         #  pickle files.
         self.datasets = self._load_data()
+        print(self.datasets)
         # TIP: Use Hail (https://hail.is/) to work with the gnomad dataset
 
     def _get_files(self):
@@ -176,14 +186,23 @@ class GeneCharacterisation:
         """
         Load the data from the files.
         """
-        datasets = []
-        for file in self.files:
-            if any(word in file for word in ["csv", "txt"]):
-                datasets.append(pd.read_csv(file))
-            elif "xlsb" in file:
-                datasets.append(pd.read_excel(file))
-            elif "parquet" in file:
-                datasets.append(pd.read_parquet(file))
-            else:
-                raise ValueError("The file format is not supported. Make sure data is .csv, .txt, Excel, or parquet.")
-        return datasets
+        datasets = {}
+        if "datasets.pkl" in os.listdir('data/'):
+            with open('data/datasets.pkl', 'rb') as fp:
+                datasets = pkl.load(fp)
+            return datasets
+        else:
+            for file in self.files:
+                file_name = file.split("/")[-1]
+                file_id = self.data_name_mapping[file_name]
+                if any(word in file for word in ["csv", "txt"]):
+                    datasets[file_id] = pd.read_csv(file)
+                elif "xlsb" in file:
+                    datasets[file_id] = pd.read_excel(file)
+                elif "parquet" in file:
+                    datasets[file_id] = pd.read_parquet(file)
+                else:
+                    raise ValueError("The file format is not supported. Make sure data is .csv, .txt, Excel, or parquet.")
+            with open('data/datasets.pkl', 'wb') as fp:
+                pkl.dump(datasets, fp)
+            return datasets

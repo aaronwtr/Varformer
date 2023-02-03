@@ -36,3 +36,5 @@ src/preprocessing_log.txt
 preprocessing_log.txt
 
 src/__pycache__/dataloader.cpython-38.pyc
+
+data/datasets.pkl
