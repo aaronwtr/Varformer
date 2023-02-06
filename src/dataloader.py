@@ -145,10 +145,9 @@ class GeneCharacterisation:
             "part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet": "Mouse Knockout Phenotypes"
         }
         self.files = self._get_files()
-        # TODO: If file already opened, i.e. pickle files exist, open those. Else make a function to save to data to
-        #  pickle files.
         self.datasets = self._load_data()
-        print(self.datasets)
+        self.chem_features = self._chem_feature_extractor()
+
         # TIP: Use Hail (https://hail.is/) to work with the gnomad dataset
 
     def _get_files(self):
@@ -202,7 +201,20 @@ class GeneCharacterisation:
                 elif "parquet" in file:
                     datasets[file_id] = pd.read_parquet(file)
                 else:
-                    raise ValueError("The file format is not supported. Make sure data is .csv, .txt, Excel, or parquet.")
+                    raise ValueError(
+                        "The file format is not supported. Make sure data is .csv, .txt, Excel, or parquet.")
             with open('data/datasets.pkl', 'wb') as fp:
                 pkl.dump(datasets, fp)
             return datasets
+
+    def _chem_feature_extractor(self):
+        """
+        Extract features from the datasets.
+        """
+        keys = list(self.datasets.keys())
+        chem_data = self.datasets[keys[0]]
+        print(chem_data)
+        chem_features = chem_data[["GeneSymbol", "# ChemicalName", "Organism"]]
+        print(chem_data)
+
+        return 0
