@@ -148,6 +148,7 @@ class GeneCharacterisation:
         self.datasets = self._load_data()
         self.chem_features = self._chem_feature_extractor()
         self.gnomad_features = self._gnomad_feature_extractor()
+        self.tract_features = self._tractability_feature_extractor()
 
     def _get_files(self):
         """
@@ -230,8 +231,24 @@ class GeneCharacterisation:
         """
         keys = list(self.datasets.keys())
         gnom_data = self.datasets[keys[2]]
-        gnom_data = gnom_data[["gene", "pLI"]]
-        # replace nan values in pli column with zeroes
-        gnom_data["pLI"] = gnom_data["pLI"].fillna(0.0)
+        gnom_data_raw = gnom_data[["gene", "pLI"]]
+        gnom_data = gnom_data_raw["pLI"].fillna(0.0)
 
         return gnom_data
+
+    def _tractability_feature_extractor(self):
+        """
+        Extract tractability scores from the tractability dataset.
+        """
+        keys = list(self.datasets.keys())
+        tract_data_raw = self.datasets[keys[3]]
+        cols = tract_data_raw.filter(regex='(SM_B|AB_B|PR_B)').columns.tolist()
+        cols.append('symbol')
+
+        tract_data = tract_data_raw.loc[:, cols]
+        cols = tract_data.columns.tolist()
+        cols = cols[-1:] + cols[:-1]
+        tract_data = tract_data[cols]
+        print(tract_data)
+
+        return tract_data
