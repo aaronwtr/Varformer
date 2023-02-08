@@ -5,8 +5,6 @@ import pickle as pkl
 import os
 from Bio import SeqIO
 
-from utils import count_scaling
-
 
 class VariantLoader:
     def __init__(self, uniparc_path, msa_output):
@@ -133,7 +131,7 @@ class VariantLoader:
 
 class GeneCharacterisation:
     """
-    This class loads and combines the different datasources into a single feature matrix to be fed into our model.
+    This class loads and combines the different data sources into a single feature matrix to be fed into our model.
     """
 
     def __init__(self):
@@ -149,8 +147,7 @@ class GeneCharacterisation:
         self.files = self._get_files()
         self.datasets = self._load_data()
         self.chem_features = self._chem_feature_extractor()
-
-        # TIP: Use Hail (https://hail.is/) to work with the gnomad dataset
+        self.gnomad_features = self._gnomad_feature_extractor()
 
     def _get_files(self):
         """
@@ -211,17 +208,30 @@ class GeneCharacterisation:
 
     def _chem_feature_extractor(self):
         """
-        Extract features from the datasets.
+        Extract chemical features from the CTD dataset. Note: we can further disentangle this data based on interaction
+        type, e.g. increasing or decreasing action of target. This is not yet implemented.
         """
         keys = list(self.datasets.keys())
         chem_data = self.datasets[keys[0]]
-
-        chem_features = chem_data[["GeneSymbol", "# ChemicalName", "Organism"]]
+        chem_features = chem_data[["GeneSymbol", "# ChemicalName", "Organism", "InteractionActions"]]
         chem_features = chem_features[chem_features["Organism"] == "Homo sapiens"]
         gene_counts = chem_features["GeneSymbol"].value_counts(normalize=True)
         chem_features = pd.DataFrame({
             "GeneSymbol": gene_counts.index,
-            "Count": gene_counts.values
+            "Count": gene_counts.values,
         })
 
         return chem_features
+
+    def _gnomad_feature_extractor(self):
+        """
+        Extract target conservation scores from gnomAD data. Note that pLI measures the probability of a gene being
+        loss-of-function intolerant.
+        """
+        keys = list(self.datasets.keys())
+        gnom_data = self.datasets[keys[2]]
+        gnom_data = gnom_data[["gene", "pLI"]]
+        # replace nan values in pli column with zeroes
+        gnom_data["pLI"] = gnom_data["pLI"].fillna(0.0)
+
+        return gnom_data
