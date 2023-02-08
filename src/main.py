@@ -23,9 +23,9 @@ def load_proteins():
 
 
 def gene_characterisation():
-    gc = GeneCharacterisation()
-    return 0
+    features = GeneCharacterisation()
+    return features
 
 
 if __name__ == "__main__":
-    gene_characteristics = gene_characterisation()
+    gc_features = gene_characterisation()

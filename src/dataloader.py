@@ -5,6 +5,8 @@ import pickle as pkl
 import os
 from Bio import SeqIO
 
+from utils import count_scaling
+
 
 class VariantLoader:
     def __init__(self, uniparc_path, msa_output):
@@ -213,8 +215,13 @@ class GeneCharacterisation:
         """
         keys = list(self.datasets.keys())
         chem_data = self.datasets[keys[0]]
-        print(chem_data)
-        chem_features = chem_data[["GeneSymbol", "# ChemicalName", "Organism"]]
-        print(chem_data)
 
-        return 0
+        chem_features = chem_data[["GeneSymbol", "# ChemicalName", "Organism"]]
+        chem_features = chem_features[chem_features["Organism"] == "Homo sapiens"]
+        gene_counts = chem_features["GeneSymbol"].value_counts(normalize=True)
+        chem_features = pd.DataFrame({
+            "GeneSymbol": gene_counts.index,
+            "Count": gene_counts.values
+        })
+
+        return chem_features
