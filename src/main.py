@@ -1,6 +1,6 @@
-from dataloader import VariantLoader, GeneCharacterisation
 import os
 
+from dataloader import VariantLoader, GeneCharacterisation
 
 def load_proteins():
     """
@@ -29,3 +29,5 @@ def gene_characterisation():
 
 if __name__ == "__main__":
     gc_features = gene_characterisation()
+
+
