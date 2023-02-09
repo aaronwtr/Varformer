@@ -242,13 +242,16 @@ class GeneCharacterisation:
         """
         keys = list(self.datasets.keys())
         tract_data_raw = self.datasets[keys[3]]
-        cols = tract_data_raw.filter(regex='(SM_B|AB_B|PR_B)').columns.tolist()
-        cols.append('symbol')
+        sym_col = ['symbol']
+        sm_cols = tract_data_raw.filter(regex='(SM_B)').columns.tolist()
+        sm_cols = sym_col + sm_cols
+        ab_cols = tract_data_raw.filter(regex='(AB_B)').columns.tolist()
+        ab_cols = sym_col + ab_cols
+        pr_cols = tract_data_raw.filter(regex='(PR_B)').columns.tolist()
+        pr_cols = sym_col + pr_cols
 
-        tract_data = tract_data_raw.loc[:, cols]
-        cols = tract_data.columns.tolist()
-        cols = cols[-1:] + cols[:-1]
-        tract_data = tract_data[cols]
-        print(tract_data)
+        tract_data_sm = tract_data_raw.loc[:, sm_cols]
+        tract_data_ab = tract_data_raw.loc[:, ab_cols]
+        tract_data_pr = tract_data_raw.loc[:, pr_cols]
 
-        return tract_data
+        return tract_data_sm, tract_data_ab, tract_data_pr
