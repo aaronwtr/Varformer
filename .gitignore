@@ -42,3 +42,5 @@ data/datasets.pkl
 src/__pycache__/
 
 data/gnomad_feature_description.pdf
+
+*.pyc

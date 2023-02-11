@@ -2,6 +2,7 @@ import os
 
 from dataloader import VariantLoader, GeneCharacterisation
 
+
 def load_proteins():
     """
     This function reads in uniparc IDs from the ELGH data set and retrieves the multiple sequence alignment from the
