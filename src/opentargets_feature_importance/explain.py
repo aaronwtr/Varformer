@@ -1,7 +1,5 @@
-import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import shap
-
 
 from model import XGBoostClassifier
 from src.dataloader import GeneCharacterisation
