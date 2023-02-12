@@ -4,7 +4,7 @@ from sklearn import metrics
 
 
 class XGBoostClassifier:
-    def __init__(self, scale_pos_weight, num_boost_round=100):
+    def __init__(self, scale_pos_weight, model_type, num_boost_round=100):
         self.params = {
             'booster': 'gbtree',
             'objective': 'binary:logistic',
@@ -16,10 +16,12 @@ class XGBoostClassifier:
             }
         self.num_boost_round = num_boost_round
         self.model = None
+        self.model_type = model_type
 
     def fit(self, X_train, y_train):
         dtrain = xgb.DMatrix(X_train, label=y_train)
         self.model = xgb.train(self.params, dtrain, num_boost_round=self.num_boost_round)
+        return self.model
 
     def predict(self, X_test):
         dtest = xgb.DMatrix(X_test)
@@ -34,6 +36,7 @@ class XGBoostClassifier:
         confusion_matrix = metrics.confusion_matrix(y_test, y_pred)
         cm_display = metrics.ConfusionMatrixDisplay(confusion_matrix=confusion_matrix, display_labels=[False, True])
         cm_display.plot()
+        plt.title(f'{self.model_type} confusion matrix')
         plt.show()
 
         TP = confusion_matrix[1, 1]
