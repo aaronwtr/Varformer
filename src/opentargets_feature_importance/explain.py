@@ -1,4 +1,7 @@
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+import shap
+
 
 from model import XGBoostClassifier
 from src.dataloader import GeneCharacterisation
@@ -11,31 +14,38 @@ def make_model(X, y, model_type):
     count_1 = sum(y_train == 1)
     if count_1 != 0:
         scale_pos_weight = count_0 / count_1
-        model = XGBoostClassifier(scale_pos_weight=scale_pos_weight, num_boost_round=100)
     else:
         scale_pos_weight = 1
-        model = XGBoostClassifier(scale_pos_weight=scale_pos_weight, num_boost_round=100)
 
-    model.fit(X_train, y_train)
+    model = XGBoostClassifier(scale_pos_weight=scale_pos_weight, model_type=model_type, num_boost_round=100)
+    booster = model.fit(X_train, y_train)
 
     accuracy, recall, confusion_matrix = model.score(X_test, y_test)
     print(f'{model_type} model results:')
     print("Accuracy: {:.2f}%".format(accuracy * 100))
     print("Recall: {:.2f}%".format(recall * 100))
 
-    return model
+    return model, booster, X_test
+
+
+def shap_explainer(model, test_data):
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(test_data)
+    shap.summary_plot(shap_values, test_data, plot_type="bar")
 
 
 if __name__ == '__main__':
     df_sm = GeneCharacterisation().tract_features[0]
     X_sm = df_sm.iloc[:, 2:]
     y_sm = df_sm.iloc[:, 1]
-    model_sm = make_model(X_sm, y_sm, 'Small Molecule')
+    model_sm, booster_sm, X_test_sm = make_model(X_sm, y_sm, 'Small Molecule')
+    shap_explainer(booster_sm, X_test_sm)
 
     df_ab = GeneCharacterisation().tract_features[1]
     X_ab = df_ab.iloc[:, 2:]
     y_ab = df_ab.iloc[:, 1]
-    model_ab = make_model(X_ab, y_ab, 'Antibody')
+    model_ab, booster_sm, X_test_ab = make_model(X_ab, y_ab, 'Antibody')
+    shap_explainer(booster_sm, X_test_ab)
 
     # Note: Can not make model for PROTAC because there are no FDA approved targets
     # from PROTAC based drugs
