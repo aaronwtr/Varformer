@@ -42,8 +42,8 @@ if __name__ == '__main__':
     df_ab = GeneCharacterisation().tract_features[1]
     X_ab = df_ab.iloc[:, 2:]
     y_ab = df_ab.iloc[:, 1]
-    model_ab, booster_sm, X_test_ab = make_model(X_ab, y_ab, 'Antibody')
-    shap_explainer(booster_sm, X_test_ab)
+    model_ab, booster_ab, X_test_ab = make_model(X_ab, y_ab, 'Antibody')
+    shap_explainer(booster_ab, X_test_ab)
 
     # Note: Can not make model for PROTAC because there are no FDA approved targets
     # from PROTAC based drugs
