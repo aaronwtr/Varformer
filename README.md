@@ -2,10 +2,10 @@
 ## Project aim
 In this work, we develop a machine learning model that prioritizes drug targets on gene-level based on tractability. We define tractability as the likelihood of identifying a modulator that interacts effectively with the target/domain, similar to [[https://pubmed.ncbi.nlm.nih.gov/34707284/](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6072525/#:~:text=Target%20tractability%20(a.k.a.%20ligandability),%2Fdomain%20(or%20pathway).)]([https://pubmed.ncbi.nlm.nih.gov/34707284/](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6072525/#:~:text=Target%20tractability%20(a.k.a.%20ligandability),%2Fdomain%20(or%20pathway).))This prioritization is done by considering features that are informative of the success of a drug in clinical trials and learning their appropiate feature weights by using target associated clinical trial approval/withdrawal data as training data. Ground truth clinical trial data will not exist for all genes but by training on a subset of targets, we can develop a model that performs the tractability predictions for all genes. Some external validation sources will be needed to assess the accuracy of this method *(What data to use for this purpose?)*. The model will have a two main modules. The first module is a gene characterization module. In this module, we collect features that characterize a gene as idiosyncratically as possible. This module will be used to assess the target quality, i.e. how likely will this target react positively to drugs without hindering normal function? We further distinguish the gene characterization module in two submodules:
 
-1) Cell type-agnostic gene characterization 
-2) Cell type-specific gene characterization. 
+1) Tissue type-agnostic gene characterization 
+2) Tissue type-specific gene characterization. 
 
-This is done for practical reasons as the two datasets associated with these submodules will not be homogeneous. In particular, the cell-type specific gene characterization will need additional identifiers to stratify different genes according to cell type. The second module is a pathogenicity module. This module is able to probe what we call the impact of a target, i.e. is this target likely to be causally implicated in disease? This second module will also be separated into two submodules: 
+This is done for practical reasons as the two datasets associated with these submodules will not be homogeneous. In particular, the tissue-type specific gene characterization will need additional identifiers to stratify different genes according to tissue type. The second module is a pathogenicity module. This module is able to probe what we call the impact of a target, i.e. is this target likely to be causally implicated in disease? This second module will also be separated into two submodules: 
 
 1) LoF and GoF variant (LoGoVa) pathogenicity inference 
 2) Missense variant (MiVa) pathogenicity inference
@@ -15,18 +15,18 @@ The reason for the distinction between the two is that assessing pathogenicity o
 TO-DO: Elaborate on ESMVariants which will be used as a placeholder for the UCL collaboration pathogenicity prediction model
 
 ## Gene characterization module
-### Cell type-agnostic gene characterization
-The first module will contain cell type agnostic features that are correlated to tractability:
+### Tissue type-agnostic gene characterization
+The first module will contain tissue type agnostic features that are correlated to tractability:
 | Data type                                                    |Description                                                                  |Source |
 |--------------------------------------------------------------|-----------------------------------------------------------------------------|-------|
 | <em>Tractability </em>                                       | <em> Calculate a tractability score (initial outline in iPad notes) (Binary) </em> | Use druggable genome? (read: [1](https://www.nature.com/articles/nrd892) and [2](https://www.frontiersin.org/articles/10.3389/fbinf.2022.958378/full)), use FDA approved targets as ground truth: [FDA data paper](https://www.nature.com/articles/d41573-022-00120-3) and [ProteinAtlas FDA approved drugs data](https://www.proteinatlas.org/humanproteome/tissue/druggable). [Updated 2022 FDA approvals can be added in](https://www.nature.com/articles/d41573-023-00001-3)| 
 | Target safety score, PPIs                                    | Number of PPIs as a measure for safety. (Continuous)| [STRING database](https://string-db.org/)      |
-| Target safety score, knockout models                         | Is target crucial for organism/cell health? (Binary)| [Open Targets](https://platform.opentargets.org/target/ENSG00000141510)       |
+| Target safety score, knockout models                         | Is target crucial for organism/tissue health? (Binary)| [Open Targets](https://platform.opentargets.org/target/ENSG00000141510)       |
 | Target safety score, chemical-gene interactions               | Quantification of the amount of adverse chemical-gene interactions for given gene targets (Continuous) | [CTD](http://ctdbase.org/downloads/;jsessionid=9CA1917FA3B152427402549E37F66000)|
 | Target conservation                                          | Metric indicating to which extent the particular target is conserved from an evolutionary perspective (Continuous)                                                                                                                | [Constraint data on Open Targets](https://platform.opentargets.org/target/ENSG00000141510)      |
 
-### Cell type-specific gene characterization
-Cell type-specific module extends the cell type-agnostic module with features that are cell type-specific. This brings along with it extra overhead because it needs data that has been resolved on a cell type-specific resolution. 
+### Tissue type-specific gene characterization
+Tissue type-specific module extends the tissue type-agnostic module with features that are tissue type-specific. This brings along with it extra overhead because it needs data that has been resolved on a tissue type-specific resolution. 
 | Data type                                                    |Description                                                                  |Source |
 |--------------------------------------------------------------|-----------------------------------------------------------------------------|-------|
 | Target efficacy, chromatin accessibility and gene expression | Probe target efficacy by calculating the expression and chromatin accessibility of the target (Binary)| [Enformer](https://www.nature.com/articles/s41592-021-01252-x) or [OpenTargets](https://platform.opentargets.org/target/ENSG00000198911), or experimental: DNAse, Meuleman DHS, GTEx|
