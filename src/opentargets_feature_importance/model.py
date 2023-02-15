@@ -13,7 +13,7 @@ class XGBoostClassifier:
             'learning_rate': 0.1,
             'n_jobs': -1,
             'scale_pos_weight': scale_pos_weight
-            }
+        }
         self.num_boost_round = num_boost_round
         self.model = None
         self.model_type = model_type
@@ -43,4 +43,12 @@ class XGBoostClassifier:
         FN = confusion_matrix[1, 0]
         recall = TP / (TP + FN)
 
-        return accuracy, recall, confusion_matrix
+        # calculate precision
+        TP = confusion_matrix[1, 1]
+        FP = confusion_matrix[0, 1]
+        precision = TP / (TP + FP)
+
+        # calculate F1 score
+        F1 = 2 * (precision * recall) / (precision + recall)
+
+        return accuracy, recall, F1, confusion_matrix
