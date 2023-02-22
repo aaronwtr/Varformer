@@ -149,6 +149,8 @@ class GeneCharacterisation:
         self.chem_features = self._chem_feature_extractor()
         self.gnomad_features = self._gnomad_feature_extractor()
         self.tract_features = self._tractability_feature_extractor()
+        self.tract_truth_features = self._ground_truth_extractor()
+        self.ground_truth = self._ground_truth_calculator()
 
     def _get_files(self):
         """
@@ -243,11 +245,11 @@ class GeneCharacterisation:
         keys = list(self.datasets.keys())
         tract_data_raw = self.datasets[keys[3]]
         sym_col = ['symbol']
-        sm_cols = tract_data_raw.filter(regex='(SM_B)').columns.tolist()
+        sm_cols = tract_data_raw.filter(regex='(SM_B)').columns.tolist()[3:]
         sm_cols = sym_col + sm_cols
-        ab_cols = tract_data_raw.filter(regex='(AB_B)').columns.tolist()
+        ab_cols = tract_data_raw.filter(regex='(AB_B)').columns.tolist()[3:]
         ab_cols = sym_col + ab_cols
-        pr_cols = tract_data_raw.filter(regex='(PR_B)').columns.tolist()
+        pr_cols = tract_data_raw.filter(regex='(PR_B)').columns.tolist()[3:]
         pr_cols = sym_col + pr_cols
 
         tract_data_sm = tract_data_raw.loc[:, sm_cols]
@@ -255,3 +257,25 @@ class GeneCharacterisation:
         tract_data_pr = tract_data_raw.loc[:, pr_cols]
 
         return tract_data_sm, tract_data_ab, tract_data_pr
+
+    def _ground_truth_extractor(self):
+        keys = list(self.datasets.keys())
+        tract_data_raw = self.datasets[keys[3]]
+        sm_cols = tract_data_raw.filter(regex='(SM_B)').columns.tolist()[0]
+        ab_cols = tract_data_raw.filter(regex='(AB_B)').columns.tolist()[0]
+        pr_cols = tract_data_raw.filter(regex='(PR_B)').columns.tolist()[0]
+
+        ground_truth_sm = tract_data_raw.loc[:, sm_cols]
+        ground_truth_ab = tract_data_raw.loc[:, ab_cols]
+        ground_truth_pr = tract_data_raw.loc[:, pr_cols]
+
+        return ground_truth_sm, ground_truth_ab, ground_truth_pr
+
+    def _ground_truth_calculator(self):
+        tract_sm = self.tract_features[0]
+        tract_ab = self.tract_features[1]
+        tract_pr = self.tract_features[2]
+        # TODO Import shap values to use as weights for the tractibility buckets
+
+
+
