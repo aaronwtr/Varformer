@@ -1,5 +1,6 @@
 from sklearn.model_selection import train_test_split
 import shap
+import pickle as pkl
 
 from model import XGBoostClassifier
 from src.dataloader import GeneCharacterisation
@@ -31,20 +32,23 @@ def shap_explainer(model, test_data):
     explainer = shap.TreeExplainer(model)
     shap_values = explainer.shap_values(test_data)
     shap.summary_plot(shap_values, test_data, plot_type="bar")
+    return shap_values
 
 
 if __name__ == '__main__':
-    df_sm = GeneCharacterisation().tract_features[0]
-    X_sm = df_sm.iloc[:, 4:]
-    y_sm = df_sm.iloc[:, 1]
+    X_sm = GeneCharacterisation().tract_features[0].iloc[:, 1:]
+    y_sm = GeneCharacterisation().tract_truth_features[0]
     model_sm, booster_sm, X_test_sm = make_model(X_sm, y_sm, 'Small Molecule')
-    shap_explainer(booster_sm, X_test_sm)
+    sm_shap_values = shap_explainer(booster_sm, X_test_sm)
+    with open('data/Tractability/sm_shap_values.pkl', 'wb') as f:
+        pkl.dump(sm_shap_values, f)
 
-    df_ab = GeneCharacterisation().tract_features[1]
-    X_ab = df_ab.iloc[:, 4:]
-    y_ab = df_ab.iloc[:, 1]
+    X_ab = GeneCharacterisation().tract_features[1].iloc[:, 1:]
+    y_ab = GeneCharacterisation().tract_truth_features[1]
     model_ab, booster_ab, X_test_ab = make_model(X_ab, y_ab, 'Antibody')
-    shap_explainer(booster_ab, X_test_ab)
+    ab_shape_values = shap_explainer(booster_ab, X_test_ab)
+    with open('data/Tractability/ab_shap_values.pkl', 'wb') as f:
+        pkl.dump(ab_shape_values, f)
 
     # Note: Can not make model for PROTAC because there are no FDA approved targets
     # from PROTAC based drugs

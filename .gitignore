@@ -46,3 +46,5 @@ data/gnomad_feature_description.pdf
 *.pyc
 
 *.png
+
+*.pkl
