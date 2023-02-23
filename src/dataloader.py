@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import requests
 from tqdm import tqdm
 import pickle as pkl
@@ -272,10 +273,27 @@ class GeneCharacterisation:
         return ground_truth_sm, ground_truth_ab, ground_truth_pr
 
     def _ground_truth_calculator(self):
+        with open('data/Tractability/ab_shap_values.pkl', 'rb') as f:
+            ab_shap_values = pkl.load(f)
+        with open('data/Tractability/sm_shap_values.pkl', 'rb') as f:
+            sm_shap_values = pkl.load(f)
+
         tract_sm = self.tract_features[0]
         tract_ab = self.tract_features[1]
-        tract_pr = self.tract_features[2]
-        # TODO Import shap values to use as weights for the tractibility buckets
 
+        tract_sm_float = tract_sm.iloc[:, 1:].astype(float)
+        tract_ab_float = tract_ab.iloc[:, 1:].astype(float)
 
+        ab_mean_shap = np.abs(np.mean(ab_shap_values, axis=0))
+        sm_mean_shap = np.abs(np.mean(sm_shap_values, axis=0))
 
+        weighted_tract_sm = tract_sm_float * sm_mean_shap
+        weighted_tract_ab = tract_ab_float * ab_mean_shap
+
+        tract_score_sm = weighted_tract_sm.sum(axis=1)
+        tract_score_ab = weighted_tract_ab.sum(axis=1)
+
+        tract_sm['tractability_score'] = tract_score_sm
+        tract_ab['tractability_score'] = tract_score_ab
+
+        return tract_sm, tract_ab
