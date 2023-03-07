@@ -43,12 +43,10 @@ class XGBoostClassifier:
         FN = confusion_matrix[1, 0]
         recall = TP / (TP + FN)
 
-        # calculate precision
         TP = confusion_matrix[1, 1]
         FP = confusion_matrix[0, 1]
         precision = TP / (TP + FP)
 
-        # calculate F1 score
         F1 = 2 * (precision * recall) / (precision + recall)
 
         return accuracy, recall, F1, confusion_matrix
