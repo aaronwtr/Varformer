@@ -149,9 +149,11 @@ class GeneCharacterisation:
         self.datasets = self._load_data()
         self.chem_features = self._chem_feature_extractor()
         self.gnomad_features = self._gnomad_feature_extractor()
-        self.tract_features = self._tractability_feature_extractor()
-        self.tract_truth_features = self._ground_truth_extractor()
-        self.ground_truth = self._ground_truth_calculator()
+        self.bin_tract_features = self._tractability_feature_extractor()
+        self.tract_features = self._tractability_feature_calculator()
+        self.ppi_features = self._ppi_feature_extractor()
+
+        self.ot_fda_approvals = self._ground_truth_extractor()
 
     def _get_files(self):
         """
@@ -272,14 +274,14 @@ class GeneCharacterisation:
 
         return ground_truth_sm, ground_truth_ab, ground_truth_pr
 
-    def _ground_truth_calculator(self):
+    def _tractability_feature_calculator(self):
         with open('data/Tractability/ab_shap_values.pkl', 'rb') as f:
             ab_shap_values = pkl.load(f)
         with open('data/Tractability/sm_shap_values.pkl', 'rb') as f:
             sm_shap_values = pkl.load(f)
 
-        tract_sm = self.tract_features[0]
-        tract_ab = self.tract_features[1]
+        tract_sm = self.bin_tract_features[0]
+        tract_ab = self.bin_tract_features[1]
 
         tract_sm_float = tract_sm.iloc[:, 1:].astype(float)
         tract_ab_float = tract_ab.iloc[:, 1:].astype(float)
@@ -297,3 +299,57 @@ class GeneCharacterisation:
         tract_ab['tractability_score'] = tract_score_ab
 
         return tract_sm, tract_ab
+
+    def _ppi_feature_extractor(self, threshold=500):
+        """
+        Extract PPI scores from the STRING dataset.
+        """
+        with open('data/9606.protein.info.v11.5.txt', 'r') as f:
+            protein_info = f.readlines()
+        protein_info = [x.strip().split('\t') for x in protein_info]
+        protein_info = pd.DataFrame(protein_info)
+        protein_info.columns = protein_info.iloc[0]
+
+        keys = list(self.datasets.keys())
+        string_data_raw = self.datasets[keys[4]]
+        string_data_raw[['protein1', 'protein2', 'combined_score']] = string_data_raw[
+            'protein1 protein2 combined_score'].str.split(expand=True)
+        string_data_raw.drop('protein1 protein2 combined_score', axis=1, inplace=True)
+        string_data_raw['combined_score'] = string_data_raw['combined_score'].astype(int)
+
+        done = False
+        count = 0
+
+        if os.path.exists('data/string_data_counts.pkl'):
+            with open('data/string_data_counts.pkl', 'rb') as f:
+                string_data_counts = pkl.load(f)
+                count = len(string_data_counts)
+
+        while not done:
+            print(count)
+            if not os.path.exists('data/string_data_counts.pkl'):
+                string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[:1000]})
+            else:
+                try:
+                    string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[count:count+1000]})
+                except IndexError:
+                    string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[count:]})
+
+            string_data_counts['Num_PPIs'] = [sum(string_data_raw[(string_data_raw['protein1'] == gene) |
+                                                                 (string_data_raw['protein2'] == gene)]
+                                                 ['combined_score'] > threshold)
+                                             for gene in tqdm(string_data_counts['Protein'])]
+            count += 1000
+            # TODO Check if this works as intended
+            if os.path.exists('data/string_data_counts.pkl'):
+                with open('data/string_data_counts.pkl', 'rb') as f:
+                    string_data_counts_prev = pkl.load(f)
+                string_data_counts = pd.concat([string_data_counts_prev, string_data_counts], ignore_index=True)
+
+            with open('data/string_data_counts.pkl', 'wb') as f:
+                pkl.dump(string_data_counts, f)
+
+            if 19000 < count < 20000:   # TODO Change this to a less hardcoded check
+                done = True
+
+        return 0
