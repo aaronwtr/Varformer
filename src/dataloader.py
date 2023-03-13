@@ -8,6 +8,7 @@ from Bio import SeqIO
 
 
 class VariantLoader:
+    # TODO The code here might just be fetching the wildtype proteins. Write separate code to fetch variants.
     def __init__(self, uniparc_path, msa_output):
         """
         :param uniparc_path: path to the UNIPARC dataset.
@@ -317,16 +318,17 @@ class GeneCharacterisation:
         string_data_raw.drop('protein1 protein2 combined_score', axis=1, inplace=True)
         string_data_raw['combined_score'] = string_data_raw['combined_score'].astype(int)
 
-        done = False
         count = 0
 
         if os.path.exists('data/string_data_counts.pkl'):
             with open('data/string_data_counts.pkl', 'rb') as f:
                 string_data_counts = pkl.load(f)
                 count = len(string_data_counts)
+                print(count)
 
-        while not done:
-            print(count)
+        batch_len = 1000
+        loop_len = np.ceil(len(list(string_data_raw['protein1'].unique())) / batch_len)
+        for i in tqdm(range((int(loop_len)))):
             if not os.path.exists('data/string_data_counts.pkl'):
                 string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[:1000]})
             else:
@@ -348,8 +350,5 @@ class GeneCharacterisation:
 
             with open('data/string_data_counts.pkl', 'wb') as f:
                 pkl.dump(string_data_counts, f)
-
-            if 19000 < count < 20000:   # TODO Change this to a less hardcoded check
-                done = True
 
         return 0
