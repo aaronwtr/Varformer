@@ -7,8 +7,8 @@ import os
 from Bio import SeqIO
 
 
-class VariantLoader:
-    # TODO The code here might just be fetching the wildtype proteins. Write separate code to fetch variants.
+class WildtypeLoader:
+    # TODO The code here is just fetching the wildtype proteins. Write separate code to fetch variants.
     def __init__(self, uniparc_path, msa_output):
         """
         :param uniparc_path: path to the UNIPARC dataset.
@@ -64,18 +64,18 @@ class VariantLoader:
         :param uniprot_ids_dict: dictionary of UNIPROT IDs and gene names.
         :return: processed MSA data.
         """
-        cont_idx, num_variants = self._file_tracker(uniprot_ids_dict)
+        cont_idx, num_genes = self._file_tracker(uniprot_ids_dict)
         if cont_idx == 0:
             with open(self.msa_output, "w") as f:
                 f.write("")
             f.close()
-        elif cont_idx == num_variants:
+        elif cont_idx == num_genes:
             print("Data preprocessing completed!")
             return list(SeqIO.parse(self.msa_output, "fasta"))
         else:
             print("Data preprocessing incomplete. Continuing from where it left off.")
             with open("preprocessing_log.txt", "r") as f:
-                last_processed_gene, last_processed_variant = f.read().split("\t")
+                last_processed_gene, last_processed_gene = f.read().split("\t")
             f.close()
             new_uniprot_ids_dict = {}
             found_gene = False
@@ -84,7 +84,7 @@ class VariantLoader:
                     new_uniprot_ids_dict[gene_name] = uniprot_ids_dict[gene_name]
                 if gene_name == last_processed_gene:
                     new_uniprot_ids_dict[gene_name] = uniprot_ids_dict[gene_name][uniprot_ids_dict[gene_name].index(
-                        last_processed_variant) + 1:]
+                        last_processed_gene) + 1:]
                     found_gene = True
             uniprot_ids_dict = new_uniprot_ids_dict
         print("Parsing the data...")
@@ -98,8 +98,7 @@ class VariantLoader:
                     elif str(uniprot_id) == "nan":
                         continue
                     else:
-                        raise ValueError(f"{response.status_code} Could not retrieve the MSA for variant {uniprot_id}"
-                                         f" in gene {gene_name}.")
+                        raise ValueError(f"{response.status_code} Could not retrieve the MSA for gene {gene_name}.")
                     fasta_msa = fasta_msa.replace("status=active", "")
                     fasta_msa = fasta_msa.replace("status=inactive", "")
                     fasta_msa = f"{fasta_msa[0:14]}|{gene_name}{fasta_msa[14:]}"
@@ -115,20 +114,20 @@ class VariantLoader:
         """
         Track whether there already exists output and if it is complete or not.
         """
-        num_variants = 0
+        num_geness = 0
         if self.msa_file_name in os.listdir():
             with open(self.msa_file_name, "r") as f:
                 count = f.read().count(">")
             f.close()
             for gene_name in uniprot_ids_dict:
-                num_variants += len(uniprot_ids_dict[gene_name])
-            if count != num_variants:
+                num_geness += len(uniprot_ids_dict[gene_name])
+            if count != num_genes:
                 cont_idx = count - 1
             else:
-                cont_idx = num_variants
+                cont_idx = num_genes
         else:
             cont_idx = 0
-        return cont_idx, num_variants
+        return cont_idx, num_genes
 
 
 class GeneCharacterisation:
@@ -303,7 +302,8 @@ class GeneCharacterisation:
 
     def _ppi_feature_extractor(self, threshold=500):
         """
-        Extract PPI scores from the STRING dataset.
+        Featurise PPI data, i.e. count and normalize the PPIs for each protein with a confidence score above a threshold.
+        TODO: Use another version of STRING dataset where we can select the experimentally validated PPIs.
         """
         with open('data/9606.protein.info.v11.5.txt', 'r') as f:
             protein_info = f.readlines()
@@ -324,16 +324,15 @@ class GeneCharacterisation:
             with open('data/string_data_counts.pkl', 'rb') as f:
                 string_data_counts = pkl.load(f)
                 count = len(string_data_counts)
-                print(count)
 
         batch_len = 1000
         loop_len = np.ceil(len(list(string_data_raw['protein1'].unique())) / batch_len)
-        for i in tqdm(range((int(loop_len)))):
+        for i in range((int(loop_len))):
             if not os.path.exists('data/string_data_counts.pkl'):
-                string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[:1000]})
+                string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[:batch_len]})
             else:
                 try:
-                    string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[count:count+1000]})
+                    string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[count:count+batch_len]})
                 except IndexError:
                     string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[count:]})
 
@@ -342,7 +341,6 @@ class GeneCharacterisation:
                                                  ['combined_score'] > threshold)
                                              for gene in tqdm(string_data_counts['Protein'])]
             count += 1000
-            # TODO Check if this works as intended
             if os.path.exists('data/string_data_counts.pkl'):
                 with open('data/string_data_counts.pkl', 'rb') as f:
                     string_data_counts_prev = pkl.load(f)
@@ -351,4 +349,4 @@ class GeneCharacterisation:
             with open('data/string_data_counts.pkl', 'wb') as f:
                 pkl.dump(string_data_counts, f)
 
-        return 0
+        return string_data_counts
