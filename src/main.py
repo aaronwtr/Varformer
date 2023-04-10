@@ -1,6 +1,6 @@
 import os
 
-from dataloader import WildtypeLoader, GeneCharacterisation
+from dataloader import WildtypeLoader, VariantLoader, GeneCharacterisation
 
 
 def load_proteins():
@@ -14,13 +14,16 @@ def load_proteins():
     ELGH_DIR = "data/elgh/"
     UNIPARC_PATH = f"{ELGH_DIR}all_chrs.HC_LoF.genotype_counts.after_genotype_filtering.csv"
     UNIPARC_PATH = os.path.normpath(UNIPARC_PATH)
+    GENOME_PATH = f"data/hg38.fasta"
     MSA_OUTPUT = f"{ELGH_DIR}elgh_HC_LoF_MSA.fasta"
     MSA_OUTPUT = os.path.normpath(MSA_OUTPUT)
 
-    WL = WildtypeLoader(UNIPARC_PATH, MSA_OUTPUT)
-    raw_data = WL.data_reader()
-    wt_msa_data = WL.parse_data(raw_data)
-    return wt_msa_data
+    # WL = WildtypeLoader(UNIPARC_PATH, MSA_OUTPUT)
+    # raw_data = WL.data_reader()
+    # wt_msa_data = WL.parse_data(raw_data)
+
+    VL = VariantLoader(UNIPARC_PATH, GENOME_PATH)
+    return 0
 
 
 def gene_characterisation():
@@ -29,6 +32,7 @@ def gene_characterisation():
 
 
 if __name__ == "__main__":
-    gc_features = gene_characterisation()
+    # gc_features = gene_characterisation()
+    load_proteins()
 
 

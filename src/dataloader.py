@@ -4,11 +4,10 @@ import requests
 from tqdm import tqdm
 import pickle as pkl
 import os
-from Bio import SeqIO
+from Bio import SeqIO, Seq
 
 
 class WildtypeLoader:
-    # TODO The code here is just fetching the wildtype proteins. Write separate code to fetch variants.
     def __init__(self, uniparc_path, msa_output):
         """
         :param uniparc_path: path to the UNIPARC dataset.
@@ -128,6 +127,42 @@ class WildtypeLoader:
         else:
             cont_idx = 0
         return cont_idx, num_genes
+
+
+class VariantLoader:
+    def __init__(self, elgh_path, genome_path):
+        """
+        :param uniparc_path: path to the UNIPARC dataset.
+        :param msa_output: path to where the MSA .fasta file will be saved.
+        """
+        self.elgh_path = elgh_path
+        self.genome_path = genome_path
+        self.variant_cols = ["#CHROM", "POS", "REF", "ALT", "SYMBOL"]
+        self.variant_data = self._load_data()
+        self.variant_seq = self._get_variant(self.variant_data["#CHROM"][0], self.variant_data["POS"][0],
+                                             self.variant_data["REF"][0], self.variant_data["ALT"][0])
+
+    def _load_data(self):
+        """
+        Load the variant data and the reference genome.
+        """
+        variant_data = pd.read_csv(self.elgh_path, sep="\t")
+        variant_data = variant_data[self.variant_cols]
+        #sequences = SeqIO.parse(self.genome_path, "fasta")
+        # ref_genome = SeqIO.read(self.genome_path, "fasta")
+        # TODO: figure out a good way to load chromosome 
+        record = next(r for r in SeqIO.parse(self.genome_path, "fasta") if r.id == 'chr1')
+        sequence = str(record.seq)
+        print(sequence)
+        return variant_data
+
+    def _get_variant(self, chr, pos, ref, alt):
+        """
+        Get the variant sequence.
+        """
+        #variant_sequence = self.ref_genome[chr].seq[pos - 1:pos]
+        # print(variant_sequence)
+        return 0
 
 
 class GeneCharacterisation:
