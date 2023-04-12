@@ -7,140 +7,13 @@ import os
 from Bio import SeqIO, Seq
 
 
-class WildtypeLoader:
-    def __init__(self, uniparc_path, msa_output):
-        """
-        :param uniparc_path: path to the UNIPARC dataset.
-        :param msa_output: path to where the MSA .fasta file will be saved.
-        """
-        self.uniparc_path = uniparc_path
-        self.msa_output = msa_output
-        self.msa_file_name = msa_output.split(os.path.sep)[-1]
-        self.uniparc_col_name = "UNIPARC"
-        self.gene_col_name = "SYMBOL"
-        self._init_verification()
-
-    def _init_verification(self):
-        """
-        Check whether the path points to a valid .csv file. Also check whether the msa output ends in ".fasta".
-        """
-        if not self.uniparc_path.endswith(".csv"):
-            raise TypeError("The path to the UNIPARC dataset must point to a .csv file.")
-        if not self.msa_output.endswith(".fasta"):
-            raise TypeError("The output file must be of type .fasta.")
-
-    def data_reader(self):
-        """
-        Read in the raw .csv data and check whether the data contains the required columns.
-        :return: raw_data as a pandas dataframe.
-        """
-        _raw_data = pd.read_csv(self.uniparc_path, sep="\t")
-        if self.uniparc_col_name not in _raw_data.columns:
-            raise TypeError(f"Change the column name of the column containing the uniparc ids to "
-                            f"'{self.uniparc_col_name}'.")
-        if self.gene_col_name not in _raw_data.columns:
-            raise TypeError(f"Change the column name of the column containing the gene names to "
-                            f"'{self.gene_col_name}'.")
-        return _raw_data
-
-    def parse_data(self, data):
-        """
-        Get UNIPARC ids and gene symbols from the dataset and put them in a dictionary.
-        """
-        uniprot_ids = data[self.uniparc_col_name].tolist()
-        gene_names = data[self.gene_col_name].tolist()
-        uniprot_ids_dict = {}
-        for i in range(len(uniprot_ids)):
-            if gene_names[i] not in uniprot_ids_dict:
-                uniprot_ids_dict[gene_names[i]] = [uniprot_ids[i]]
-            else:
-                uniprot_ids_dict[gene_names[i]].append(uniprot_ids[i])
-        return self._get_msa(uniprot_ids_dict)
-
-    def _get_msa(self, uniprot_ids_dict):
-        """
-        Get the multiple sequence alignment from the UNIPROT database.
-        :param uniprot_ids_dict: dictionary of UNIPROT IDs and gene names.
-        :return: processed MSA data.
-        """
-        cont_idx, num_genes = self._file_tracker(uniprot_ids_dict)
-        if cont_idx == 0:
-            with open(self.msa_output, "w") as f:
-                f.write("")
-            f.close()
-        elif cont_idx == num_genes:
-            print("Data preprocessing completed!")
-            return list(SeqIO.parse(self.msa_output, "fasta"))
-        else:
-            print("Data preprocessing incomplete. Continuing from where it left off.")
-            with open("preprocessing_log.txt", "r") as f:
-                last_processed_gene, last_processed_gene = f.read().split("\t")
-            f.close()
-            new_uniprot_ids_dict = {}
-            found_gene = False
-            for gene_name in uniprot_ids_dict:
-                if found_gene:
-                    new_uniprot_ids_dict[gene_name] = uniprot_ids_dict[gene_name]
-                if gene_name == last_processed_gene:
-                    new_uniprot_ids_dict[gene_name] = uniprot_ids_dict[gene_name][uniprot_ids_dict[gene_name].index(
-                        last_processed_gene) + 1:]
-                    found_gene = True
-            uniprot_ids_dict = new_uniprot_ids_dict
-        print("Parsing the data...")
-        with open(self.msa_output, "a") as f:
-            for gene_name in tqdm(uniprot_ids_dict):
-                for uniprot_id in uniprot_ids_dict[gene_name]:
-                    url = f"https://www.uniprot.org/uniparc/{uniprot_id}.fasta"
-                    response = requests.get(url)
-                    if response.status_code == 200:
-                        fasta_msa = response.text
-                    elif str(uniprot_id) == "nan":
-                        continue
-                    else:
-                        raise ValueError(f"{response.status_code} Could not retrieve the MSA for gene {gene_name}.")
-                    fasta_msa = fasta_msa.replace("status=active", "")
-                    fasta_msa = fasta_msa.replace("status=inactive", "")
-                    fasta_msa = f"{fasta_msa[0:14]}|{gene_name}{fasta_msa[14:]}"
-                    f.write(fasta_msa)
-                    with open("preprocessing_log.txt", "w") as log:
-                        log.write(f"{gene_name}\t{uniprot_id}")
-                    log.close()
-        f.close()
-        print("Data preprocessing completed!")
-        return list(SeqIO.parse(self.msa_output, "fasta"))
-
-    def _file_tracker(self, uniprot_ids_dict):
-        """
-        Track whether there already exists output and if it is complete or not.
-        """
-        num_geness = 0
-        if self.msa_file_name in os.listdir():
-            with open(self.msa_file_name, "r") as f:
-                count = f.read().count(">")
-            f.close()
-            for gene_name in uniprot_ids_dict:
-                num_geness += len(uniprot_ids_dict[gene_name])
-            if count != num_genes:
-                cont_idx = count - 1
-            else:
-                cont_idx = num_genes
-        else:
-            cont_idx = 0
-        return cont_idx, num_genes
-
-
 class VariantLoader:
     def __init__(self, elgh_path, genome_path):
-        """
-        :param uniparc_path: path to the UNIPARC dataset.
-        :param msa_output: path to where the MSA .fasta file will be saved.
-        """
         self.elgh_path = elgh_path
         self.genome_path = genome_path
         self.variant_cols = ["#CHROM", "POS", "REF", "ALT", "SYMBOL"]
         self.variant_data = self._load_data()
-        self.variant_seq = self._get_variant(self.variant_data["#CHROM"][0], self.variant_data["POS"][0],
-                                             self.variant_data["REF"][0], self.variant_data["ALT"][0])
+        self.variant_seqs = self.process_variants()
 
     def _load_data(self):
         """
@@ -148,21 +21,48 @@ class VariantLoader:
         """
         variant_data = pd.read_csv(self.elgh_path, sep="\t")
         variant_data = variant_data[self.variant_cols]
-        #sequences = SeqIO.parse(self.genome_path, "fasta")
-        # ref_genome = SeqIO.read(self.genome_path, "fasta")
-        # TODO: figure out a good way to load chromosome 
-        record = next(r for r in SeqIO.parse(self.genome_path, "fasta") if r.id == 'chr1')
-        sequence = str(record.seq)
-        print(sequence)
         return variant_data
 
-    def _get_variant(self, chr, pos, ref, alt):
+    def process_variants(self):
+        variant_seqs = {}
+        for i in range(len(self.variant_data)):
+            variant_seq_ids = variant_seqs.keys()
+            seq_id = f"{self.variant_data['SYMBOL'].iloc[i]}_{self.variant_data['POS'].iloc[i]}_" \
+                     f"{self.variant_data['REF'].iloc[i]}_{self.variant_data['ALT'].iloc[i]}"
+            if seq_id not in variant_seq_ids:
+                variant_seq, wildtype_seq = self._get_variant(self.variant_data["#CHROM"].iloc[i],
+                                                              self.variant_data["POS"].iloc[i] - 1,
+                                                              self.variant_data["REF"].iloc[i],
+                                                              self.variant_data["ALT"].iloc[i])
+                variant_seqs[seq_id] = [variant_seq, wildtype_seq]
+        return variant_seqs
+
+    def _get_variant(self, chrom, pos, ref, alt):
         """
         Get the variant sequence.
         """
-        #variant_sequence = self.ref_genome[chr].seq[pos - 1:pos]
-        # print(variant_sequence)
-        return 0
+        # TODO: Handle multiple comma separated alt alleles
+        # TODO: Figure out how to get exon sequence around variant position
+        ref_genome = next(r for r  in SeqIO.parse(self.genome_path, "fasta") if r.id == chrom)
+        sequence = str(ref_genome.seq)
+        if str(sequence[pos]).lower() == str(ref).lower():
+            variant_seq = sequence[pos - 5:pos] + alt.lower() + sequence[pos + 1:pos + 5]
+            print(sequence[pos - 5:pos] + "\033[31m" + ref.lower() + "\033[0m" + sequence[pos + 1:pos + 5])
+            print(ref.lower())
+            print('-----------')
+            if len(alt) > 1:
+                print(alt.lower())
+                alts = alt.split(',')
+                for alt in alts:
+                    print(sequence[pos - 5:pos] + "\033[31m" + alt.lower() + "\033[0m" + sequence[pos + 1:pos + 5])
+            else:
+                print(alt.lower())
+                print(sequence[pos - 5:pos] + "\033[31m" + alt.lower() + "\033[0m" + sequence[pos + 1:pos + 5])
+            print('\n\n')
+            return variant_seq, sequence
+        else:
+            raise ValueError(f"The reference allele ({ref}) at position {pos} does not match the specified ref allele "
+                             f"({sequence[pos]}).")
 
 
 class GeneCharacterisation:
@@ -367,14 +267,15 @@ class GeneCharacterisation:
                 string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[:batch_len]})
             else:
                 try:
-                    string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[count:count+batch_len]})
+                    string_data_counts = pd.DataFrame(
+                        {'Protein': string_data_raw['protein1'].unique()[count:count + batch_len]})
                 except IndexError:
                     string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[count:]})
 
             string_data_counts['Num_PPIs'] = [sum(string_data_raw[(string_data_raw['protein1'] == gene) |
-                                                                 (string_data_raw['protein2'] == gene)]
-                                                 ['combined_score'] > threshold)
-                                             for gene in tqdm(string_data_counts['Protein'])]
+                                                                  (string_data_raw['protein2'] == gene)]
+                                                  ['combined_score'] > threshold)
+                                              for gene in tqdm(string_data_counts['Protein'])]
             count += 1000
             if os.path.exists('data/string_data_counts.pkl'):
                 with open('data/string_data_counts.pkl', 'rb') as f:
@@ -385,3 +286,130 @@ class GeneCharacterisation:
                 pkl.dump(string_data_counts, f)
 
         return string_data_counts
+
+
+class __WildtypeLoader:
+    """
+    This class is deprecatated. Wildtype gets loaded in the VariantLoader class. This class is kept for reference and
+    archive purposes.
+    """
+
+    def __init__(self, uniparc_path, msa_output):
+        """
+        :param uniparc_path: path to the UNIPARC dataset.
+        :param msa_output: path to where the MSA .fasta file will be saved.
+        """
+        self.uniparc_path = uniparc_path
+        self.msa_output = msa_output
+        self.msa_file_name = msa_output.split(os.path.sep)[-1]
+        self.uniparc_col_name = "UNIPARC"
+        self.gene_col_name = "SYMBOL"
+        self._init_verification()
+
+    def _init_verification(self):
+        """
+        Check whether the path points to a valid .csv file. Also check whether the msa output ends in ".fasta".
+        """
+        if not self.uniparc_path.endswith(".csv"):
+            raise TypeError("The path to the UNIPARC dataset must point to a .csv file.")
+        if not self.msa_output.endswith(".fasta"):
+            raise TypeError("The output file must be of type .fasta.")
+
+    def data_reader(self):
+        """
+        Read in the raw .csv data and check whether the data contains the required columns.
+        :return: raw_data as a pandas dataframe.
+        """
+        _raw_data = pd.read_csv(self.uniparc_path, sep="\t")
+        if self.uniparc_col_name not in _raw_data.columns:
+            raise TypeError(f"Change the column name of the column containing the uniparc ids to "
+                            f"'{self.uniparc_col_name}'.")
+        if self.gene_col_name not in _raw_data.columns:
+            raise TypeError(f"Change the column name of the column containing the gene names to "
+                            f"'{self.gene_col_name}'.")
+        return _raw_data
+
+    def parse_data(self, data):
+        """
+        Get UNIPARC ids and gene symbols from the dataset and put them in a dictionary.
+        """
+        uniprot_ids = data[self.uniparc_col_name].tolist()
+        gene_names = data[self.gene_col_name].tolist()
+        uniprot_ids_dict = {}
+        for i in range(len(uniprot_ids)):
+            if gene_names[i] not in uniprot_ids_dict:
+                uniprot_ids_dict[gene_names[i]] = [uniprot_ids[i]]
+            else:
+                uniprot_ids_dict[gene_names[i]].append(uniprot_ids[i])
+        return self._get_msa(uniprot_ids_dict)
+
+    def _get_msa(self, uniprot_ids_dict):
+        """
+        Get the multiple sequence alignment from the UNIPROT database.
+        :param uniprot_ids_dict: dictionary of UNIPROT IDs and gene names.
+        :return: processed MSA data.
+        """
+        cont_idx, num_genes = self._file_tracker(uniprot_ids_dict)
+        if cont_idx == 0:
+            with open(self.msa_output, "w") as f:
+                f.write("")
+            f.close()
+        elif cont_idx == num_genes:
+            print("Data preprocessing completed!")
+            return list(SeqIO.parse(self.msa_output, "fasta"))
+        else:
+            print("Data preprocessing incomplete. Continuing from where it left off.")
+            with open("preprocessing_log.txt", "r") as f:
+                last_processed_gene, last_processed_gene = f.read().split("\t")
+            f.close()
+            new_uniprot_ids_dict = {}
+            found_gene = False
+            for gene_name in uniprot_ids_dict:
+                if found_gene:
+                    new_uniprot_ids_dict[gene_name] = uniprot_ids_dict[gene_name]
+                if gene_name == last_processed_gene:
+                    new_uniprot_ids_dict[gene_name] = uniprot_ids_dict[gene_name][uniprot_ids_dict[gene_name].index(
+                        last_processed_gene) + 1:]
+                    found_gene = True
+            uniprot_ids_dict = new_uniprot_ids_dict
+        print("Parsing the data...")
+        with open(self.msa_output, "a") as f:
+            for gene_name in tqdm(uniprot_ids_dict):
+                for uniprot_id in uniprot_ids_dict[gene_name]:
+                    url = f"https://www.uniprot.org/uniparc/{uniprot_id}.fasta"
+                    response = requests.get(url)
+                    if response.status_code == 200:
+                        fasta_msa = response.text
+                    elif str(uniprot_id) == "nan":
+                        continue
+                    else:
+                        raise ValueError(f"{response.status_code} Could not retrieve the MSA for gene {gene_name}.")
+                    fasta_msa = fasta_msa.replace("status=active", "")
+                    fasta_msa = fasta_msa.replace("status=inactive", "")
+                    fasta_msa = f"{fasta_msa[0:14]}|{gene_name}{fasta_msa[14:]}"
+                    f.write(fasta_msa)
+                    with open("preprocessing_log.txt", "w") as log:
+                        log.write(f"{gene_name}\t{uniprot_id}")
+                    log.close()
+        f.close()
+        print("Data preprocessing completed!")
+        return list(SeqIO.parse(self.msa_output, "fasta"))
+
+    def _file_tracker(self, uniprot_ids_dict):
+        """
+        Track whether there already exists output and if it is complete or not.
+        """
+        num_genes = 0
+        if self.msa_file_name in os.listdir():
+            with open(self.msa_file_name, "r") as f:
+                count = f.read().count(">")
+            f.close()
+            for gene_name in uniprot_ids_dict:
+                num_genes += len(uniprot_ids_dict[gene_name])
+            if count != num_genes:
+                cont_idx = count - 1
+            else:
+                cont_idx = num_genes
+        else:
+            cont_idx = 0
+        return cont_idx, num_genes

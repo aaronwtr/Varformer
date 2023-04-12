@@ -1,9 +1,9 @@
 import os
 
-from dataloader import WildtypeLoader, VariantLoader, GeneCharacterisation
+from dataloader import VariantLoader, GeneCharacterisation
 
 
-def load_proteins():
+def load_variants():
     """
     This function reads in uniparc IDs from the ELGH data set and retrieves the multiple sequence alignment from the
     UNIPROT database. The MSA is then saved as a .fasta file and returned to the main function as a list. This is the
@@ -18,11 +18,8 @@ def load_proteins():
     MSA_OUTPUT = f"{ELGH_DIR}elgh_HC_LoF_MSA.fasta"
     MSA_OUTPUT = os.path.normpath(MSA_OUTPUT)
 
-    # WL = WildtypeLoader(UNIPARC_PATH, MSA_OUTPUT)
-    # raw_data = WL.data_reader()
-    # wt_msa_data = WL.parse_data(raw_data)
-
     VL = VariantLoader(UNIPARC_PATH, GENOME_PATH)
+
     return 0
 
 
@@ -33,6 +30,4 @@ def gene_characterisation():
 
 if __name__ == "__main__":
     # gc_features = gene_characterisation()
-    load_proteins()
-
-
+    load_variants()
