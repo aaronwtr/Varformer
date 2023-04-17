@@ -29,5 +29,5 @@ def gene_characterisation():
 
 
 if __name__ == "__main__":
-    # gc_features = gene_characterisation()
-    load_variants()
+    gc_features = gene_characterisation()
+    # load_variants()

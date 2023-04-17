@@ -87,6 +87,7 @@ class GeneCharacterisation:
         self.bin_tract_features = self._tractability_feature_extractor()
         self.tract_features = self._tractability_feature_calculator()
         self.ppi_features = self._ppi_feature_extractor()
+        self.mouse_ko_features = self._mouse_knockout_feature_extractor()
 
         self.ot_fda_approvals = self._ground_truth_extractor()
 
@@ -222,7 +223,7 @@ class GeneCharacterisation:
         tract_ab_float = tract_ab.iloc[:, 1:].astype(float)
 
         ab_mean_shap = np.abs(np.mean(ab_shap_values, axis=0))
-        sm_mean_shap = np.abs(np.mean(sm_shap_values, axis=0))
+        sm_mean_shap = np.abs(np.mean(sm_shap_values[:, 1:], axis=0))
 
         weighted_tract_sm = tract_sm_float * sm_mean_shap
         weighted_tract_ab = tract_ab_float * ab_mean_shap
@@ -286,6 +287,12 @@ class GeneCharacterisation:
                 pkl.dump(string_data_counts, f)
 
         return string_data_counts
+
+    def _mouse_knockout_feature_extractor(self):
+        file_path = 'data/mousePhenotypes/part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet'
+        df = pd.read_parquet(file_path)
+        print(df)
+        return 0
 
 
 class __WildtypeLoader:
