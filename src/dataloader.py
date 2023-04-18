@@ -276,7 +276,7 @@ class GeneCharacterisation:
             string_data_counts['Num_PPIs'] = [sum(string_data_raw[(string_data_raw['protein1'] == gene) |
                                                                   (string_data_raw['protein2'] == gene)]
                                                   ['combined_score'] > threshold)
-                                              for gene in tqdm(string_data_counts['Protein'])]
+                                              for gene in string_data_counts['Protein']]
             count += 1000
             if os.path.exists('data/string_data_counts.pkl'):
                 with open('data/string_data_counts.pkl', 'rb') as f:
@@ -289,10 +289,16 @@ class GeneCharacterisation:
         return string_data_counts
 
     def _mouse_knockout_feature_extractor(self):
-        file_path = 'data/mousePhenotypes/part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet'
-        df = pd.read_parquet(file_path)
-        print(df)
-        return 0
+        keys = list(self.datasets.keys())
+        df = self.datasets[keys[5]]
+        target_counts = {}
+        for target in df['targetInModel']:
+            if target in target_counts:
+                target_counts[target] += 1
+            else:
+                target_counts[target] = 1
+        target_freqs = {k: v / sum(target_counts.values()) for k, v in target_counts.items()}
+        return target_freqs
 
 
 class __WildtypeLoader:
