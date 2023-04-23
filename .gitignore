@@ -54,3 +54,5 @@ data/9606.protein.info.v11.5.txt
 plots/opentargets tractability/Tractability Score for Antibodies with Ground Truth.pdf
 
 plots/opentargets tractability/Tractability Score for Small Molecules with Ground Truth.pdf
+
+data/exon_variant_locs_unpadded.bed
