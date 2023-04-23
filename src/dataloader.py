@@ -41,23 +41,29 @@ class VariantLoader:
         """
         Get the variant sequence.
         """
-        # TODO: Handle multiple comma separated alt alleles
         # TODO: Figure out how to get exon sequence around variant position
-        ref_genome = next(r for r  in SeqIO.parse(self.genome_path, "fasta") if r.id == chrom)
+        #  Note: for variant calling, ELGH team padded +/- 100 bp
+        exons = pd.read_csv("data/exon_variant_locs_unpadded.bed", sep="\t", header=None)
+        exons.columns = ["chr", "start", "stop"]
+        exons_chr = exons.loc[exons['chr'] == chrom]
+        exon = exons_chr.loc[(exons_chr['start'] - 100 <= pos) & (pos <= exons_chr['stop'] + 100)]
+        start = exon['start'].item() - 100
+        end = exon['stop'].item() + 100
+        ref_genome = next(r for r in SeqIO.parse(self.genome_path, "fasta") if r.id == chrom)
         sequence = str(ref_genome.seq)
         if str(sequence[pos]).lower() == str(ref).lower():
-            variant_seq = sequence[pos - 5:pos] + alt.lower() + sequence[pos + 1:pos + 5]
-            print(sequence[pos - 5:pos] + "\033[31m" + ref.lower() + "\033[0m" + sequence[pos + 1:pos + 5])
-            print(ref.lower())
+            variant_seq = sequence[start:pos] + alt.upper() + sequence[pos + 1:end]
+            print(sequence[start:pos] + "\033[31m" + ref.upper() + "\033[0m" + sequence[pos + 1:end])
+            print(ref.upper())
             print('-----------')
             if len(alt) > 1:
-                print(alt.lower())
+                print(alt.upper())
                 alts = alt.split(',')
                 for alt in alts:
-                    print(sequence[pos - 5:pos] + "\033[31m" + alt.lower() + "\033[0m" + sequence[pos + 1:pos + 5])
+                    print(sequence[start:pos] + "\033[31m" + alt.upper() + "\033[0m" + sequence[pos + 1:end])
             else:
-                print(alt.lower())
-                print(sequence[pos - 5:pos] + "\033[31m" + alt.lower() + "\033[0m" + sequence[pos + 1:pos + 5])
+                print(alt.upper())
+                print(sequence[start:pos] + "\033[31m" + alt.upper() + "\033[0m" + sequence[pos + 1:end])
             print('\n\n')
             return variant_seq, sequence
         else:
