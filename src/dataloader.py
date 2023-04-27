@@ -14,6 +14,7 @@ class VariantLoader:
         self.variant_cols = ["#CHROM", "POS", "REF", "ALT", "SYMBOL"]
         self.variant_data = self._load_data()
         self.variant_seqs = self.process_variants()
+        # TODO Run the sequences through the VariPred model
 
     def _load_data(self):
         """
@@ -41,12 +42,16 @@ class VariantLoader:
         """
         Get the variant sequence.
         """
-        # TODO: Figure out how to get exon sequence around variant position
-        #  Note: for variant calling, ELGH team padded +/- 100 bp
         exons = pd.read_csv("data/exon_variant_locs_unpadded.bed", sep="\t", header=None)
         exons.columns = ["chr", "start", "stop"]
         exons_chr = exons.loc[exons['chr'] == chrom]
         exon = exons_chr.loc[(exons_chr['start'] - 100 <= pos) & (pos <= exons_chr['stop'] + 100)]
+        if len(exon) > 1:
+            exon['start_dist'] = abs(exon['start'] - pos)
+            exon['stop_dist'] = abs(exon['stop'] - pos)
+            exon = exon.sort_values(['start_dist', 'stop_dist'])
+            exon = exon.iloc[0][['start', 'stop']]
+
         start = exon['start'].item() - 100
         end = exon['stop'].item() + 100
         ref_genome = next(r for r in SeqIO.parse(self.genome_path, "fasta") if r.id == chrom)
