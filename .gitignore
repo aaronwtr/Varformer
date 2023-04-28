@@ -56,3 +56,21 @@ plots/opentargets tractability/Tractability Score for Antibodies with Ground Tru
 plots/opentargets tractability/Tractability Score for Small Molecules with Ground Truth.pdf
 
 data/exon_variant_locs_unpadded.bed
+
+models/VariPred/Dataset_preparation/example.txt
+
+models/VariPred/Dataset_preparation/target.txt
+
+models/VariPred/Dataset_preparation/transcript_ids.txt
+
+models/VariPred/Dataset_preparation/VariPred_test.txt
+
+models/VariPred/Dataset_preparation/VariPred_train.txt
+
+models/VariPred/example/output_results/VariPred_output.txt
+
+models/VariPred/README.md
+
+models/VariPred/requirements.txt
+
+models/VariPred/VariPred/model/model.ckpt
