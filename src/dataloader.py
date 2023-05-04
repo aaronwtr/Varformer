@@ -4,6 +4,8 @@ import requests
 from tqdm import tqdm
 import pickle as pkl
 import os
+import gc
+import warnings
 from Bio import SeqIO, Seq
 
 
@@ -13,8 +15,7 @@ class VariantLoader:
         self.genome_path = genome_path
         self.variant_cols = ["#CHROM", "POS", "REF", "ALT", "SYMBOL"]
         self.variant_data = self._load_data()
-        self.variant_seqs = self.process_variants()
-        # TODO Run the sequences through the VariPred model
+        self.varipred_input = self.process_variants()
 
     def _load_data(self):
         """
@@ -25,24 +26,41 @@ class VariantLoader:
         return variant_data
 
     def process_variants(self):
-        variant_seqs = {}
-        for i in range(len(self.variant_data)):
-            variant_seq_ids = variant_seqs.keys()
-            seq_id = f"{self.variant_data['SYMBOL'].iloc[i]}_{self.variant_data['POS'].iloc[i]}_" \
-                     f"{self.variant_data['REF'].iloc[i]}_{self.variant_data['ALT'].iloc[i]}"
-            if seq_id not in variant_seq_ids:
-                variant_seq, wildtype_seq = self._get_variant(self.variant_data["#CHROM"].iloc[i],
-                                                              self.variant_data["POS"].iloc[i] - 1,
-                                                              self.variant_data["REF"].iloc[i],
-                                                              self.variant_data["ALT"].iloc[i])
-                variant_seqs[seq_id] = [variant_seq, wildtype_seq]
-        return variant_seqs
+        warnings.filterwarnings('ignore')
+        exons = pd.read_csv("data/exon_variant_locs_unpadded.bed", sep="\t", header=None)
 
-    def _get_variant(self, chrom, pos, ref, alt):
+        varipred_input = {}
+        if os.path.isfile("data/varipred_input.pkl"):
+            with open("data/varipred_input.pkl", "rb") as f:
+                varipred_input = pkl.load(f)
+
+        for i in tqdm(range(len(self.variant_data))):
+            if i % 100 == 0 and i != 0:
+                with open("data/varipred_input.pkl", "wb") as f:
+                    pkl.dump(varipred_input, f)
+
+            aa_index = self.variant_data["POS"].iloc[i] - 1
+            wt_aa = self.variant_data["REF"].iloc[i]
+            mt_aa = self.variant_data["ALT"].iloc[i]
+            variant_seq_ids = varipred_input.keys()
+            seq_id = f"{self.variant_data['SYMBOL'].iloc[i]}_{aa_index}_{wt_aa}_{mt_aa}"
+
+            if seq_id not in variant_seq_ids:
+                variant_seq, wildtype_seq = self._get_variant(self.variant_data["#CHROM"].iloc[i], aa_index, wt_aa,
+                                                              mt_aa, exons)
+                varipred_input[seq_id] = [aa_index, wt_aa, mt_aa, variant_seq, wildtype_seq]
+
+        with open("data/varipred_input.pkl", "wb") as f:
+            pkl.dump(varipred_input, f)
+        warnings.filterwarnings('default')
+
+        return varipred_input
+
+    def _get_variant(self, chrom, pos, ref, alt, exons):
         """
         Get the variant sequence.
         """
-        exons = pd.read_csv("data/exon_variant_locs_unpadded.bed", sep="\t", header=None)
+        gc.collect()
         exons.columns = ["chr", "start", "stop"]
         exons_chr = exons.loc[exons['chr'] == chrom]
         exon = exons_chr.loc[(exons_chr['start'] - 100 <= pos) & (pos <= exons_chr['stop'] + 100)]
@@ -58,18 +76,18 @@ class VariantLoader:
         sequence = str(ref_genome.seq)
         if str(sequence[pos]).lower() == str(ref).lower():
             variant_seq = sequence[start:pos] + alt.upper() + sequence[pos + 1:end]
-            print(sequence[start:pos] + "\033[31m" + ref.upper() + "\033[0m" + sequence[pos + 1:end])
-            print(ref.upper())
-            print('-----------')
-            if len(alt) > 1:
-                print(alt.upper())
-                alts = alt.split(',')
-                for alt in alts:
-                    print(sequence[start:pos] + "\033[31m" + alt.upper() + "\033[0m" + sequence[pos + 1:end])
-            else:
-                print(alt.upper())
-                print(sequence[start:pos] + "\033[31m" + alt.upper() + "\033[0m" + sequence[pos + 1:end])
-            print('\n\n')
+            # print(sequence[start:pos] + "\033[31m" + ref.upper() + "\033[0m" + sequence[pos + 1:end])
+            # print(ref.upper())
+            # print('-----------')
+            # if len(alt) > 1:
+            #     print(alt.upper())
+            #     alts = alt.split(',')
+            #     for alt in alts:
+            #         print(sequence[start:pos] + "\033[31m" + alt.upper() + "\033[0m" + sequence[pos + 1:end])
+            # else:
+            #     print(alt.upper())
+            #     print(sequence[start:pos] + "\033[31m" + alt.upper() + "\033[0m" + sequence[pos + 1:end])
+            # print('\n\n')
             return variant_seq, sequence
         else:
             raise ValueError(f"The reference allele ({ref}) at position {pos} does not match the specified ref allele "
