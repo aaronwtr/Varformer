@@ -15,8 +15,6 @@ def load_variants():
     UNIPARC_PATH = f"{ELGH_DIR}all_chrs.HC_LoF.genotype_counts.after_genotype_filtering.csv"
     UNIPARC_PATH = os.path.normpath(UNIPARC_PATH)
     GENOME_PATH = f"data/hg38.fasta"
-    MSA_OUTPUT = f"{ELGH_DIR}elgh_HC_LoF_MSA.fasta"
-    MSA_OUTPUT = os.path.normpath(MSA_OUTPUT)
 
     VL = VariantLoader(UNIPARC_PATH, GENOME_PATH)
 

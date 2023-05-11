@@ -74,3 +74,5 @@ models/VariPred/README.md
 models/VariPred/requirements.txt
 
 models/VariPred/VariPred/model/model.ckpt
+
+src/mprofile_20230511153234.dat
