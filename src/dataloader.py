@@ -6,7 +6,7 @@ import pickle as pkl
 import os
 import gc
 import warnings
-from Bio import SeqIO, Seq
+from Bio import SeqIO
 
 
 class VariantLoader:
@@ -26,25 +26,23 @@ class VariantLoader:
         return variant_data
 
     def process_variants(self):
+        # TODO rewrite the _get_variant function to yield the wildtype and variant sequence rather than to save them all
         warnings.filterwarnings('ignore')
         exons = pd.read_csv("data/exon_variant_locs_unpadded.bed", sep="\t", header=None)
+        exons.columns = ["chr", "start", "stop"]
 
         varipred_input = {}
-        if os.path.isfile("data/varipred_input.pkl"):
-            with open("data/varipred_input.pkl", "rb") as f:
-                varipred_input = pkl.load(f)
+        # if os.path.isfile("data/varipred_input.pkl"):
+        #     with open("data/varipred_input.pkl", "rb") as f:
+        #         varipred_input = pkl.load(f)
 
         for i in tqdm(range(len(self.variant_data))):
-            if i % 100 == 0 and i != 0:
-                with open("data/varipred_input.pkl", "wb") as f:
-                    pkl.dump(varipred_input, f)
-
             aa_index = self.variant_data["POS"].iloc[i] - 1
             wt_aa = self.variant_data["REF"].iloc[i]
             mt_aa = self.variant_data["ALT"].iloc[i]
             variant_seq_ids = varipred_input.keys()
             seq_id = f"{self.variant_data['SYMBOL'].iloc[i]}_{aa_index}_{wt_aa}_{mt_aa}"
-
+            gc.collect()
             if seq_id not in variant_seq_ids:
                 variant_seq, wildtype_seq = self._get_variant(self.variant_data["#CHROM"].iloc[i], aa_index, wt_aa,
                                                               mt_aa, exons)
@@ -60,8 +58,6 @@ class VariantLoader:
         """
         Get the variant sequence.
         """
-        gc.collect()
-        exons.columns = ["chr", "start", "stop"]
         exons_chr = exons.loc[exons['chr'] == chrom]
         exon = exons_chr.loc[(exons_chr['start'] - 100 <= pos) & (pos <= exons_chr['stop'] + 100)]
         if len(exon) > 1:
