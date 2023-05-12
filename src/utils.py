@@ -1,4 +1,5 @@
 import numpy as np
+from Bio import Seq
 
 
 def count_scaling(counts):
@@ -21,3 +22,11 @@ def lognorm(vector, eps=1e-8):
     vector = vector - np.max(vector)
     vector = [-element for element in vector if element != 0]
     return vector
+
+
+def translate_sequence(sequence):
+    """
+    Translate a DNA sequence to an amino acid sequence.
+    """
+    seq = Seq.Seq(sequence)
+    return seq.translate()
