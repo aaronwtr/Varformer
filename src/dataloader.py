@@ -6,7 +6,12 @@ import pickle as pkl
 import os
 import gc
 import warnings
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import multiprocessing
 from Bio import SeqIO
+from functools import partial
+
+from utils import translate_sequence
 
 
 class VariantLoader:
@@ -15,7 +20,7 @@ class VariantLoader:
         self.genome_path = genome_path
         self.variant_cols = ["#CHROM", "POS", "REF", "ALT", "SYMBOL"]
         self.variant_data = self._load_data()
-        self.varipred_input = self.process_variants()
+        self.varipred_input = self.process_variants_parallel(8, 100)
 
     def _load_data(self):
         """
@@ -25,16 +30,73 @@ class VariantLoader:
         variant_data = variant_data[self.variant_cols]
         return variant_data
 
+    def process_batch(self, args):
+        start_index, end_index, exons, input_tracker, progress_bar = args
+        warnings.filterwarnings('ignore')
+        for i in range(start_index, end_index):
+            aa_index = self.variant_data["POS"].iloc[i] - 1
+            wt_aa = self.variant_data["REF"].iloc[i]
+            mt_aa = self.variant_data["ALT"].iloc[i]
+            seq_id = f"{self.variant_data['SYMBOL'].iloc[i]}_{aa_index}_{wt_aa}_{mt_aa}"
+            gc.collect()
+            if seq_id not in input_tracker:
+                variant_seq, wildtype_seq = self._get_variant(self.variant_data["#CHROM"].iloc[i], aa_index, wt_aa,
+                                                                       mt_aa, exons)
+
+                variant_aa = translate_sequence(variant_seq)
+                print(i)
+                wildtype_aa = translate_sequence(wildtype_seq)
+                progress_bar.update(1)
+            else:
+                input_tracker.append(seq_id)
+
+    def process_variants_parallel(self, num_processes, batch_size):
+        warnings.filterwarnings('ignore')
+        exons = pd.read_csv("data/exon_variant_locs_unpadded.bed", sep="\t", header=None)
+        exons.columns = ["chr", "start", "stop"]
+
+        input_tracker = []
+
+        num_variants = len(self.variant_data)
+        num_batches = (num_variants + batch_size - 1) // batch_size
+        batch_size = (num_variants + num_processes - 1) // num_processes
+
+        partial_process_batch = partial(self.process_batch)
+
+        # Create a dictionary to store progress bars for each CPU
+        progress_bars = {}
+        for i in range(num_processes):
+            progress_bars[i] = tqdm(total=batch_size, desc=f"CPU {i + 1}", position=i)
+
+        with ThreadPoolExecutor(max_workers=num_processes) as executor:
+            futures = []
+            for cpu_id in range(num_processes):
+                start_index = cpu_id * batch_size
+                end_index = min((cpu_id + 1) * batch_size, num_variants)
+                args = (start_index, end_index, exons, input_tracker, progress_bars[cpu_id])
+                future = executor.submit(partial_process_batch, args)
+                futures.append(future)
+
+            # Use as_completed to iterate over completed futures
+            for future in as_completed(futures):
+                future_result = future.result()
+                cpu_id = future_result[-1]
+                progress_bar = progress_bars[cpu_id]
+                progress_bar.update(1)
+
+        # Close and remove progress bars
+        for progress_bar in progress_bars.values():
+            progress_bar.close()
+
+        return 0
+
     def process_variants(self):
-        # TODO rewrite the _get_variant function to yield the wildtype and variant sequence rather than to save them all
+        # Parallelize this function
         warnings.filterwarnings('ignore')
         exons = pd.read_csv("data/exon_variant_locs_unpadded.bed", sep="\t", header=None)
         exons.columns = ["chr", "start", "stop"]
 
         varipred_input = {}
-        # if os.path.isfile("data/varipred_input.pkl"):
-        #     with open("data/varipred_input.pkl", "rb") as f:
-        #         varipred_input = pkl.load(f)
 
         for i in tqdm(range(len(self.variant_data))):
             aa_index = self.variant_data["POS"].iloc[i] - 1
@@ -46,15 +108,13 @@ class VariantLoader:
             if seq_id not in variant_seq_ids:
                 variant_seq, wildtype_seq = self._get_variant(self.variant_data["#CHROM"].iloc[i], aa_index, wt_aa,
                                                               mt_aa, exons)
-                varipred_input[seq_id] = [aa_index, wt_aa, mt_aa, variant_seq, wildtype_seq]
 
-        with open("data/varipred_input.pkl", "wb") as f:
-            pkl.dump(varipred_input, f)
-        warnings.filterwarnings('default')
+                variant_aa = translate_sequence(variant_seq)
+                wildtype_aa = translate_sequence(wildtype_seq)
 
         return varipred_input
 
-    def _get_variant(self, chrom, pos, ref, alt, exons):
+    def _get_variant(self, chrom, pos, ref, alt, exons, debug=False):
         """
         Get the variant sequence.
         """
@@ -72,18 +132,19 @@ class VariantLoader:
         sequence = str(ref_genome.seq)
         if str(sequence[pos]).lower() == str(ref).lower():
             variant_seq = sequence[start:pos] + alt.upper() + sequence[pos + 1:end]
-            # print(sequence[start:pos] + "\033[31m" + ref.upper() + "\033[0m" + sequence[pos + 1:end])
-            # print(ref.upper())
-            # print('-----------')
-            # if len(alt) > 1:
-            #     print(alt.upper())
-            #     alts = alt.split(',')
-            #     for alt in alts:
-            #         print(sequence[start:pos] + "\033[31m" + alt.upper() + "\033[0m" + sequence[pos + 1:end])
-            # else:
-            #     print(alt.upper())
-            #     print(sequence[start:pos] + "\033[31m" + alt.upper() + "\033[0m" + sequence[pos + 1:end])
-            # print('\n\n')
+            if debug:
+                print(sequence[start:pos] + "\033[31m" + ref.upper() + "\033[0m" + sequence[pos + 1:end])
+                print(ref.upper())
+                print('-----------')
+                if len(alt) > 1:
+                    print(alt.upper())
+                    alts = alt.split(',')
+                    for alt in alts:
+                        print(sequence[start:pos] + "\033[31m" + alt.upper() + "\033[0m" + sequence[pos + 1:end])
+                else:
+                    print(alt.upper())
+                    print(sequence[start:pos] + "\033[31m" + alt.upper() + "\033[0m" + sequence[pos + 1:end])
+                print('\n\n')
             return variant_seq, sequence
         else:
             raise ValueError(f"The reference allele ({ref}) at position {pos} does not match the specified ref allele "
