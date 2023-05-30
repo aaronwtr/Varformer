@@ -1,6 +1,6 @@
 import os
 
-from dataloader import VariantLoader, GeneCharacterisation
+from dataloader import MissenseVariantLoader, GeneCharacterisation
 
 
 def load_variants():
@@ -12,11 +12,11 @@ def load_variants():
 
     """
     ELGH_DIR = "data/elgh/"
-    UNIPARC_PATH = f"{ELGH_DIR}all_chrs.HC_LoF.genotype_counts.after_genotype_filtering.csv"
-    UNIPARC_PATH = os.path.normpath(UNIPARC_PATH)
+    MIVA_PATH = f"{ELGH_DIR}all_functional.gatk_PASS.FS_30.DP_0.GQ_20.AB_0.01.functional.missingness_lt_0.genotype_" \
+                f"counts.present_in_ELGH.n_transcripts_corrected.txt"
     GENOME_PATH = f"data/hg38.fasta"
 
-    VL = VariantLoader(UNIPARC_PATH, GENOME_PATH)
+    MVL = MissenseVariantLoader(MIVA_PATH, GENOME_PATH)
 
     return 0
 

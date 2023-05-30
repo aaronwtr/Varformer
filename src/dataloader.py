@@ -7,27 +7,21 @@ import os
 import gc
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import gzip
 from Bio import SeqIO
+import ensembl_rest
 from functools import partial
 
 from utils import translate_sequence
 
 
-class VariantLoader:
-    def __init__(self, elgh_path, genome_path, parallel=False, **kwargs):
+class MissenseVariantLoader:
+    def __init__(self, elgh_path, genome_path, **kwargs):
         self.elgh_path = elgh_path
         self.genome_path = genome_path
-        self.variant_cols = ["#CHROM", "POS", "REF", "ALT", "SYMBOL"]
+        self.variant_cols = ["#CHROM",  "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids"]
+
         self.variant_data = self._load_data()
-        if parallel:
-            if kwargs.get('num_processes') is None:
-                raise ValueError("num_processes must be specified if parallel=True")
-            if kwargs.get('batch_size') is None:
-                raise ValueError("batch_size must be specified if parallel=True")
-            self.varipred_input = self.process_variants_parallel(kwargs.get('num_processes'), kwargs.get('batch_size'))
-        else:
-            self.varipred_input = self.process_variants()
+        self.varipred_input = self.process_variants_proteomic()
 
     def _load_data(self):
         """
@@ -37,27 +31,66 @@ class VariantLoader:
         variant_data = variant_data[self.variant_cols]
         return variant_data
 
-    def process_batch(self, args):
-        start_index, end_index, exons, input_tracker, progress_bar = args
+    @staticmethod
+    def fetch_amino_acid_sequence(uniparc_id, wt_aa, mt_aa, aa_index):
+        url = f"https://www.uniprot.org/uniparc/{uniparc_id}.fasta"
+        headers = {"Accept": "text/plain"}
+
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            # Extract sequence from the response content
+            wt_sequence = "".join(response.text.split("\n")[1:])
+            var_sequence = wt_sequence[:aa_index] + mt_aa + wt_sequence[aa_index + 1:]
+
+            return wt_sequence, var_sequence
+        else:
+            raise LookupError(f"Could not find sequence for {uniparc_id}")
+
+    def process_variants_proteomic(self):
+        seq_ids = []
+        sequence_table = []
+        for i in tqdm(range(len(self.variant_data))):
+            aa_index = int(self.variant_data["Protein_position"].iloc[i]) - 1
+            wt_aa = self.variant_data["Amino_acids"].iloc[i].split("/")[0]
+            mt_aa = self.variant_data["Amino_acids"].iloc[i].split("/")[1]
+            uniparc_id = self.variant_data["UNIPARC"].iloc[i]
+            seq_id = f"{self.variant_data['SYMBOL'].iloc[i]}_{aa_index}_{wt_aa}_{mt_aa}"
+            gc.collect()
+            if seq_id not in seq_ids:
+                variant_seq, wildtype_seq = self.fetch_amino_acid_sequence(uniparc_id, wt_aa, mt_aa, aa_index)
+                seq_ids.append(seq_id)
+                # TODO: Run VariPred inference here
+        return sequence_table
+
+    def __process_variants_genomic(self):
         warnings.filterwarnings('ignore')
-        for i in range(start_index, end_index):
+        exons = pd.read_csv("data/exon_variant_locs_unpadded.bed", sep="\t", header=None)
+        exons.columns = ["chr", "start", "stop"]
+
+        seq_ids = []
+
+        for i in tqdm(range(len(self.variant_data))):
             aa_index = self.variant_data["POS"].iloc[i] - 1
             wt_aa = self.variant_data["REF"].iloc[i]
             mt_aa = self.variant_data["ALT"].iloc[i]
             seq_id = f"{self.variant_data['SYMBOL'].iloc[i]}_{aa_index}_{wt_aa}_{mt_aa}"
             gc.collect()
-            if seq_id not in input_tracker:
+            if seq_id not in seq_ids:
                 variant_seq, wildtype_seq = self._get_variant(self.variant_data["#CHROM"].iloc[i], aa_index, wt_aa,
-                                                                       mt_aa, exons)
+                                                              mt_aa, exons)
 
                 variant_aa = translate_sequence(variant_seq)
-                print(i)
                 wildtype_aa = translate_sequence(wildtype_seq)
-                progress_bar.update(1)
-            else:
-                input_tracker.append(seq_id)
 
-    def process_variants_parallel(self, num_processes, batch_size):
+                print(variant_aa)
+                print(wildtype_aa)
+
+                seq_ids.append(seq_id)
+
+        return 0
+
+    def __process_variants_parallel_genomic(self, num_processes, batch_size):
         warnings.filterwarnings('ignore')
         exons = pd.read_csv("data/exon_variant_locs_unpadded.bed", sep="\t", header=None)
         exons.columns = ["chr", "start", "stop"]
@@ -97,41 +130,26 @@ class VariantLoader:
 
         return 0
 
-    def process_variants(self):
-        # Parallelize this function
+    def __process_batch(self, args):
+        start_index, end_index, exons, input_tracker, progress_bar = args
         warnings.filterwarnings('ignore')
-        exons = pd.read_csv("data/exon_variant_locs_unpadded.bed", sep="\t", header=None)
-        exons.columns = ["chr", "start", "stop"]
-
-        seq_ids = []
-
-        for i in tqdm(range(len(self.variant_data))):
+        for i in range(start_index, end_index):
             aa_index = self.variant_data["POS"].iloc[i] - 1
             wt_aa = self.variant_data["REF"].iloc[i]
             mt_aa = self.variant_data["ALT"].iloc[i]
             seq_id = f"{self.variant_data['SYMBOL'].iloc[i]}_{aa_index}_{wt_aa}_{mt_aa}"
             gc.collect()
-            if seq_id not in seq_ids:
+            if seq_id not in input_tracker:
                 variant_seq, wildtype_seq = self._get_variant(self.variant_data["#CHROM"].iloc[i], aa_index, wt_aa,
-                                                              mt_aa, exons)
+                                                                       mt_aa, exons)
 
                 variant_aa = translate_sequence(variant_seq)
+                print(i)
                 wildtype_aa = translate_sequence(wildtype_seq)
+                progress_bar.update(1)
+            else:
+                input_tracker.append(seq_id)
 
-                print(variant_aa)
-                print(wildtype_aa)
-
-                seq_ids.append(seq_id)
-
-                # TODO examine stopcodon bug
-                # TODO fix wildtype sequence bug: sequence does not cover single exon
-                # TODO calculate variant pathogenicity score and store it together with the seq id in a dictionary
-
-                # TODO rather than exon-level, use the full protein for the variant calling. Also check if dataset
-                #  contains already encodes amino acid change and location. In that way, we can use the full protein
-                #  sequence and the variant amino acid change and location to get the wildtype and variant sequence.
-
-        return 0
 
     def _get_variant(self, chrom, pos, ref, alt, exons, debug=False):
         """
