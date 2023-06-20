@@ -78,3 +78,9 @@ models/VariPred/VariPred/model/model.ckpt
 src/mprofile_20230511153234.dat
 
 data/elgh/all_functional.gatk_PASS.FS_30.DP_0.GQ_20.AB_0.01.functional.missingness_lt_0.genotype_counts.present_in_ELGH.n_transcripts_corrected.txt
+
+scatter_fda_labels_ab.pdf
+
+plots/opentargets tractability/scatter_fda_labels_sm.pdf
+
+plots/opentargets tractability/scatter_fda_labels.pdf
