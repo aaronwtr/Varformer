@@ -32,14 +32,13 @@ class MissenseVariantLoader:
         return variant_data
 
     @staticmethod
-    def fetch_amino_acid_sequence(uniparc_id, wt_aa, mt_aa, aa_index):
+    def fetch_amino_acid_sequence(uniparc_id, mt_aa, aa_index):
         url = f"https://www.uniprot.org/uniparc/{uniparc_id}.fasta"
         headers = {"Accept": "text/plain"}
 
         response = requests.get(url, headers=headers)
 
         if response.status_code == 200:
-            # Extract sequence from the response content
             wt_sequence = "".join(response.text.split("\n")[1:])
             var_sequence = wt_sequence[:aa_index] + mt_aa + wt_sequence[aa_index + 1:]
 
@@ -58,7 +57,7 @@ class MissenseVariantLoader:
             seq_id = f"{self.variant_data['SYMBOL'].iloc[i]}_{aa_index}_{wt_aa}_{mt_aa}"
             gc.collect()
             if seq_id not in seq_ids:
-                variant_seq, wildtype_seq = self.fetch_amino_acid_sequence(uniparc_id, wt_aa, mt_aa, aa_index)
+                variant_seq, wildtype_seq = self.fetch_amino_acid_sequence(uniparc_id, mt_aa, aa_index)
                 seq_ids.append(seq_id)
                 # TODO: Run VariPred inference here
         return sequence_table

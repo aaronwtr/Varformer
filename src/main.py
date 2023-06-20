@@ -1,6 +1,7 @@
 import os
 
 from dataloader import MissenseVariantLoader, GeneCharacterisation
+from plot import tractibility_plot
 
 
 def load_variants():
@@ -27,5 +28,10 @@ def gene_characterisation():
 
 
 if __name__ == "__main__":
-    # gc_features = gene_characterisation()
-    load_variants()
+    gc_features = gene_characterisation()
+    raw_tract_data = gc_features.bin_tract_features
+    tract_data = gc_features.tract_features
+    fda_approvals = gc_features.ot_fda_approvals
+
+    tractibility_plot(tract_data[0], fda_approvals[0], 'SM')
+    tractibility_plot(tract_data[1], fda_approvals[1], 'AB')
