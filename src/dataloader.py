@@ -18,10 +18,12 @@ class MissenseVariantLoader:
     def __init__(self, elgh_path, genome_path, **kwargs):
         self.elgh_path = elgh_path
         self.genome_path = genome_path
-        self.variant_cols = ["#CHROM",  "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids"]
-
+        self.variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids"]
         self.variant_data = self._load_data()
-        self.varipred_input = self.process_variants_proteomic()
+        if os.path.exists('data/VariPred/variants.csv'):
+            print('Found variants.csv in data/VariPred/variants.csv')
+        else:
+            self.process_variants_proteomic()
 
     def _load_data(self):
         """
@@ -47,6 +49,7 @@ class MissenseVariantLoader:
             raise LookupError(f"Could not find sequence for {uniparc_id}")
 
     def process_variants_proteomic(self):
+        # TODO: Run this on the cluster
         seq_ids = []
         sequence_table = []
         for i in tqdm(range(len(self.variant_data))):
@@ -59,8 +62,11 @@ class MissenseVariantLoader:
             if seq_id not in seq_ids:
                 variant_seq, wildtype_seq = self.fetch_amino_acid_sequence(uniparc_id, mt_aa, aa_index)
                 seq_ids.append(seq_id)
-                # TODO: Run VariPred inference here
-        return sequence_table
+                sequence_table.append([seq_id, aa_index, wt_aa, mt_aa, wildtype_seq, variant_seq])
+        sequence_table = pd.DataFrame(sequence_table, columns=["seq_id", "aa_index", "wt_aa", "mt_aa", "wt_seq",
+                                                               "mt_seq"])
+        sequence_table.to_csv("data/VariPred/variants.csv", index=False)
+        print(f'Variant sequences saved to data/VariPred/variants.csv')
 
     def __process_variants_genomic(self):
         warnings.filterwarnings('ignore')
@@ -140,7 +146,7 @@ class MissenseVariantLoader:
             gc.collect()
             if seq_id not in input_tracker:
                 variant_seq, wildtype_seq = self._get_variant(self.variant_data["#CHROM"].iloc[i], aa_index, wt_aa,
-                                                                       mt_aa, exons)
+                                                              mt_aa, exons)
 
                 variant_aa = translate_sequence(variant_seq)
                 print(i)
@@ -148,7 +154,6 @@ class MissenseVariantLoader:
                 progress_bar.update(1)
             else:
                 input_tracker.append(seq_id)
-
 
     def _get_variant(self, chrom, pos, ref, alt, exons, debug=False):
         """
