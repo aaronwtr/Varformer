@@ -16,13 +16,27 @@ def get_embeds(df, dataset):
     '''
 
     input: dataframe (e.g. ../example/dataset/train.csv)
-    output: .pkl (e.g. ../example/embeds/train.pkl)
+    output: .pt (e.g. ../example/embeds/train.pt)
 
     '''
 
-    model_1b, alphabet_1b = esm.pretrained.esm1b_t33_650M_UR50S()
-    batch_converter_1b = alphabet_1b.get_batch_converter()
-    utils.get_embeds_and_logits(df, save_path = config.esm_storage_path, data_class=dataset, model = model_1b, batch_converter = batch_converter_1b, alphabet = alphabet_1b)
+    model, alphabet = esm.pretrained.esm1b_t33_650M_UR50S()
+    batch_converter = alphabet.get_batch_converter()
+    
+    # truncate the long sequence into 1022
+    df['Length'] = df['wt_seq'].apply(lambda x: len(x))
+
+    if max(set(df.Length)) > 1022:
+        df = utils.df_process(df)
+    else:
+        df['new_index'] = df['aa_index']
+    
+    print('data length:', df.shape[0])
+
+    df['record_id'] = df['target_id']
+    
+    utils.generate_embeds_and_save(df, save_path = config.esm_storage_path, data_class=dataset, model = model, batch_converter = batch_converter, alphabet = alphabet)
+
 
 
 def train_VariPred(train_ds, test_ds, valid_ds=None,train=True):
@@ -171,14 +185,15 @@ if __name__ == '__main__':
         
         print(f'getting embeds for {args.test_ds}.csv')
         get_embeds(test_df, dataset = args.test_ds)
-
         train_VariPred(args.train_ds, args.test_ds)
 
     else:
         # predict the target df with VariPred
         target_df = pd.read_csv(f'{storage_path}/{args.pred}.csv')
         target_df['label'] = -1 # it doesn't matter what the true label is. It's just to ensure the programme can run properly.  
-        get_embeds(target_df, dataset = args.pred)
+        if not os.path.exists(f'{config.esm_storage_path}/{args.pred}.pkl'):
+            print(f'getting embeds for {args.pred}.csv')  
+            get_embeds(target_df, dataset = args.pred)
         run_VariPred(target_ds=args.pred, output=args.output)
 
     
