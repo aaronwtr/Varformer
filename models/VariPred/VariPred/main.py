@@ -154,7 +154,7 @@ def run_VariPred(target_ds,output):
                           output_name=output
                           )
     print()
-    print(f"Your prediction results are saved in ../example/output_results/{output}.txt")
+    print(f"Your prediction results are saved in ../output/{output}.txt")
 
 
 parser = argparse.ArgumentParser(description='add args for training the VariPred model')

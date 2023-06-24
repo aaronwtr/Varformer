@@ -4,8 +4,8 @@
 # output_path: file name for the predicted results (in .txt format)
 
 # In this example, we are using the training set named as "target.csv" under the directory "../example/dataset"
-df_path="../example/dataset"
-target_ds="target"
+df_path="../../../../data/VariPred"
+target_ds="variants"
 output_name="VariPred_output" 
 
 python3 main.py \

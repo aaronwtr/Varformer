@@ -351,7 +351,7 @@ def predict(test_loader, model, device):
 
 
 def predict_results(y_true, preds, record_id, train=False, output_name=None):
-    result_path = f'../example/output_results'  # path for saving predictions
+    result_path = f'../output'  # path for saving predictions
 
     if not os.path.exists(f'{result_path}'):
         os.makedirs(result_path)
