@@ -53,16 +53,19 @@ class MissenseVariantLoader:
         seq_ids = []
         sequence_table = []
         for i in tqdm(range(len(self.variant_data))):
-            aa_index = int(self.variant_data["Protein_position"].iloc[i]) - 1
-            wt_aa = self.variant_data["Amino_acids"].iloc[i].split("/")[0]
-            mt_aa = self.variant_data["Amino_acids"].iloc[i].split("/")[1]
-            uniparc_id = self.variant_data["UNIPARC"].iloc[i]
-            seq_id = f"{self.variant_data['SYMBOL'].iloc[i]}_{aa_index}_{wt_aa}_{mt_aa}"
-            gc.collect()
-            if seq_id not in seq_ids:
-                variant_seq, wildtype_seq = self.fetch_amino_acid_sequence(uniparc_id, mt_aa, aa_index)
-                seq_ids.append(seq_id)
-                sequence_table.append([seq_id, aa_index, wt_aa, mt_aa, wildtype_seq, variant_seq])
+            if '-' in self.variant_data["Protein_position"].iloc[i]:
+                continue
+            else:
+                aa_index = int(self.variant_data["Protein_position"].iloc[i]) - 1
+                wt_aa = self.variant_data["Amino_acids"].iloc[i].split("/")[0]
+                mt_aa = self.variant_data["Amino_acids"].iloc[i].split("/")[1]
+                uniparc_id = self.variant_data["UNIPARC"].iloc[i]
+                seq_id = f"{self.variant_data['SYMBOL'].iloc[i]}_{aa_index}_{wt_aa}_{mt_aa}"
+                gc.collect()
+                if seq_id not in seq_ids:
+                    variant_seq, wildtype_seq = self.fetch_amino_acid_sequence(uniparc_id, mt_aa, aa_index)
+                    seq_ids.append(seq_id)
+                    sequence_table.append([seq_id, aa_index, wt_aa, mt_aa, wildtype_seq, variant_seq])
         sequence_table = pd.DataFrame(sequence_table, columns=["seq_id", "aa_index", "wt_aa", "mt_aa", "wt_seq",
                                                                "mt_seq"])
         sequence_table.to_csv("data/VariPred/variants.csv", index=False)
