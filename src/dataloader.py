@@ -19,17 +19,24 @@ class MissenseVariantLoader:
         self.elgh_path = elgh_path
         self.genome_path = genome_path
         self.variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids"]
-        self.variant_data = self._load_data()
-        if os.path.exists('data/VariPred/variants.csv'):
-            print('Found variants.csv in data/VariPred/variants.csv')
+        self.variant_data = self.load_data()
+        variant_files = os.listdir('data/VariPred/')
+        if len(variant_files) != 1000:
+            print('Found variant files in data/VariPred/')
         else:
             self.process_variants_proteomic()
+        variant_files = os.listdir('data/VariPred/')
+        for file in variant_files:
+            if file.endswith('.csv'):
+                self.calculate_pathogenicity(file)
 
-    def _load_data(self):
+
+    def load_data(self):
         """
         Load the variant data and the reference genome.
         """
-        variant_data = pd.read_csv(self.elgh_path, sep="\t")
+        variant_data = pd.read_csv(self.elgh_path)
+        variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
         variant_data = variant_data[self.variant_cols]
         return variant_data
 
@@ -49,17 +56,19 @@ class MissenseVariantLoader:
             raise LookupError(f"Could not find sequence for {uniparc_id}")
 
     def process_variants_proteomic(self):
-        # TODO: Run this on the cluster
         seq_ids = []
         sequence_table = []
         for i in tqdm(range(len(self.variant_data))):
-            if '-' in self.variant_data["Protein_position"].iloc[i]:
+            uniparc_id = str(self.variant_data["UNIPARC"].iloc[i])
+            if '-' in str(self.variant_data["Protein_position"].iloc[i]) or uniparc_id == "nan":
                 continue
             else:
                 aa_index = int(self.variant_data["Protein_position"].iloc[i]) - 1
                 wt_aa = self.variant_data["Amino_acids"].iloc[i].split("/")[0]
-                mt_aa = self.variant_data["Amino_acids"].iloc[i].split("/")[1]
-                uniparc_id = self.variant_data["UNIPARC"].iloc[i]
+                if '/' in self.variant_data["Amino_acids"].iloc[i]:
+                    mt_aa = self.variant_data["Amino_acids"].iloc[i].split("/")[1]
+                else:
+                    mt_aa = self.variant_data["Amino_acids"].iloc[i]
                 seq_id = f"{self.variant_data['SYMBOL'].iloc[i]}_{aa_index}_{wt_aa}_{mt_aa}"
                 gc.collect()
                 if seq_id not in seq_ids:
@@ -68,8 +77,13 @@ class MissenseVariantLoader:
                     sequence_table.append([seq_id, aa_index, wt_aa, mt_aa, wildtype_seq, variant_seq])
         sequence_table = pd.DataFrame(sequence_table, columns=["seq_id", "aa_index", "wt_aa", "mt_aa", "wt_seq",
                                                                "mt_seq"])
-        sequence_table.to_csv("data/VariPred/variants.csv", index=False)
-        print(f'Variant sequences saved to data/VariPred/variants.csv')
+        variants_id = str(self.elgh_path.split("_")[-1].split(".")[0])
+        sequence_table.to_csv(f"../data/VariPred/variants_{variants_id}.csv", index=False)
+
+    @staticmethod
+    def calculate_pathogenicity(variant_file):
+        pass
+        
 
     def __process_variants_genomic(self):
         warnings.filterwarnings('ignore')
