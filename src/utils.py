@@ -1,6 +1,7 @@
 import numpy as np
 from Bio import Seq
-
+import pandas as pd
+import os
 
 def count_scaling(counts):
     """
@@ -30,3 +31,27 @@ def translate_sequence(sequence):
     """
     seq = Seq.Seq(sequence)
     return seq.translate()
+
+
+def split_data(data_path, num_batches):
+    """
+    Splits data into batches.
+    """
+    variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids"]
+    variant_data = pd.read_csv(data_path, sep="\t")
+    variant_data = variant_data[variant_cols]
+    batches = np.array_split(variant_data, num_batches)
+    for i, batch in enumerate(batches):
+        batch.to_csv(f"data/elgh/batch_mivas/variant_data_{i + 1}.csv")
+
+
+def find_error_files(path):
+    output_files = os.listdir(path)
+    output_files = [file for file in output_files if file.endswith(".csv")]
+    output_files = [int(file.split("_")[1].split(".")[0]) for file in output_files]
+    output_files = sorted(output_files)
+    input_files = np.arange(1, 1001)
+    missing_files = np.setdiff1d(input_files, output_files)
+    # save the missing files as a row separated .txt file
+    np.savetxt("data/elgh/missing_miva_files.txt", missing_files, fmt="%d")
+    print(len(missing_files))

@@ -92,3 +92,11 @@ plots/opentargets tractability/scatter_fda_labels_sm_full.pdf
 plots/scatter_fda_labels_sm.pdf
 
 Apocrita_ArrayJobExample.sh
+
+data/elgh/missing_miva_files.txt
+
+missing_miva_files.txt
+
+variant_calling_array.sh
+
+variant_calling_array_1.sh
