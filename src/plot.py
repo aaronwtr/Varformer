@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def tractibility_plot(tractability_scores, fda_labels, plottype=None, fda=True):
+def tractability_plot(tractability_scores, fda_labels, plottype=None, fda=True):
     if plottype == None:
         raise ValueError('Please specify type of plot. (SM or AB)')
     colors = ['red' if x == 1 else 'blue' for x in fda_labels]
@@ -33,3 +33,45 @@ def tractibility_plot(tractability_scores, fda_labels, plottype=None, fda=True):
 
     plt.show()
 
+
+def variant_sparsity_barplot(variant_df, save=False):
+    """
+    Plots a bar chart of the number of variants with a given number of NaN values.
+    :param variant_df: pandas dataframe of variants
+    :return: bar chart of variant sparsity
+    """
+    sift_counts = variant_df['sift'].value_counts()
+    polyphen_counts = variant_df['polyphen'].value_counts()
+
+    # Count the number of NaN values in 'sift' and 'polyphen' columns
+    sift_nan_count = variant_df['sift'].isna().sum()
+    polyphen_nan_count = variant_df['polyphen'].isna().sum()
+
+    names = ['SIFT', 'PolyPhen']
+    print(sift_counts.sum(), polyphen_counts.sum())
+    print(sift_nan_count, polyphen_nan_count)
+    counts = {
+        'Total': np.array([sift_counts.sum(), polyphen_counts.sum()]),
+        'NaN': np.array([sift_nan_count, polyphen_nan_count])
+    }
+    width = 0.4
+
+    fig, ax = plt.subplots(figsize=(6, 8))
+    bottom = np.zeros(2)
+
+    for category, count in counts.items():
+        p = ax.bar(names, count, width, align="center", label=category)
+        bottom += count
+
+    ax.legend(loc='upper right', bbox_to_anchor=(5.5, 7.5))
+
+    ax.set_xlabel('Pathogenicity')
+    ax.set_ylabel('Variant count')
+    ax.set_title('Sparsity of pathogenicity data from SIFT and PolyPhen')
+
+    ax.legend()
+    plt.show()
+
+    if save:
+        fig.savefig('plots/variant_sparsity_bar.pdf')
+        fig.savefig('plots/variant_sparsity_bar.png')

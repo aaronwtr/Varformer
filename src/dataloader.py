@@ -12,14 +12,17 @@ import ensembl_rest
 from functools import partial
 
 from utils import translate_sequence
+from plot import variant_sparsity_barplot
 
 
 class MissenseVariantLoader:
     def __init__(self, elgh_path, genome_path, **kwargs):
         self.elgh_path = elgh_path
         self.genome_path = genome_path
-        self.variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids"]
+        self.variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids", "SIFT", "PolyPhen"]
+        self.parse = False
         self.variant_data = self.load_data()
+        self.analyze_pathogenicity()
         variant_files = os.listdir('data/VariPred/')
         if len(variant_files) != 1000:
             print('Found variant files in data/VariPred/')
@@ -35,10 +38,39 @@ class MissenseVariantLoader:
         """
         Load the variant data and the reference genome.
         """
-        variant_data = pd.read_csv(self.elgh_path)
+        if self.parse:
+            variant_data = pd.read_csv(self.elgh_path)
+        else:
+            variant_data = pd.read_csv(self.elgh_path, sep="\t")
         variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
         variant_data = variant_data[self.variant_cols]
         return variant_data
+
+    def analyze_pathogenicity(self):
+        """
+        Analyze the pathogenicity determined by SIFT and PolyPhen.
+        """
+        sift = self.variant_data["SIFT"].values
+        polyphen = self.variant_data["PolyPhen"].values
+        # combine the two pathogenicity scores in a dataframe with column names 'sift' and 'polyphen'
+        pathogenicity = pd.DataFrame({"sift": sift, "polyphen": polyphen})
+
+        pathogenicity['sift'] = pathogenicity['sift'].str.extract(r'\((.*?)\)').astype(float)
+        pathogenicity['polyphen'] = pathogenicity['polyphen'].str.extract(r'\((.*?)\)').astype(float)
+        variant_sparsity_barplot(pathogenicity, save=False)
+
+        num_vars = len(list(pathogenicity['polyphen'].values))
+
+        sift_nan_count = pathogenicity['sift'].isna().sum()
+        polyphen_nan_count = pathogenicity['polyphen'].isna().sum()
+
+        pp_sparsity = round(polyphen_nan_count / num_vars, 3)
+        sift_sparsity = round(sift_nan_count / num_vars, 3)
+
+        print(f"PolyPhen sparsity: {pp_sparsity}")
+        print(f"SIFT sparsity: {sift_sparsity}")
+
+        print(pathogenicity)
 
     @staticmethod
     def fetch_amino_acid_sequence(uniparc_id, mt_aa, aa_index):
@@ -83,7 +115,7 @@ class MissenseVariantLoader:
     @staticmethod
     def calculate_pathogenicity(variant_file):
         pass
-        
+
 
     def __process_variants_genomic(self):
         warnings.filterwarnings('ignore')

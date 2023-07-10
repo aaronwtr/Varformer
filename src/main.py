@@ -4,7 +4,7 @@ from dataloader import MissenseVariantLoader, GeneCharacterisation
 from utils import split_data, find_error_files
 
 
-def load_variants():
+def load_variants(parse=True):
     """
     This function reads in uniparc IDs from the ELGH data set and retrieves the multiple sequence alignment from the
     UNIPROT database. The MSA is then saved as a .fasta file and returned to the main function as a list. This is the
@@ -17,13 +17,17 @@ def load_variants():
                 f"counts.present_in_ELGH.n_transcripts_corrected.txt"
     parser.add_argument('--data', type=str, default=f"{MIVA_PATH}")
     GENOME_PATH = f"data/hg38.fasta"
+    parse = False
 
-    args = parser.parse_args()
-    data_path = args.data
-    if data_path is MIVA_PATH:
-        MVL = MissenseVariantLoader(MIVA_PATH, GENOME_PATH)
+    if parse:
+        args = parser.parse_args()
+        data_path = args.data
+        if data_path is MIVA_PATH:
+            MVL = MissenseVariantLoader(MIVA_PATH, GENOME_PATH)
+        else:
+            MVL = MissenseVariantLoader(data_path, GENOME_PATH)
     else:
-        MVL = MissenseVariantLoader(data_path, GENOME_PATH)
+        MVL = MissenseVariantLoader(MIVA_PATH, GENOME_PATH)
 
     return 0
 
@@ -34,5 +38,5 @@ def gene_characterisation():
 
 
 if __name__ == "__main__":
-    # load_variants()
-    find_error_files("data/VariPred/")
+    load_variants()
+    # find_error_files("data/VariPred/")
