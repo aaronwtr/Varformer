@@ -100,3 +100,7 @@ missing_miva_files.txt
 variant_calling_array.sh
 
 variant_calling_array_1.sh
+
+plots/variant_sparsity_bar.pdf
+
+plots/sift_pp_pathogenicity_correlation.pdf

@@ -75,3 +75,18 @@ def variant_sparsity_barplot(variant_df, save=False):
     if save:
         fig.savefig('plots/variant_sparsity_bar.pdf')
         fig.savefig('plots/variant_sparsity_bar.png')
+
+
+def pathogenicity_correlation_plot(df, save):
+    corr = df['sift'].corr(df['polyphen'])
+
+    plt.scatter(df['sift'], df['polyphen'], alpha=0.5, s=2, c='blue')
+    plt.xlabel('SIFT')
+    plt.ylabel('PolyPhen')
+    plt.title('Correlation between pathogenicity scores of SIFT and PolyPhen')
+    plt.text(df['sift'].max() + 0.04, df['polyphen'].max() + 0.04, f'Correlation: {corr:.2f}', ha='right', va='top')
+
+    if save:
+        plt.savefig('plots/sift_pp_pathogenicity_correlation.pdf')
+        plt.savefig('plots/sift_pp_pathogenicity_correlation.png')
+        plt.show()
