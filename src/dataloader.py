@@ -10,9 +10,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from Bio import SeqIO
 import ensembl_rest
 from functools import partial
+import matplotlib.pyplot as plt
 
 from utils import translate_sequence
-from plot import variant_sparsity_barplot
+from plot import variant_sparsity_barplot, pathogenicity_correlation_plot
 
 
 class MissenseVariantLoader:
@@ -22,7 +23,7 @@ class MissenseVariantLoader:
         self.variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids", "SIFT", "PolyPhen"]
         self.parse = False
         self.variant_data = self.load_data()
-        self.analyze_pathogenicity()
+        # self.analyze_pathogenicity()
         variant_files = os.listdir('data/VariPred/')
         if len(variant_files) != 1000:
             print('Found variant files in data/VariPred/')
@@ -52,12 +53,12 @@ class MissenseVariantLoader:
         """
         sift = self.variant_data["SIFT"].values
         polyphen = self.variant_data["PolyPhen"].values
-        # combine the two pathogenicity scores in a dataframe with column names 'sift' and 'polyphen'
+
         pathogenicity = pd.DataFrame({"sift": sift, "polyphen": polyphen})
 
         pathogenicity['sift'] = pathogenicity['sift'].str.extract(r'\((.*?)\)').astype(float)
         pathogenicity['polyphen'] = pathogenicity['polyphen'].str.extract(r'\((.*?)\)').astype(float)
-        variant_sparsity_barplot(pathogenicity, save=False)
+        variant_sparsity_barplot(pathogenicity, save=True)
 
         num_vars = len(list(pathogenicity['polyphen'].values))
 
@@ -70,7 +71,9 @@ class MissenseVariantLoader:
         print(f"PolyPhen sparsity: {pp_sparsity}")
         print(f"SIFT sparsity: {sift_sparsity}")
 
-        print(pathogenicity)
+        pathogenicity_correlation_plot(pathogenicity, save=True)
+
+        print("Done analyzing pathogenicity.")
 
     @staticmethod
     def fetch_amino_acid_sequence(uniparc_id, mt_aa, aa_index):
