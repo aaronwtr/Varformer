@@ -32,14 +32,14 @@ def get_truncation(chop):
             select_mt = seq['mt_seq'][0:1022]
             chop.loc[index, 'wt_seq'] = select_wt
             chop.loc[index, 'mt_seq'] = select_mt
-            chop['new_index'] = seq['aa_index']
+            chop.loc[index,'new_index'] = seq['aa_index']
 
         elif seq['aa_index'] > seq['Length'] - 1022:
             select_wt = seq['wt_seq'][-1022:]
             select_mt = seq['mt_seq'][-1022:]
             chop.loc[index, 'wt_seq'] = select_wt
             chop.loc[index, 'mt_seq'] = select_mt
-            chop['new_index'] = seq['aa_index']-seq['Length']+1022
+            chop.loc[index,'new_index'] = seq['aa_index']-seq['Length']+1022
         else:
             select_wt = seq['wt_seq'][seq['aa_index'] -
                                       511:seq['aa_index'] + 511]
@@ -47,7 +47,8 @@ def get_truncation(chop):
                                       511:seq['aa_index'] + 511]
             chop.loc[index, 'wt_seq'] = select_wt
             chop.loc[index, 'mt_seq'] = select_mt
-            chop['new_index'] = 511
+            chop.loc[index,'new_index'] = 511
+    chop["new_index"] = chop["new_index"].astype(int)
 
     return chop
 
@@ -351,7 +352,7 @@ def predict(test_loader, model, device):
 
 
 def predict_results(y_true, preds, record_id, train=False, output_name=None):
-    result_path = f'../output'  # path for saving predictions
+    result_path = f'../example/output_results'  # path for saving predictions
 
     if not os.path.exists(f'{result_path}'):
         os.makedirs(result_path)

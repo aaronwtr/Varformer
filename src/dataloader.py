@@ -12,7 +12,7 @@ import ensembl_rest
 from functools import partial
 import matplotlib.pyplot as plt
 
-from utils import translate_sequence
+from utils import translate_sequence, run_shell_script
 from plot import variant_sparsity_barplot, pathogenicity_correlation_plot
 
 
@@ -29,11 +29,10 @@ class MissenseVariantLoader:
             print('Found variant files in data/VariPred/')
         else:
             self.process_variants_proteomic()
-        variant_files = os.listdir('data/VariPred/')
+        variant_files = os.listdir('data/VariPred/input/')
         for file in variant_files:
             if file.endswith('.csv'):
-                self.calculate_pathogenicity(file)
-
+                self.calculate_pathogenicity(file[:-4])
 
     def load_data(self):
         """
@@ -113,11 +112,14 @@ class MissenseVariantLoader:
         sequence_table = pd.DataFrame(sequence_table, columns=["seq_id", "aa_index", "wt_aa", "mt_aa", "wt_seq",
                                                                "mt_seq"])
         variants_id = str(self.elgh_path.split("_")[-1].split(".")[0])
-        sequence_table.to_csv(f"../data/VariPred/variants_{variants_id}.csv", index=False)
+        sequence_table.to_csv(f"../data/VariPred/input/variants_{variants_id}.csv", index=False)
 
     @staticmethod
     def calculate_pathogenicity(variant_file):
-        pass
+        file_path = f"data/VariPred/input/{variant_file}"
+        run_shell_script(file_path)
+        print('koekoek jonguh')
+
 
 
     def __process_variants_genomic(self):

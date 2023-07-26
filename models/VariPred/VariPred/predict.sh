@@ -5,10 +5,10 @@
 
 # In this example, we are using the training set named as "target.csv" under the directory "../example/dataset"
 df_path="../../../../data/VariPred"
-target_ds="variants"
-output_name="VariPred_output" 
+target_ds=$1
+output_name="output/VariPred_output_$1"
 
-python3 main.py \
+python3 models/VariPred/VariPred/main.py \
                 -p ${df_path} \
                 -i ${target_ds} \
                 -o ${output_name}

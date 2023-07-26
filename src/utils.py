@@ -2,6 +2,7 @@ import numpy as np
 from Bio import Seq
 import pandas as pd
 import os
+import subprocess
 
 def count_scaling(counts):
     """
@@ -55,3 +56,13 @@ def find_error_files(path):
     # save the missing files as a row separated .txt file
     np.savetxt("data/elgh/missing_miva_files.txt", missing_files, fmt="%d")
     print(len(missing_files))
+
+
+def run_shell_script(file_path):
+    script_path = f"models/VariPred/VariPred/predict.sh"
+    try:
+        subprocess.run(["bash", script_path, file_path], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error while running the shell script: {e}")
+    else:
+        print("Shell script executed successfully!")
