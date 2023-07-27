@@ -104,3 +104,7 @@ variant_calling_array_1.sh
 plots/variant_sparsity_bar.pdf
 
 plots/sift_pp_pathogenicity_correlation.pdf
+
+data/VariPred/embeds/
+
+data/VariPred/output/
