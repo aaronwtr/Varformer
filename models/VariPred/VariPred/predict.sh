@@ -4,7 +4,7 @@
 # output_path: file name for the predicted results (in .txt format)
 
 # In this example, we are using the training set named as "target.csv" under the directory "../example/dataset"
-df_path="../../../../data/VariPred"
+df_path="data/VariPred/input/"
 target_ds=$1
 output_name="output/VariPred_output_$1"
 
