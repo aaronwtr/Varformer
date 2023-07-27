@@ -109,18 +109,15 @@ class MissenseVariantLoader:
                     variant_seq, wildtype_seq = self.fetch_amino_acid_sequence(uniparc_id, mt_aa, aa_index)
                     seq_ids.append(seq_id)
                     sequence_table.append([seq_id, aa_index, wt_aa, mt_aa, wildtype_seq, variant_seq])
-        sequence_table = pd.DataFrame(sequence_table, columns=["seq_id", "aa_index", "wt_aa", "mt_aa", "wt_seq",
+        sequence_table = pd.DataFrame(sequence_table, columns=["target_id", "aa_index", "wt_aa", "mt_aa", "wt_seq",
                                                                "mt_seq"])
         variants_id = str(self.elgh_path.split("_")[-1].split(".")[0])
         sequence_table.to_csv(f"../data/VariPred/input/variants_{variants_id}.csv", index=False)
 
     @staticmethod
     def calculate_pathogenicity(variant_file):
-        file_path = f"data/VariPred/input/{variant_file}"
-        run_shell_script(file_path)
-        print('koekoek jonguh')
-
-
+        file = f"{variant_file}"
+        run_shell_script(file)
 
     def __process_variants_genomic(self):
         warnings.filterwarnings('ignore')
