@@ -33,7 +33,7 @@ def get_embeds(df, dataset):
     
     print('data length:', df.shape[0])
 
-    df['record_id'] = df['target_id']
+    df['record_id'] = df['seq_id']
     
     utils.generate_embeds_and_save(df, save_path = config.esm_storage_path, data_class=dataset, model = model, batch_converter = batch_converter, alphabet = alphabet)
 
@@ -139,12 +139,12 @@ def run_VariPred(target_ds,output):
     num_hidden = int(model_size/2) 
     model = utils.MLPClassifier_LeakyReLu(num_input = model_size, num_hidden = num_hidden, num_output = config.label_num).to(config.device)
 
-    storage_path = f'./model'
+    storage_path = f'models/VariPred/VariPred/model'
     
     if not os.path.exists(storage_path):
         print('Please train the model first')
     
-    checkpoint=torch.load(f'{storage_path}/model.ckpt')
+    checkpoint=torch.load(f'{storage_path}/model.ckpt', map_location=config.device)
     model.load_state_dict(checkpoint['model_state_dict'])
     
     preds, y_true = utils.predict(target_loader, model, config.device)
