@@ -3,6 +3,7 @@ from Bio import Seq
 import pandas as pd
 import os
 import subprocess
+import config
 
 def count_scaling(counts):
     """
@@ -59,7 +60,7 @@ def find_error_files(path):
 
 
 def run_shell_script(file_path):
-    script_path = f"models/VariPred/VariPred/predict.sh"
+    script_path = config.VP_SCRIPT_PATH
     try:
         subprocess.run(["bash", script_path, file_path], check=True)
     except subprocess.CalledProcessError as e:

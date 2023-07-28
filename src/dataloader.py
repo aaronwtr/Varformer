@@ -8,20 +8,27 @@ import gc
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from Bio import SeqIO
+import argparse
 import ensembl_rest
 from functools import partial
 import matplotlib.pyplot as plt
 
 from utils import translate_sequence, run_shell_script
 from plot import variant_sparsity_barplot, pathogenicity_correlation_plot
+import config
 
 
 class MissenseVariantLoader:
-    def __init__(self, elgh_path, genome_path, **kwargs):
-        self.elgh_path = elgh_path
-        self.genome_path = genome_path
+    def __init__(self):
+        parser = argparse.ArgumentParser(description='Script to process variants')
+        parser.add_argument('--data', type=str)
+        self.args = parser.parse_args()
+        if self.args.data is not None:
+            self.elgh_path = self.args.data
+        else:
+            self.elgh_path = config.MIVA_PATH
+        self.genome_path = config.GENOME_PATH
         self.variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids", "SIFT", "PolyPhen"]
-        self.parse = False
         self.variant_data = self.load_data()
         # self.analyze_pathogenicity()
         variant_files = os.listdir('data/VariPred/')
@@ -38,7 +45,7 @@ class MissenseVariantLoader:
         """
         Load the variant data and the reference genome.
         """
-        if self.parse:
+        if self.args.data is not None:
             variant_data = pd.read_csv(self.elgh_path)
         else:
             variant_data = pd.read_csv(self.elgh_path, sep="\t")
