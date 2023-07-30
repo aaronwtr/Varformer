@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import subprocess
 import config
+import re
 
 def count_scaling(counts):
     """
@@ -67,3 +68,9 @@ def run_shell_script(file_path):
         print(f"Error while running the shell script: {e}")
     else:
         print("Shell script executed successfully!")
+
+
+def extract_number(filename):
+    # Use regular expression to find the digits in the filename
+    match = re.search(r'\d+', filename)
+    return int(match.group()) if match else -1
