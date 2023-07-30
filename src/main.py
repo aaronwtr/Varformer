@@ -5,7 +5,7 @@ from utils import split_data, find_error_files
 import config
 
 
-def load_missense_variants(parse=True):
+def load_missense_variants():
     MVL = MissenseVariantLoader()
     print("Missense variants loaded!\n")
     return 0
@@ -18,5 +18,5 @@ def gene_characterisation():
 
 
 if __name__ == "__main__":
-    load_missense_variants(parse=False)
+    load_missense_variants()
     # find_error_files("data/VariPred/")

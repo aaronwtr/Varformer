@@ -13,7 +13,7 @@ import ensembl_rest
 from functools import partial
 import matplotlib.pyplot as plt
 
-from utils import translate_sequence, run_shell_script
+from utils import translate_sequence, run_shell_script, extract_number
 from plot import variant_sparsity_barplot, pathogenicity_correlation_plot
 import config
 
@@ -37,6 +37,7 @@ class MissenseVariantLoader:
         else:
             self.process_variants_proteomic()
         variant_files = os.listdir('data/VariPred/input/')
+        variant_files = sorted(variant_files, key=extract_number)
         for file in variant_files:
             if file.endswith('.csv'):
                 self.calculate_pathogenicity(file[:-4])
