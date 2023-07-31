@@ -22,6 +22,7 @@ class MissenseVariantLoader:
     def __init__(self):
         parser = argparse.ArgumentParser(description='Script to process variants')
         parser.add_argument('--data', type=str)
+        parser.add_argument('--varipred_input', type=str)
         self.args = parser.parse_args()
         if self.args.data is not None:
             self.elgh_path = self.args.data
@@ -36,11 +37,18 @@ class MissenseVariantLoader:
             print('Found variant files in data/VariPred/')
         else:
             self.process_variants_proteomic()
-        variant_files = os.listdir('data/VariPred/input/')
-        variant_files = sorted(variant_files, key=extract_number)
-        for file in variant_files:
-            if file.endswith('.csv'):
-                self.calculate_pathogenicity(file[:-4])
+        if self.args.varipred_input is not None:
+            variant_files = os.listdir(self.args.varipred_input)
+            variant_files = sorted(variant_files, key=extract_number)
+            for file in variant_files:
+                if file.endswith('.csv'):
+                    self.calculate_pathogenicity(file[:-4])
+        else:
+            variant_files = os.listdir('data/VariPred/input/')
+            variant_files = sorted(variant_files, key=extract_number)
+            for file in variant_files:
+                if file.endswith('.csv'):
+                    self.calculate_pathogenicity(file[:-4])
 
     def load_data(self):
         """
