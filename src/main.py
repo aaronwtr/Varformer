@@ -19,4 +19,4 @@ def gene_characterisation():
 
 if __name__ == "__main__":
     load_missense_variants()
-    # find_error_files("data/VariPred/")
+    # find_error_files("data/VariPred/output/")

@@ -50,13 +50,13 @@ def split_data(data_path, num_batches):
 
 def find_error_files(path):
     output_files = os.listdir(path)
-    output_files = [file for file in output_files if file.endswith(".csv")]
+    output_files = [file for file in output_files if file.endswith(".txt")]
     output_files = [int(file.split("_")[1].split(".")[0]) for file in output_files]
     output_files = sorted(output_files)
     input_files = np.arange(1, 1001)
     missing_files = np.setdiff1d(input_files, output_files)
     # save the missing files as a row separated .txt file
-    np.savetxt("data/elgh/missing_miva_files.txt", missing_files, fmt="%d")
+    np.savetxt("data/VariPred/missing_vp_files.txt", missing_files, fmt="%d")
     print(len(missing_files))
 
 

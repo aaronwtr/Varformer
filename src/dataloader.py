@@ -19,7 +19,7 @@ import config
 
 
 class MissenseVariantLoader:
-    def __init__(self):
+    def __init__(self, preprocess=False):
         parser = argparse.ArgumentParser(description='Script to process variants')
         parser.add_argument('--data', type=str)
         parser.add_argument('--varipred_input', type=str)
@@ -32,11 +32,14 @@ class MissenseVariantLoader:
         self.variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids", "SIFT", "PolyPhen"]
         self.variant_data = self.load_data()
         # self.analyze_pathogenicity()
-        variant_files = os.listdir('data/VariPred/')
-        if len(variant_files) != 1000:
-            print('Found variant files in data/VariPred/')
-        else:
+        if preprocess:
             self.process_variants_proteomic()
+        elif len(os.listdir('data/VariPred/input')) == config.NUM_VP_BATCHES:
+            print("Variants already processed.")
+        else:
+            print('Not all variants are preprocessed yet. Put the preprocess flag to True in the MissenseVariantLoader '
+                  'and run again.')
+
         if self.args.varipred_input is not None:
             variant_files = os.listdir(self.args.varipred_input)
             variant_files = sorted(variant_files, key=extract_number)
@@ -121,10 +124,13 @@ class MissenseVariantLoader:
                     mt_aa = self.variant_data["Amino_acids"].iloc[i]
                 seq_id = f"{self.variant_data['SYMBOL'].iloc[i]}_{aa_index}_{wt_aa}_{mt_aa}"
                 gc.collect()
-                if seq_id not in seq_ids:
-                    variant_seq, wildtype_seq = self.fetch_amino_acid_sequence(uniparc_id, mt_aa, aa_index)
-                    seq_ids.append(seq_id)
-                    sequence_table.append([seq_id, aa_index, wt_aa, mt_aa, wildtype_seq, variant_seq])
+                if len(mt_aa) > 1:
+                    continue
+                else:
+                    if seq_id not in seq_ids:
+                        variant_seq, wildtype_seq = self.fetch_amino_acid_sequence(uniparc_id, mt_aa, aa_index)
+                        seq_ids.append(seq_id)
+                        sequence_table.append([seq_id, aa_index, wt_aa, mt_aa, wildtype_seq, variant_seq])
         sequence_table = pd.DataFrame(sequence_table, columns=["target_id", "aa_index", "wt_aa", "mt_aa", "wt_seq",
                                                                "mt_seq"])
         variants_id = str(self.elgh_path.split("_")[-1].split(".")[0])

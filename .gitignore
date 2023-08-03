@@ -108,3 +108,5 @@ plots/sift_pp_pathogenicity_correlation.pdf
 data/VariPred/embeds/
 
 data/VariPred/output/
+
+data/VariPred/missing_vp_files.txt
