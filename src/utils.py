@@ -93,21 +93,65 @@ def add_varipred_id():
     variant_data["varipred_id"] = variant_data_of_interest["SYMBOL"] + "_" + \
                                                     variant_data_of_interest["Protein_position"].astype(str) + "_" + \
                                                             aa_ref + "_" + aa_alt
-    variant_data.to_csv(config.MIVA_PATH_2, sep="\t", index=False)
+    variant_data.to_csv(config.MIVA_PATH, sep="\t", index=False)
 
 
 def preprocess_varipred_output(varipred_output_path):
     """
     Preprocess the VariPred output to match the original data.
     """
-    files = os.listdir(varipred_output_path)
-    files.sort(key=extract_number)
-    # open the first file in varipred_output_path as df
-    variant_file = files[1]
-    df = pd.read_csv(f"{varipred_output_path}{variant_file}", sep="\t")
-    print(df)
+    if os.path.exists("data/VariPred/varipred_output_data.csv"):
+        return pd.read_csv("data/VariPred/varipred_output_data.csv", sep="\t")
+    else:
+        files = os.listdir(varipred_output_path)
+        files.sort(key=extract_number)
+        dataframes = []
+        for filename in files[1:]:
+            if filename.endswith(".txt"):
+                file_path = os.path.join(config.VP_OUTPUT_PATH, filename)
+                df = pd.read_csv(file_path, sep='\t')
+                dataframes.append(df)
+        varipred_data = pd.concat(dataframes, ignore_index=True)
+        varipred_data.to_csv("data/VariPred/varipred_output_data.csv", sep="\t", index=False)
+        return varipred_data
 
 
-def varipred_evaluation(elgh_data, varipred_data):
-    # TODO Make a column in the variant_loader in the format {gene}_{aa_pos}_{aa_ref}_{aa_alt}
-    pass
+def combine_varipred_elgh(varipred_data, elgh_data):
+    merged_df = pd.merge(varipred_data, elgh_data, left_on='target_id', right_on='varipred_id', how='inner')
+    merged_df.drop('varipred_id', axis=1, inplace=True)
+    columns = elgh_data.columns.tolist()
+    columns.remove('varipred_id')
+    columns = columns + ['classification', 'probability']
+    merged_df = merged_df[columns]
+    new_column_names = {'classification': 'vp_classification', 'probability': 'vp_probability'}
+    merged_df.rename(columns=new_column_names, inplace=True)
+    merged_df.to_csv("data/elgh/varipred_elgh_data.csv", sep="\t", index=False)
+
+
+def clinvar_filtering(clinvar_data):
+    """
+    Filters the ClinVar data to only contain rows assembled with GRCh38 and are missense variants.
+    """
+    if os.path.exists("data/clinvar/clinvar_filtered.csv"):
+        return pd.read_csv("data/clinvar/clinvar_filtered.csv", sep="\t")
+    else:
+        columns = ["Name", "GeneSymbol", "Chromosome", "Start", "ReferenceAlleleVCF", "AlternateAlleleVCF", "ClinSigSimple"]
+        clinvar_data = clinvar_data[clinvar_data["Assembly"] == "GRCh38"]
+        clinvar_data = clinvar_data[clinvar_data["Type"] == "single nucleotide variant"]
+        clinvar_data = clinvar_data[
+            (clinvar_data["ReviewStatus"] == "criteria provided, single submitter") |
+            (clinvar_data["ReviewStatus"] == "criteria provided, multiple submitters, no conflicts")
+            ]
+        clinvar_data = clinvar_data.dropna(subset=["ReferenceAlleleVCF", "AlternateAlleleVCF"])
+        clinvar_data = clinvar_data[columns]
+        clinvar_data.to_csv("data/clinvar/clinvar_filtered.csv", sep="\t", index=False)
+        return clinvar_data
+
+
+def varipred_evaluation(varipred_data, clinvar_data):
+    # TODO:
+    # 1. X Map the varipred data to the original as extra columns
+    # 2. X Filter the ClinVar data to only contain rows assembled with GRCh38 and are missense variants
+    # 3.   Map the overlap between ClinVar and ELGH via chr and position of the variant and ref and alt allele
+    clinvar_data = clinvar_filtering(clinvar_data)
+    print(clinvar_data)
