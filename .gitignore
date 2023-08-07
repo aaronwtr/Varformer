@@ -110,3 +110,9 @@ data/VariPred/embeds/
 data/VariPred/output/
 
 data/VariPred/missing_vp_files.txt
+
+data/clinvar/variant_summary.txt
+
+src/data/VariPred/embeds/
+
+data/elgh/archive/all_functional.gatk_PASS.FS_30.DP_0.GQ_20.AB_0.01.functional.missingness_lt_0.genotype_counts.present_in_ELGH.n_transcripts_corrected.txt

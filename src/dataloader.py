@@ -53,21 +53,31 @@ class MissenseVariantLoader:
                 for file in variant_files:
                     if file.endswith('.csv'):
                         self.predict_pathogenicity(file[:-4])
+
+        varipred_output = utils.preprocess_varipred_output(config.VP_OUTPUT_PATH)
+        if os.path.exists("data/elgh/varipred_elgh_data.csv"):
+            self.variant_data = pd.read_csv("data/elgh/varipred_elgh_data.csv", sep="\t")
+        else:
+            self.variant_data = utils.combine_varipred_elgh(varipred_output, self.variant_data)
+
         if evaluation:
-            varipred_output = utils.preprocess_varipred_output(config.VP_OUTPUT_PATH)
-            utils.varipred_evaluation(self.variant_data, 0)
+            clinvar_data = pd.read_csv("data/clinvar/variant_summary.txt", sep="\t")
+            utils.varipred_evaluation(self.variant_data, clinvar_data)
 
     def load_data(self):
         """
         Load the variant data and the reference genome.
         """
-        if self.args.data is not None:
-            variant_data = pd.read_csv(self.elgh_path)
+        if os.path.exists("data/VariPred/varipred_elgh_data.csv"):
+            return pd.read_csv("data/VariPred/varipred_elgh_data.csv")
         else:
-            variant_data = pd.read_csv(self.elgh_path, sep="\t")
-        variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
-        variant_data = variant_data[self.variant_cols]
-        return variant_data
+            if self.args.data is not None:
+                variant_data = pd.read_csv(self.elgh_path)
+            else:
+                variant_data = pd.read_csv(self.elgh_path, sep="\t")
+            variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
+            variant_data = variant_data[self.variant_cols]
+            return variant_data
 
     def analyze_legacy_pathogenicity(self):
         """
