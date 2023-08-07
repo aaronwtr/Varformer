@@ -13,13 +13,13 @@ import ensembl_rest
 from functools import partial
 import matplotlib.pyplot as plt
 
-from utils import translate_sequence, run_shell_script, extract_number
+import utils
 from plot import variant_sparsity_barplot, pathogenicity_correlation_plot
 import config
 
 
 class MissenseVariantLoader:
-    def __init__(self, preprocess=False):
+    def __init__(self, preprocess=False, predict=False, evaluation=False):
         parser = argparse.ArgumentParser(description='Script to process variants')
         parser.add_argument('--data', type=str)
         parser.add_argument('--varipred_input', type=str)
@@ -29,9 +29,10 @@ class MissenseVariantLoader:
         else:
             self.elgh_path = config.MIVA_PATH
         self.genome_path = config.GENOME_PATH
-        self.variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids", "SIFT", "PolyPhen"]
+        self.variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids", "SIFT", "PolyPhen",
+                             "varipred_id"]
         self.variant_data = self.load_data()
-        # self.analyze_pathogenicity()
+        # self.analyze_legacy_pathogenicity()
         if preprocess:
             self.process_variants_proteomic()
         elif len(os.listdir('data/VariPred/input')) == config.NUM_VP_BATCHES:
@@ -39,19 +40,22 @@ class MissenseVariantLoader:
         else:
             print('Not all variants are preprocessed yet. Put the preprocess flag to True in the MissenseVariantLoader '
                   'and run again.')
-
-        if self.args.varipred_input is not None:
-            variant_files = os.listdir(self.args.varipred_input)
-            variant_files = sorted(variant_files, key=extract_number)
-            for file in variant_files:
-                if file.endswith('.csv'):
-                    self.calculate_pathogenicity(file[:-4])
-        else:
-            variant_files = os.listdir('data/VariPred/input/')
-            variant_files = sorted(variant_files, key=extract_number)
-            for file in variant_files:
-                if file.endswith('.csv'):
-                    self.calculate_pathogenicity(file[:-4])
+        if predict:
+            if self.args.varipred_input is not None:
+                variant_files = os.listdir(self.args.varipred_input)
+                variant_files = sorted(variant_files, key=utils.extract_number)
+                for file in variant_files:
+                    if file.endswith('.csv'):
+                        self.predict_pathogenicity(file[:-4])
+            else:
+                variant_files = os.listdir('data/VariPred/input/')
+                variant_files = sorted(variant_files, key=utils.extract_number)
+                for file in variant_files:
+                    if file.endswith('.csv'):
+                        self.predict_pathogenicity(file[:-4])
+        if evaluation:
+            varipred_output = utils.preprocess_varipred_output(config.VP_OUTPUT_PATH)
+            utils.varipred_evaluation(self.variant_data, 0)
 
     def load_data(self):
         """
@@ -65,7 +69,7 @@ class MissenseVariantLoader:
         variant_data = variant_data[self.variant_cols]
         return variant_data
 
-    def analyze_pathogenicity(self):
+    def analyze_legacy_pathogenicity(self):
         """
         Analyze the pathogenicity determined by SIFT and PolyPhen.
         """
@@ -137,9 +141,9 @@ class MissenseVariantLoader:
         sequence_table.to_csv(f"../data/VariPred/input/variants_{variants_id}.csv", index=False)
 
     @staticmethod
-    def calculate_pathogenicity(variant_file):
+    def predict_pathogenicity(variant_file):
         file = f"{variant_file}"
-        run_shell_script(file)
+        utils.run_shell_script(file)
 
     def __process_variants_genomic(self):
         warnings.filterwarnings('ignore')
@@ -158,8 +162,8 @@ class MissenseVariantLoader:
                 variant_seq, wildtype_seq = self._get_variant(self.variant_data["#CHROM"].iloc[i], aa_index, wt_aa,
                                                               mt_aa, exons)
 
-                variant_aa = translate_sequence(variant_seq)
-                wildtype_aa = translate_sequence(wildtype_seq)
+                variant_aa = utils.translate_sequence(variant_seq)
+                wildtype_aa = utils.translate_sequence(wildtype_seq)
 
                 print(variant_aa)
                 print(wildtype_aa)
@@ -221,9 +225,9 @@ class MissenseVariantLoader:
                 variant_seq, wildtype_seq = self._get_variant(self.variant_data["#CHROM"].iloc[i], aa_index, wt_aa,
                                                               mt_aa, exons)
 
-                variant_aa = translate_sequence(variant_seq)
+                variant_aa = utils.translate_sequence(variant_seq)
                 print(i)
-                wildtype_aa = translate_sequence(wildtype_seq)
+                wildtype_aa = utils.translate_sequence(wildtype_seq)
                 progress_bar.update(1)
             else:
                 input_tracker.append(seq_id)

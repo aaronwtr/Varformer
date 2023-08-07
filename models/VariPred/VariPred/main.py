@@ -128,7 +128,6 @@ def run_VariPred(target_ds,output):
 
     '''
 
-
     X_target, y_target, record_id = utils.unpickler(ds_name=target_ds)
     print('X_target shape: ', X_target.shape)
 
