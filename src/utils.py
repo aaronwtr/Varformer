@@ -6,6 +6,7 @@ import subprocess
 import config
 import re
 
+
 def count_scaling(counts):
     """
     Implements $x' = \frac{x - x_{min}}{x_{max} - x_{min}}$.
@@ -74,3 +75,39 @@ def extract_number(filename):
     # Use regular expression to find the digits in the filename
     match = re.search(r'\d+', filename)
     return int(match.group()) if match else -1
+
+
+# TODO implement VariPred evaluation
+# Step 1: Map VariPred output to the original data
+# Step 2: Find common identifier between the two datasets
+# Step 3: Calculate the performance metrics
+
+
+def add_varipred_id():
+    variant_data = pd.read_csv(config.MIVA_PATH, sep="\t")
+    columns = ["SYMBOL", "Protein_position", "Amino_acids"]
+    variant_data_of_interest = variant_data[columns]
+
+    aa_ref = variant_data_of_interest["Amino_acids"].str.split("/", expand=True)[0]
+    aa_alt = variant_data_of_interest["Amino_acids"].str.split("/", expand=True)[1]
+    variant_data["varipred_id"] = variant_data_of_interest["SYMBOL"] + "_" + \
+                                                    variant_data_of_interest["Protein_position"].astype(str) + "_" + \
+                                                            aa_ref + "_" + aa_alt
+    variant_data.to_csv(config.MIVA_PATH_2, sep="\t", index=False)
+
+
+def preprocess_varipred_output(varipred_output_path):
+    """
+    Preprocess the VariPred output to match the original data.
+    """
+    files = os.listdir(varipred_output_path)
+    files.sort(key=extract_number)
+    # open the first file in varipred_output_path as df
+    variant_file = files[1]
+    df = pd.read_csv(f"{varipred_output_path}{variant_file}", sep="\t")
+    print(df)
+
+
+def varipred_evaluation(elgh_data, varipred_data):
+    # TODO Make a column in the variant_loader in the format {gene}_{aa_pos}_{aa_ref}_{aa_alt}
+    pass

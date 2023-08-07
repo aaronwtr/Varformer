@@ -1,12 +1,12 @@
 import argparse
 
 from dataloader import MissenseVariantLoader, GeneCharacterisation
-from utils import split_data, find_error_files
+import utils
 import config
 
 
 def load_missense_variants():
-    MVL = MissenseVariantLoader()
+    MVL = MissenseVariantLoader(evaluation=True)
     print("Missense variants loaded!\n")
     return 0
 
