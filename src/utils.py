@@ -152,6 +152,7 @@ def varipred_evaluation(varipred_data, clinvar_data):
     # TODO:
     # 1. X Map the varipred data to the original as extra columns
     # 2. X Filter the ClinVar data to only contain rows assembled with GRCh38 and are missense variants
+    # 3.   Fix bug: varipred data is just 900 in length. Traceback where this happened and fix it.
     # 3.   Map the overlap between ClinVar and ELGH via chr and position of the variant and ref and alt allele
     clinvar_data = clinvar_filtering(clinvar_data)
     print(clinvar_data)
