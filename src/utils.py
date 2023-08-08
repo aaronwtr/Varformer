@@ -83,16 +83,29 @@ def extract_number(filename):
 # Step 3: Calculate the performance metrics
 
 
+def correct_aa_position(target_id):
+    if target_id == 'target_id':
+        return 'target_id'
+    else:
+        parts = target_id.split('_')
+        aa_position = int(parts[1])
+        adjusted_aa_position = aa_position + 1
+        parts[1] = str(adjusted_aa_position)
+        return '_'.join(parts)
+
+
 def add_varipred_id():
     variant_data = pd.read_csv(config.MIVA_PATH, sep="\t")
     columns = ["SYMBOL", "Protein_position", "Amino_acids"]
     variant_data_of_interest = variant_data[columns]
 
+    variant_data = variant_data[~variant_data_of_interest['Protein_position'].astype(str).str.contains('-')]
+    variant_data_of_interest = variant_data_of_interest[~variant_data_of_interest['Protein_position'].astype(str).str.contains('-')]
     aa_ref = variant_data_of_interest["Amino_acids"].str.split("/", expand=True)[0]
     aa_alt = variant_data_of_interest["Amino_acids"].str.split("/", expand=True)[1]
-    variant_data["varipred_id"] = variant_data_of_interest["SYMBOL"] + "_" + \
-                                                    variant_data_of_interest["Protein_position"].astype(str) + "_" + \
-                                                            aa_ref + "_" + aa_alt
+    aa_index = variant_data_of_interest["Protein_position"].astype(str)
+    variant_data["varipred_id"] = variant_data_of_interest["SYMBOL"] + "_" + aa_index + "_" + aa_ref + "_" \
+                                  + aa_alt
     variant_data.to_csv(config.MIVA_PATH, sep="\t", index=False)
 
 
@@ -110,6 +123,7 @@ def preprocess_varipred_output(varipred_output_path):
             if filename.endswith(".txt"):
                 file_path = os.path.join(config.VP_OUTPUT_PATH, filename)
                 df = pd.read_csv(file_path, sep='\t')
+                df['target_id'] = df['target_id'].apply(correct_aa_position)
                 dataframes.append(df)
         varipred_data = pd.concat(dataframes, ignore_index=True)
         varipred_data.to_csv("data/VariPred/varipred_output_data.csv", sep="\t", index=False)
@@ -135,7 +149,8 @@ def clinvar_filtering(clinvar_data):
     if os.path.exists("data/clinvar/clinvar_filtered.csv"):
         return pd.read_csv("data/clinvar/clinvar_filtered.csv", sep="\t")
     else:
-        columns = ["Name", "GeneSymbol", "Chromosome", "Start", "ReferenceAlleleVCF", "AlternateAlleleVCF", "ClinSigSimple"]
+        columns = ["Name", "GeneSymbol", "Chromosome", "Start", "ReferenceAlleleVCF", "AlternateAlleleVCF",
+                   "ClinSigSimple"]
         clinvar_data = clinvar_data[clinvar_data["Assembly"] == "GRCh38"]
         clinvar_data = clinvar_data[clinvar_data["Type"] == "single nucleotide variant"]
         clinvar_data = clinvar_data[
@@ -148,11 +163,52 @@ def clinvar_filtering(clinvar_data):
         return clinvar_data
 
 
+def clinvar_varipred_id(varipred_data, clinvar_data):
+    """
+    Makes new ID var varipred and clinvar overlap: {gene_name}_{genomic_position}_{ref_allele}_{alt_allele}
+    """
+    if os.path.exists("data/clinvar/clinvar_varipred_id_final.csv"):
+        clinvar_data = pd.read_csv("data/clinvar/clinvar_varipred_id_final.csv", sep="\t")
+    else:
+        clinvar_data["vp_cv_id"] = clinvar_data["GeneSymbol"] + "_" + clinvar_data["Start"].astype(str) + "_" + \
+                                     clinvar_data["ReferenceAlleleVCF"] + "_" + clinvar_data["AlternateAlleleVCF"]
+        clinvar_data = clinvar_data.drop_duplicates(subset=['vp_cv_id'])
+        clinvar_data.to_csv("data/clinvar/clinvar_vp_id_final.csv", sep="\t", index=False)
+
+    if os.path.exists("data/VariPred/varipred_vp_id_final.csv"):
+        varipred_data = pd.read_csv("data/VariPred/varipred_vp_id_final.csv", sep="\t")
+    else:
+        ref_aa = varipred_data["Amino_acids"].str.split("/", expand=True)[0]
+        alt_aa = varipred_data["Amino_acids"].str.split("/", expand=True)[1]
+        varipred_data["vp_cv_id"] = varipred_data["SYMBOL"] + "_" + varipred_data["POS"].astype(str) + "_" + ref_aa \
+                                       + "_" + alt_aa
+        varipred_data = varipred_data.drop_duplicates(subset=['vp_cv_id'])
+        varipred_data.to_csv("data/VariPred/varipred_vp_id_final.csv", sep="\t", index=False)
+
+    return varipred_data, clinvar_data
+
+
+def combine_varipred_clinvar(varipred_data, clinvar_data):
+    """
+    Combine the VariPred and ClinVar data. The columns we want to keep are: vp_cv_id, SYMBOL, POS, ReferenceAlleleVCF,
+    AlternateAlleleVCF, ClinSigSimple, vp_classification, vp_probability
+    """
+    merged_df = pd.merge(varipred_data, clinvar_data, on='vp_cv_id', how='inner')
+    columns = ["vp_cv_id", "SYMBOL", "POS", "ReferenceAlleleVCF", "AlternateAlleleVCF", "ClinSigSimple",
+               "vp_classification", "vp_probability"]
+    merged_df = merged_df[columns]
+    print(merged_df)
+
+
 def varipred_evaluation(varipred_data, clinvar_data):
     # TODO:
     # 1. X Map the varipred data to the original as extra columns
     # 2. X Filter the ClinVar data to only contain rows assembled with GRCh38 and are missense variants
-    # 3.   Fix bug: varipred data is just 900 in length. Traceback where this happened and fix it.
-    # 3.   Map the overlap between ClinVar and ELGH via chr and position of the variant and ref and alt allele
+    # 3. X Fix bug: varipred data is just 900 in length. Traceback where this happened and fix it.
+    # 4. X Make new ID var varipred and clinvar overlap: {gene_name}_{genomic_position}_{ref_allele}_{alt_allele}
+    # 5. X Map the overlap between ClinVar and ELGH via chr and position of the variant and ref and alt allele
     clinvar_data = clinvar_filtering(clinvar_data)
+    varipred_data, clinvar_data = clinvar_varipred_id(varipred_data, clinvar_data)
+    eval_df = combine_varipred_clinvar(varipred_data, clinvar_data)
+    
     print(clinvar_data)

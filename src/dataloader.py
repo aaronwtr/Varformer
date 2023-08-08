@@ -29,7 +29,7 @@ class MissenseVariantLoader:
         else:
             self.elgh_path = config.MIVA_PATH
         self.genome_path = config.GENOME_PATH
-        self.variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids", "SIFT", "PolyPhen",
+        self.variant_cols = ["#CHROM", "POS", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids", "SIFT", "PolyPhen",
                              "varipred_id"]
         self.variant_data = self.load_data()
         # self.analyze_legacy_pathogenicity()
