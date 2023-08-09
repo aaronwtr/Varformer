@@ -5,6 +5,7 @@ import os
 import subprocess
 import config
 import re
+from sklearn.metrics import matthews_corrcoef, confusion_matrix
 
 
 def count_scaling(counts):
@@ -100,7 +101,8 @@ def add_varipred_id():
     variant_data_of_interest = variant_data[columns]
 
     variant_data = variant_data[~variant_data_of_interest['Protein_position'].astype(str).str.contains('-')]
-    variant_data_of_interest = variant_data_of_interest[~variant_data_of_interest['Protein_position'].astype(str).str.contains('-')]
+    variant_data_of_interest = variant_data_of_interest[
+        ~variant_data_of_interest['Protein_position'].astype(str).str.contains('-')]
     aa_ref = variant_data_of_interest["Amino_acids"].str.split("/", expand=True)[0]
     aa_alt = variant_data_of_interest["Amino_acids"].str.split("/", expand=True)[1]
     aa_index = variant_data_of_interest["Protein_position"].astype(str)
@@ -171,17 +173,18 @@ def clinvar_varipred_id(varipred_data, clinvar_data):
         clinvar_data = pd.read_csv("data/clinvar/clinvar_varipred_id_final.csv", sep="\t")
     else:
         clinvar_data["vp_cv_id"] = clinvar_data["GeneSymbol"] + "_" + clinvar_data["Start"].astype(str) + "_" + \
-                                     clinvar_data["ReferenceAlleleVCF"] + "_" + clinvar_data["AlternateAlleleVCF"]
+                                   clinvar_data["ReferenceAlleleVCF"] + "_" + clinvar_data["AlternateAlleleVCF"]
         clinvar_data = clinvar_data.drop_duplicates(subset=['vp_cv_id'])
         clinvar_data.to_csv("data/clinvar/clinvar_vp_id_final.csv", sep="\t", index=False)
 
     if os.path.exists("data/VariPred/varipred_vp_id_final.csv"):
         varipred_data = pd.read_csv("data/VariPred/varipred_vp_id_final.csv", sep="\t")
     else:
-        ref_aa = varipred_data["Amino_acids"].str.split("/", expand=True)[0]
-        alt_aa = varipred_data["Amino_acids"].str.split("/", expand=True)[1]
-        varipred_data["vp_cv_id"] = varipred_data["SYMBOL"] + "_" + varipred_data["POS"].astype(str) + "_" + ref_aa \
-                                       + "_" + alt_aa
+        ref_aa = varipred_data["REF"]
+        alt_aa = varipred_data["Allele"]
+        varipred_data["vp_cv_id"] = varipred_data["SYMBOL"] + "_" + varipred_data["POS"].astype(str) + "_" + \
+                                    ref_aa + "_" + alt_aa
+
         varipred_data = varipred_data.drop_duplicates(subset=['vp_cv_id'])
         varipred_data.to_csv("data/VariPred/varipred_vp_id_final.csv", sep="\t", index=False)
 
@@ -193,22 +196,48 @@ def combine_varipred_clinvar(varipred_data, clinvar_data):
     Combine the VariPred and ClinVar data. The columns we want to keep are: vp_cv_id, SYMBOL, POS, ReferenceAlleleVCF,
     AlternateAlleleVCF, ClinSigSimple, vp_classification, vp_probability
     """
-    merged_df = pd.merge(varipred_data, clinvar_data, on='vp_cv_id', how='inner')
-    columns = ["vp_cv_id", "SYMBOL", "POS", "ReferenceAlleleVCF", "AlternateAlleleVCF", "ClinSigSimple",
-               "vp_classification", "vp_probability"]
-    merged_df = merged_df[columns]
-    print(merged_df)
+    if not os.path.exists("data/merged_varipred_clinvar.csv"):
+        merged_df = pd.merge(varipred_data, clinvar_data, on='vp_cv_id', how='inner')
+        columns = ["vp_cv_id", "SYMBOL", "ReferenceAlleleVCF", "AlternateAlleleVCF", "POS", "UNIPARC", "Amino_acids",
+                   "Protein_position", "ClinSigSimple", "vp_classification", "vp_probability"]
+        merged_df = merged_df[columns]
+    else:
+        merged_df = pd.read_csv("data/merged_varipred_clinvar.csv", sep="\t")
+    merged_df.to_csv("data/merged_varipred_clinvar.csv", sep="\t", index=False)
+    return merged_df
+
+
+def varipred_eval(eval_df):
+    """
+    Calculates the performance metrics for VariPred.
+    """
+    vp_data = eval_df["vp_classification"]
+    clinvar_data = eval_df["ClinSigSimple"]
+
+    print("Sample size: " + str(len(vp_data)))
+
+    mcc = round(matthews_corrcoef(clinvar_data, vp_data), 3)
+    conf_matrix = confusion_matrix(clinvar_data, vp_data)
+
+    true_negatives = conf_matrix[0, 0]
+    false_positives = conf_matrix[0, 1]
+    false_negatives = conf_matrix[1, 0]
+    true_positives = conf_matrix[1, 1]
+
+    accuracy = (true_positives + true_negatives) / (true_positives + true_negatives + false_positives + false_negatives)
+    false_positive_rate = false_positives / (false_positives + true_negatives)
+    false_negative_rate = false_negatives / (false_negatives + true_positives)
+    recall = true_positives / (true_positives + false_negatives)
+
+    print("False positive rate: " + str(round(false_positive_rate, 3)))
+    print("False negative rate: " + str(round(false_negative_rate, 3)))
+    print("Recall: " + str(round(recall, 3)))
+    print("Accuracy:", str(round(accuracy, 3)))
+    print("Matthews Correlation Coefficient:", mcc)
 
 
 def varipred_evaluation(varipred_data, clinvar_data):
-    # TODO:
-    # 1. X Map the varipred data to the original as extra columns
-    # 2. X Filter the ClinVar data to only contain rows assembled with GRCh38 and are missense variants
-    # 3. X Fix bug: varipred data is just 900 in length. Traceback where this happened and fix it.
-    # 4. X Make new ID var varipred and clinvar overlap: {gene_name}_{genomic_position}_{ref_allele}_{alt_allele}
-    # 5. X Map the overlap between ClinVar and ELGH via chr and position of the variant and ref and alt allele
     clinvar_data = clinvar_filtering(clinvar_data)
     varipred_data, clinvar_data = clinvar_varipred_id(varipred_data, clinvar_data)
     eval_df = combine_varipred_clinvar(varipred_data, clinvar_data)
-    
-    print(clinvar_data)
+    varipred_eval(eval_df)
