@@ -19,7 +19,7 @@ import config
 
 
 class MissenseVariantLoader:
-    def __init__(self, preprocess=False, predict=False, evaluation=False):
+    def __init__(self, preprocess=False, train=False, predict=False, evaluation=False):
         parser = argparse.ArgumentParser(description='Script to process variants')
         parser.add_argument('--data', type=str)
         parser.add_argument('--varipred_input', type=str)
@@ -29,8 +29,8 @@ class MissenseVariantLoader:
         else:
             self.elgh_path = config.MIVA_PATH
         self.genome_path = config.GENOME_PATH
-        self.variant_cols = ["#CHROM", "POS", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids", "SIFT", "PolyPhen",
-                             "varipred_id"]
+        self.variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids",
+                             "SIFT", "PolyPhen", "varipred_id"]
         self.variant_data = self.load_data()
         # self.analyze_legacy_pathogenicity()
         if preprocess:
@@ -40,6 +40,12 @@ class MissenseVariantLoader:
         else:
             print('Not all variants are preprocessed yet. Put the preprocess flag to True in the MissenseVariantLoader '
                   'and run again.')
+        if train:
+            # NOTE: In order to prepare the data for training, first all the datasets generated in evaluation need to be
+            # loaded.
+
+            train, test, val = self.train_test_val_loader(0)
+
         if predict:
             if self.args.varipred_input is not None:
                 variant_files = os.listdir(self.args.varipred_input)
@@ -149,6 +155,11 @@ class MissenseVariantLoader:
                                                                "mt_seq"])
         variants_id = str(self.elgh_path.split("_")[-1].split(".")[0])
         sequence_table.to_csv(f"../data/VariPred/input/variants_{variants_id}.csv", index=False)
+
+
+    def train_test_val_loader(self):
+        pass
+
 
     @staticmethod
     def predict_pathogenicity(variant_file):
