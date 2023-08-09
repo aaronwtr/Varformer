@@ -43,8 +43,8 @@ class MissenseVariantLoader:
         if train:
             # NOTE: In order to prepare the data for training, first all the datasets generated in evaluation need to be
             # loaded.
-
-            train, test, val = self.train_test_val_loader(0)
+            raw_data = pd.read_csv("data/merged_varipred_clinvar.csv", sep="\t")
+            train, test, val = self.train_test_val_loader(raw_data)
 
         if predict:
             if self.args.varipred_input is not None:
@@ -157,8 +157,19 @@ class MissenseVariantLoader:
         sequence_table.to_csv(f"../data/VariPred/input/variants_{variants_id}.csv", index=False)
 
 
-    def train_test_val_loader(self):
-        pass
+    @staticmethod
+    def train_test_val_loader(data):
+        data = data[["vp_cv_id", "UNIPARC", "Protein_position", "Amino_acids", "ClinSigSimple"]]
+        wt_aa = data["Amino_acids"].str.split("/", expand=True)[0]
+        mt_aa = data["Amino_acids"].str.split("/", expand=True)[0]
+        data["wt_aa"] = wt_aa
+        data["mt_aa"] = mt_aa
+        data = data.drop(columns=["Amino_acids"])
+        data = data.rename(columns={"vp_cv_id": "target_id", "Protein_position": "aa_index", "ClinSigSimple": "label"})
+        cols = ["target_id", "UNIPARC", "aa_index", "wt_aa", "mt_aa", "label"]
+        data = data[cols]
+        print(data)
+        return 0, 0, 0
 
 
     @staticmethod
