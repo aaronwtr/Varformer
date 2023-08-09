@@ -6,7 +6,7 @@ import config
 
 
 def load_missense_variants():
-    MVL = MissenseVariantLoader(evaluation=True)
+    MVL = MissenseVariantLoader(train=True)
     print("Missense variants loaded!\n")
     return 0
 

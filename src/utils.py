@@ -78,12 +78,6 @@ def extract_number(filename):
     return int(match.group()) if match else -1
 
 
-# TODO implement VariPred evaluation
-# Step 1: Map VariPred output to the original data
-# Step 2: Find common identifier between the two datasets
-# Step 3: Calculate the performance metrics
-
-
 def correct_aa_position(target_id):
     if target_id == 'target_id':
         return 'target_id'
