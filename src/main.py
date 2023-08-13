@@ -3,6 +3,7 @@ import argparse
 from dataloader import MissenseVariantLoader, GeneCharacterisation
 import utils
 import config
+import plot
 
 
 def load_missense_variants():
@@ -18,4 +19,6 @@ def gene_characterisation():
 
 
 if __name__ == "__main__":
-    load_missense_variants()
+    #load_missense_variants()
+    vp_data = utils.preprocess_varipred_output("data/VariPred/output/varipred_output_data.csv")
+    plot.varipred_kde_plot(vp_data)

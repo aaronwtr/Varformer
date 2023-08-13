@@ -42,12 +42,14 @@ def split_data(data_path, num_batches):
     """
     Splits data into batches.
     """
-    variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids"]
+    # variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids"]
+    train_cols = ["vp_cv_id", "SYMBOL", "ReferenceAlleleVCF", "AlternateAlleleVCF", "POS", "UNIPARC", "Amino_acids",
+                    "Protein_position", "ClinSigSimple", "vp_classification", "vp_probability"]
     variant_data = pd.read_csv(data_path, sep="\t")
-    variant_data = variant_data[variant_cols]
+    variant_data = variant_data[train_cols]
     batches = np.array_split(variant_data, num_batches)
     for i, batch in enumerate(batches):
-        batch.to_csv(f"data/elgh/batch_mivas/variant_data_{i + 1}.csv")
+        batch.to_csv(f"data/elgh/train_batch_mivas/variant_data_{i + 1}.csv")
 
 
 def find_error_files(path):

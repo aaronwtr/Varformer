@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
 
 
 def tractability_plot(tractability_scores, fda_labels, plottype=None, fda=True):
@@ -90,3 +91,19 @@ def pathogenicity_correlation_plot(df, save):
         plt.savefig('plots/sift_pp_pathogenicity_correlation.pdf')
         plt.savefig('plots/sift_pp_pathogenicity_correlation.png')
         plt.show()
+
+
+def varipred_kde_plot(vp_data):
+    probs = vp_data['probability']
+    # remove header
+    probs = probs[1:]
+    # samples_probs = probs.sample(n=10000, random_state=1).to_list()
+    probs = [x for x in probs if str(x) != 'probability']
+    probs = [float(i) for i in probs]
+    probs = [x for x in probs if str(x) != 'nan']
+    sns.kdeplot(data=probs, fill=True, log_scale=True)
+    plt.title('Distribution of VariPred logits')
+    plt.xlabel('Logits')
+    plt.ylabel('Frequency')
+    plt.savefig('plots/varipred_kde_lognorm.pdf')
+    plt.savefig('plots/varipred_kde_lognorm.png')

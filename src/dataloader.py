@@ -156,9 +156,7 @@ class MissenseVariantLoader:
         variants_id = str(self.elgh_path.split("_")[-1].split(".")[0])
         sequence_table.to_csv(f"../data/VariPred/input/variants_{variants_id}.csv", index=False)
 
-
-    @staticmethod
-    def train_test_val_loader(data):
+    def train_test_val_loader(self, data):
         data = data[["vp_cv_id", "UNIPARC", "Protein_position", "Amino_acids", "ClinSigSimple"]]
         wt_aa = data["Amino_acids"].str.split("/", expand=True)[0]
         mt_aa = data["Amino_acids"].str.split("/", expand=True)[0]
@@ -168,9 +166,21 @@ class MissenseVariantLoader:
         data = data.rename(columns={"vp_cv_id": "target_id", "Protein_position": "aa_index", "ClinSigSimple": "label"})
         cols = ["target_id", "UNIPARC", "aa_index", "wt_aa", "mt_aa", "label"]
         data = data[cols]
-        print(data)
-        return 0, 0, 0
-
+        print(len(data))
+        seq_ids = []
+        sequence_table = []
+        for i in tqdm(range(len(data))):
+            seq_id = data["target_id"].iloc[i]
+            if seq_id not in seq_ids:
+                wt_seq, mt_seq = self.fetch_amino_acid_sequence(data["UNIPARC"].iloc[i], data["mt_aa"].iloc[i],
+                                                                data["aa_index"].iloc[i])
+                seq_ids.append(seq_id)
+                sequence_table.append([seq_id, data["UNIPARC"].iloc[i], data["aa_index"].iloc[i], data["wt_aa"].iloc[i],
+                                       data["mt_aa"].iloc[i], wt_seq, mt_seq, data["label"].iloc[i]])
+        sequence_table = pd.DataFrame(sequence_table, columns=["target_id", "uniparc_id", "aa_index", "wt_aa", "mt_aa",
+                                                               "wt_seq", "mt_seq", "label"])
+        sequence_table.to_csv(f"data/VariPred/train/vp_train_data.csv", index=False)
+        print("Done processing train data.")
 
     @staticmethod
     def predict_pathogenicity(variant_file):
