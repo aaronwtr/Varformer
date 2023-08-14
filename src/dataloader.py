@@ -68,7 +68,7 @@ class MissenseVariantLoader:
 
         if evaluation:
             clinvar_data = pd.read_csv("data/clinvar/variant_summary.txt", sep="\t")
-            utils.varipred_evaluation(self.variant_data, clinvar_data)
+            utils.varipred_evaluation(self.variant_data, clinvar_data, posthoc=True)
 
     def load_data(self):
         """

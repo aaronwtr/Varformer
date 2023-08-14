@@ -5,7 +5,7 @@ import os
 import subprocess
 import config
 import re
-from sklearn.metrics import matthews_corrcoef, confusion_matrix
+from sklearn.metrics import matthews_corrcoef, confusion_matrix, roc_curve, auc
 
 
 def count_scaling(counts):
@@ -225,15 +225,21 @@ def varipred_eval(eval_df):
     false_negative_rate = false_negatives / (false_negatives + true_positives)
     recall = true_positives / (true_positives + false_negatives)
 
+    fpr, tpr, thresholds = roc_curve(clinvar_data, eval_df["vp_probability"])
+    roc_auc = auc(fpr, tpr)
+
     print("False positive rate: " + str(round(false_positive_rate, 3)))
     print("False negative rate: " + str(round(false_negative_rate, 3)))
     print("Recall: " + str(round(recall, 3)))
     print("Accuracy:", str(round(accuracy, 3)))
     print("Matthews Correlation Coefficient:", mcc)
+    print("ROC AUC:", str(round(roc_auc, 3)))
 
 
-def varipred_evaluation(varipred_data, clinvar_data):
+def varipred_evaluation(varipred_data, clinvar_data, posthoc=False):
     clinvar_data = clinvar_filtering(clinvar_data)
     varipred_data, clinvar_data = clinvar_varipred_id(varipred_data, clinvar_data)
     eval_df = combine_varipred_clinvar(varipred_data, clinvar_data)
+    if posthoc:
+        eval_df["vp_classification"] = np.where(eval_df["vp_probability"] > 0.049, 1, 0)
     varipred_eval(eval_df)

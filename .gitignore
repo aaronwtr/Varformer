@@ -122,3 +122,7 @@ plots/sift_polyphen_correlation/sift_pp_pathogenicity_correlation.pdf
 plots/varipred_output_kde/varipred_kde.pdf
 
 plots/varipred_output_kde/varipred_kde_lognorm.pdf
+
+plots/varipred_output_kde/varipred_kde_lognorm_sep.pdf
+
+plots/varipred_output_kde/varipred_kde_sep.pdf
