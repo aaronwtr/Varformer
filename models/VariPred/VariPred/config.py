@@ -41,3 +41,6 @@ label_num = 2
 n_epochs = 200
 learning_rate = 1e-4
 early_stop = 10
+
+# inference_parameters
+classification_threshold = 0.2

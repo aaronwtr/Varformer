@@ -367,7 +367,7 @@ def predict_results(y_true, preds, record_id, train=False, output_name=None):
         print('AUC score: ', auc_value)
 
         y_true_np = np.array(y_true)
-        preds = np.array(preds >= 0.2, dtype=int)
+        preds = np.array(preds >= config.classification_threshold, dtype=int)
 
         MCC = matthews_corrcoef(y_true_np, preds)
         print('MCC: ', MCC)
@@ -390,7 +390,7 @@ def predict_results(y_true, preds, record_id, train=False, output_name=None):
             file_writer.write(f'MCC: {MCC}\nroc_auc_score: {auc_value}\n')
 
     else:
-        preds_bin = np.array(preds >= 0.2, dtype=int)
+        preds_bin = np.array(preds >= config.classification_threshold, dtype=int)
         if not os.path.exists(f'../example/{output_name}.txt'):
             header = "target_id\tclassification\tprobability\n"
             with open(f'{result_path}/{output_name}.txt', 'a') as file_writer:
