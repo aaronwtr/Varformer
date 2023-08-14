@@ -93,17 +93,40 @@ def pathogenicity_correlation_plot(df, save):
         plt.show()
 
 
-def varipred_kde_plot(vp_data):
-    probs = vp_data['probability']
-    # remove header
-    probs = probs[1:]
-    # samples_probs = probs.sample(n=10000, random_state=1).to_list()
-    probs = [x for x in probs if str(x) != 'probability']
-    probs = [float(i) for i in probs]
-    probs = [x for x in probs if str(x) != 'nan']
-    sns.kdeplot(data=probs, fill=True, log_scale=True)
-    plt.title('Distribution of VariPred logits')
-    plt.xlabel('Logits')
-    plt.ylabel('Frequency')
-    plt.savefig('plots/varipred_kde_lognorm.pdf')
-    plt.savefig('plots/varipred_kde_lognorm.png')
+def varipred_kde_plot(df):
+    pathogenic_df = df[df['ClinSigSimple'] == 1]
+    benign_df = df[df['ClinSigSimple'] == 0]
+
+    pathogenic_probs = pathogenic_df['vp_probability'].tolist()
+    benign_probs = benign_df['vp_probability'].tolist()
+    # pathogenic_probs = pathogenic_probs[1:]
+    # probs = [x for x in probs if str(x) != 'probability']
+    # probs = [float(i) for i in probs]
+    # probs = [x for x in probs if str(x) != 'nan']
+
+    sns.set(style="whitegrid")
+    plt.figure(figsize=(10, 6))
+
+    sns.kdeplot(pathogenic_probs, label='Pathogenic', fill=True)
+    sns.kdeplot(benign_probs, label='Benign', fill=True)
+
+    intersection_point = 0.0491
+
+    # Plot vertical dotted line
+    plt.axvline(x=intersection_point, color='black', linestyle='--')
+
+    # Annotate the intersection value on the x-axis
+    plt.annotate(f'{intersection_point:.3f}',
+                 xy=(intersection_point + 0.005, 0.2),
+                 xytext=(intersection_point, -0.02),
+                 textcoords='offset points',
+                 fontsize=10, color='black')
+
+    plt.xlabel('Pathogenicity Probability')
+    plt.ylabel('Density')
+    plt.xlim(0, 0.5)
+    plt.title('Pathogenicity Probability Distribution')
+    plt.legend(loc='upper right')
+    plt.savefig('plots/varipred_kde_sep.pdf')
+    plt.savefig('plots/varipred_kde_sep.png')
+    plt.show()
