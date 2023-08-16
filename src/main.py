@@ -16,4 +16,5 @@ def gene_characterisation():
 
 if __name__ == "__main__":
     load_missense_variants()
+    # TODO: Test retraining algorithm on small subset of train and test data
     # utils.find_error_files('data/VariPred/train/')
