@@ -1,12 +1,14 @@
 import numpy as np
-from Bio import Seq
 import pandas as pd
 import os
 import subprocess
 import config
 import re
-from sklearn.metrics import matthews_corrcoef, confusion_matrix, roc_curve, auc
+import csv
+import glob
 
+from sklearn.metrics import matthews_corrcoef, confusion_matrix, roc_curve, auc
+from Bio import Seq
 
 def count_scaling(counts):
     """
@@ -54,20 +56,27 @@ def split_data(data_path, num_batches):
 
 def find_error_files(path):
     output_files = os.listdir(path)
-    output_files = [file for file in output_files if file.endswith(".txt")]
+    output_files = [file for file in output_files if file.endswith(".csv")]
     output_files = [int(file.split("_")[1].split(".")[0]) for file in output_files]
     output_files = sorted(output_files)
     input_files = np.arange(1, 1001)
     missing_files = np.setdiff1d(input_files, output_files)
-    # save the missing files as a row separated .txt file
-    np.savetxt("data/VariPred/missing_vp_files.txt", missing_files, fmt="%d")
+    np.savetxt("data/VariPred/missing_vp_train_files.txt", missing_files, fmt="%d")
     print(len(missing_files))
 
 
-def run_shell_script(file_path):
-    script_path = config.VP_SCRIPT_PATH
+# def run_shell_script(script_path, file_path):
+#     try:
+#         subprocess.run(["bash", script_path, file_path], check=True)
+#     except subprocess.CalledProcessError as e:
+#         print(f"Error while running the shell script: {e}")
+#     else:
+#         print("Shell script executed successfully!")
+
+
+def run_shell_script(script_path, *file_paths):
     try:
-        subprocess.run(["bash", script_path, file_path], check=True)
+        subprocess.run(["bash", script_path] + list(file_paths), check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error while running the shell script: {e}")
     else:
@@ -111,8 +120,8 @@ def preprocess_varipred_output(varipred_output_path):
     """
     Preprocess the VariPred output to match the original data.
     """
-    if os.path.exists("data/VariPred/varipred_output_data.csv"):
-        return pd.read_csv("data/VariPred/varipred_output_data.csv", sep="\t")
+    if os.path.exists("../data/VariPred/varipred_output_data.csv"):
+        return pd.read_csv("../data/VariPred/varipred_output_data.csv", sep="\t")
     else:
         files = os.listdir(varipred_output_path)
         files.sort(key=extract_number)
@@ -124,7 +133,7 @@ def preprocess_varipred_output(varipred_output_path):
                 df['target_id'] = df['target_id'].apply(correct_aa_position)
                 dataframes.append(df)
         varipred_data = pd.concat(dataframes, ignore_index=True)
-        varipred_data.to_csv("data/VariPred/varipred_output_data.csv", sep="\t", index=False)
+        varipred_data.to_csv("../data/VariPred/varipred_output_data.csv", sep="\t", index=False)
         return varipred_data
 
 
@@ -243,3 +252,14 @@ def varipred_evaluation(varipred_data, clinvar_data, posthoc=False):
     if posthoc:
         eval_df["vp_classification"] = np.where(eval_df["vp_probability"] > 0.049, 1, 0)
     varipred_eval(eval_df)
+
+
+def combine_train_files():
+    input_files = glob.glob('../data/VariPred/train/*.csv')
+    with open('../data/VariPred/all_train.csv', 'w', newline='') as outfile:
+        writer = csv.writer(outfile)
+        for filename in input_files:
+            with open(filename, 'r', newline='') as readfile:
+                reader = csv.reader(readfile)
+                for row in reader:
+                    writer.writerow(row)

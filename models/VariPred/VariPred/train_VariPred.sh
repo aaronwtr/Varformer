@@ -4,9 +4,9 @@
 # test_ds: dataframe name, the name of your test set (in .csv format)
 
 # In this example, we are using the training set named as "train.csv" and the test set named as "test.csv" under the directory "../example/dataset"
-df_path="../example/dataset"
-train_ds="train"
-test_ds="test"
+df_path="../data/VariPred/"
+train_ds="train.csv"
+test_ds="test.csv"
 
 # flag -t means set the model to the training mode
 

@@ -1,22 +1,23 @@
 import pandas as pd
 import numpy as np
 import requests
-from tqdm import tqdm
 import pickle as pkl
 import os
 import gc
 import warnings
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from Bio import SeqIO
 import argparse
 import ensembl_rest
-from functools import partial
 import matplotlib.pyplot as plt
 
-import utils
-from plot import variant_sparsity_barplot, pathogenicity_correlation_plot
-import config
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import partial
+from Bio import SeqIO
+from sklearn.model_selection import train_test_split
 
+import plot
+import utils
+import config
 
 class MissenseVariantLoader:
     def __init__(self, preprocess=False, train=False, predict=False, evaluation=False):
@@ -35,7 +36,7 @@ class MissenseVariantLoader:
         # self.analyze_legacy_pathogenicity()
         if preprocess:
             self.process_variants_proteomic()
-        elif len(os.listdir('data/VariPred/input')) == config.NUM_VP_BATCHES:
+        elif len(os.listdir('../data/VariPred/input')) == config.NUM_VP_BATCHES:
             print("Variants already processed.")
         else:
             print('Not all variants are preprocessed yet. Put the preprocess flag to True in the MissenseVariantLoader '
@@ -43,8 +44,9 @@ class MissenseVariantLoader:
         if train:
             # NOTE: In order to prepare the data for training, first all the datasets generated in evaluation need to be
             # loaded.
-            raw_data = pd.read_csv("data/merged_varipred_clinvar.csv", sep="\t")
+            raw_data = pd.read_csv("../data/elgh/train_batch_mivas/variant_data_396.csv")
             train, test, val = self.train_test_val_loader(raw_data)
+            utils.run_shell_script(config.VP_TRAINING_PATH)
 
         if predict:
             if self.args.varipred_input is not None:
@@ -61,8 +63,8 @@ class MissenseVariantLoader:
                         self.predict_pathogenicity(file[:-4])
 
         varipred_output = utils.preprocess_varipred_output(config.VP_OUTPUT_PATH)
-        if os.path.exists("data/elgh/varipred_elgh_data.csv"):
-            self.variant_data = pd.read_csv("data/elgh/varipred_elgh_data.csv", sep="\t")
+        if os.path.exists("../data/elgh/varipred_elgh_data.csv"):
+            self.variant_data = pd.read_csv("../data/elgh/varipred_elgh_data.csv", sep="\t")
         else:
             self.variant_data = utils.combine_varipred_elgh(varipred_output, self.variant_data)
 
@@ -96,7 +98,7 @@ class MissenseVariantLoader:
 
         pathogenicity['sift'] = pathogenicity['sift'].str.extract(r'\((.*?)\)').astype(float)
         pathogenicity['polyphen'] = pathogenicity['polyphen'].str.extract(r'\((.*?)\)').astype(float)
-        variant_sparsity_barplot(pathogenicity, save=True)
+        plot.variant_sparsity_barplot(pathogenicity, save=True)
 
         num_vars = len(list(pathogenicity['polyphen'].values))
 
@@ -109,7 +111,7 @@ class MissenseVariantLoader:
         print(f"PolyPhen sparsity: {pp_sparsity}")
         print(f"SIFT sparsity: {sift_sparsity}")
 
-        pathogenicity_correlation_plot(pathogenicity, save=True)
+        plot.pathogenicity_correlation_plot(pathogenicity, save=True)
 
         print("Done analyzing pathogenicity.")
 
@@ -157,35 +159,56 @@ class MissenseVariantLoader:
         sequence_table.to_csv(f"../data/VariPred/input/variants_{variants_id}.csv", index=False)
 
     def train_test_val_loader(self, data):
-        data = data[["vp_cv_id", "UNIPARC", "Protein_position", "Amino_acids", "ClinSigSimple"]]
-        wt_aa = data["Amino_acids"].str.split("/", expand=True)[0]
-        mt_aa = data["Amino_acids"].str.split("/", expand=True)[0]
-        data["wt_aa"] = wt_aa
-        data["mt_aa"] = mt_aa
-        data = data.drop(columns=["Amino_acids"])
-        data = data.rename(columns={"vp_cv_id": "target_id", "Protein_position": "aa_index", "ClinSigSimple": "label"})
-        cols = ["target_id", "UNIPARC", "aa_index", "wt_aa", "mt_aa", "label"]
-        data = data[cols]
-        print(len(data))
-        seq_ids = []
-        sequence_table = []
-        for i in tqdm(range(len(data))):
-            seq_id = data["target_id"].iloc[i]
-            if seq_id not in seq_ids:
-                wt_seq, mt_seq = self.fetch_amino_acid_sequence(data["UNIPARC"].iloc[i], data["mt_aa"].iloc[i],
-                                                                data["aa_index"].iloc[i])
-                seq_ids.append(seq_id)
-                sequence_table.append([seq_id, data["UNIPARC"].iloc[i], data["aa_index"].iloc[i], data["wt_aa"].iloc[i],
-                                       data["mt_aa"].iloc[i], wt_seq, mt_seq, data["label"].iloc[i]])
-        sequence_table = pd.DataFrame(sequence_table, columns=["target_id", "uniparc_id", "aa_index", "wt_aa", "mt_aa",
-                                                               "wt_seq", "mt_seq", "label"])
-        sequence_table.to_csv(f"data/VariPred/train/vp_train_data.csv", index=False)
-        print("Done processing train data.")
+        train_files = os.listdir("../data/VariPred/train/")
+        if len(train_files) != 1000:
+            data = data[["vp_cv_id", "UNIPARC", "Protein_position", "Amino_acids", "ClinSigSimple"]]
+            wt_aa = data["Amino_acids"].str.split("/", expand=True)[0]
+            mt_aa = data["Amino_acids"].str.split("/", expand=True)[1]
+            data["wt_aa"] = wt_aa
+            data["mt_aa"] = mt_aa
+            data = data.drop(columns=["Amino_acids"])
+            data = data.rename(columns={"vp_cv_id": "target_id", "Protein_position": "aa_index", "ClinSigSimple": "label"})
+            cols = ["target_id", "UNIPARC", "aa_index", "wt_aa", "mt_aa", "label"]
+            data = data[cols]
+            seq_ids = []
+            sequence_table = []
+            for i in tqdm(range(len(data))):
+                seq_id = data["target_id"].iloc[i]
+                if seq_id not in seq_ids:
+                    wt_seq, mt_seq = self.fetch_amino_acid_sequence(data["UNIPARC"].iloc[i], data["mt_aa"].iloc[i],
+                                                                    data["aa_index"].iloc[i])
+                    seq_ids.append(seq_id)
+                    sequence_table.append([seq_id, data["UNIPARC"].iloc[i], data["aa_index"].iloc[i], data["wt_aa"].iloc[i],
+                                           data["mt_aa"].iloc[i], wt_seq, mt_seq, data["label"].iloc[i]])
+            sequence_table = pd.DataFrame(sequence_table, columns=["target_id", "uniparc_id", "aa_index", "wt_aa", "mt_aa",
+                                                                   "wt_seq", "mt_seq", "label"])
+            variants_id = str(self.elgh_path.split("_")[-1].split(".")[0])
+            sequence_table.to_csv(f"../data/VariPred/train/variants_{variants_id}.csv", index=False)
+        else:
+            if not os.path.exists("../data/VariPred/all_train.csv"):
+                utils.combine_train_files()
+            elif not os.path.exists("../data/VariPred/train.csv"):
+                raw_train = pd.read_csv("../data/VariPred/all_train.csv")
+                df = raw_train.copy()
+                df = df[df.target_id != 'target_id']
+                train, temp = train_test_split(df, test_size=0.3, random_state=42)
+                test, val = train_test_split(temp, test_size=0.5, random_state=42)
+                train.to_csv("../data/VariPred/train.csv", index=False, header=False)
+                val.to_csv("../data/VariPred/val.csv", index=False, header=False)
+                test.to_csv("../data/VariPred/test.csv", index=False, header=False)
+                print(f"Train, val and test data loaded with sizes: {len(train)}, {len(val)}, {len(test)}")
+                return train, val, test
+            else:
+                train = pd.read_csv("../data/VariPred/train.csv")
+                val = pd.read_csv("../data/VariPred/val.csv")
+                test = pd.read_csv("../data/VariPred/test.csv")
+                print(f"Train, val and test data loaded with sizes: {len(train)}, {len(val)}, {len(test)}")
+                return train, val, test
 
     @staticmethod
     def predict_pathogenicity(variant_file):
         file = f"{variant_file}"
-        utils.run_shell_script(file)
+        utils.run_shell_script(config.VP_INFERENCE_PATH, file)
 
     def __process_variants_genomic(self):
         warnings.filterwarnings('ignore')

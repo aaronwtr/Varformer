@@ -15,7 +15,7 @@ import esm
 def get_embeds(df, dataset):
     '''
 
-    input: dataframe (e.g. ../example/dataset/train.csv)
+    input: dataframe (e.g. ../example/dataset/all_train.csv)
     output: .pt (e.g. ../example/embeds/train.pt)
 
     '''
