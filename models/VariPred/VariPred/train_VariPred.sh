@@ -4,14 +4,14 @@
 # test_ds: dataframe name, the name of your test set (in .csv format)
 
 # In this example, we are using the training set named as "train.csv" and the test set named as "test.csv" under the directory "../example/dataset"
-df_path="../data/VariPred/"
-train_ds="train.csv"
-test_ds="test.csv"
+df_path="../data/VariPred"
+train_ds="train"
+test_ds="test"
 
 # flag -t means set the model to the training mode
 
-python3 main.py \
-                -p ${df_path} \
+python3 ../models/VariPred/VariPred/main.py \
+                -p ${df_path}\
                 -tr ${train_ds} \
                 -ts ${test_ds} \
                 -t

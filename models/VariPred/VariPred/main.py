@@ -171,6 +171,7 @@ if __name__ == '__main__':
     print('=============== Loading data... ===============')
     
     storage_path = args.df_path
+    print(storage_path)
     
     print(f'=============== Start getting embeddings ... ===============')
 

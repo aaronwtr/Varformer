@@ -191,11 +191,12 @@ class MissenseVariantLoader:
                 raw_train = pd.read_csv("../data/VariPred/all_train.csv")
                 df = raw_train.copy()
                 df = df[df.target_id != 'target_id']
+                df = df.rename(columns={'target_id': 'seq_id'})
                 train, temp = train_test_split(df, test_size=0.3, random_state=42)
                 test, val = train_test_split(temp, test_size=0.5, random_state=42)
-                train.to_csv("../data/VariPred/train.csv", index=False, header=False)
-                val.to_csv("../data/VariPred/val.csv", index=False, header=False)
-                test.to_csv("../data/VariPred/test.csv", index=False, header=False)
+                train.to_csv("../data/VariPred/train.csv", index=False)
+                val.to_csv("../data/VariPred/val.csv", index=False)
+                test.to_csv("../data/VariPred/test.csv", index=False)
                 print(f"Train, val and test data loaded with sizes: {len(train)}, {len(val)}, {len(test)}")
                 return train, val, test
             else:
