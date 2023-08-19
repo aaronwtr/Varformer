@@ -63,7 +63,7 @@ def train_VariPred(train_ds, test_ds, valid_ds=None,train=True):
         print('valid set name: ', valid_ds)
     else:
         X_train, X_valid, y_train, y_valid = train_test_split(X_train,y_train,
-                                                            test_size=0.3,
+                                                            test_size=0.1,
                                                             shuffle=True,
                                                             stratify=y_train,
                                                             random_state=config.SEED)

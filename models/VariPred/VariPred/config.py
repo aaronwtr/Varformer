@@ -27,7 +27,7 @@ else:
 # ==================== Embeds path ====================================
 
 
-esm_storage_path = 'data/VariPred/embeds'
+esm_storage_path = '../data/VariPred/embeds'
 
 
 # ==================== Dataset and Model ====================================
@@ -39,8 +39,11 @@ label_num = 2
 
 # train_parameters
 n_epochs = 200
-learning_rate = 1e-4
-early_stop = 10
+learning_rate = 1e-5
+weight_decay = 0
+lr_decay = 0.9
+early_stop = 3
+dropout = 0.5
 
 # inference_parameters
-classification_threshold = 0.2
+classification_threshold = 0.05

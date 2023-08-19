@@ -205,7 +205,7 @@ class MLPClassifier_LeakyReLu(nn.Module):
         # Instantiate an one-layer feed-forward classifier
         self.hidden = nn.Linear(num_input, num_hidden)
         self.predict = nn.Sequential(
-            nn.Dropout(0.5),
+            nn.Dropout(config.dropout),
             nn.LeakyReLU(inplace=True),
             nn.Linear(num_hidden, num_output)
         )
@@ -233,7 +233,7 @@ def trainer(train_loader, val_loader, model, device=config.device, early_stop=co
 
     # Define the optimization algorithm.
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=config.learning_rate, weight_decay=0)
+        model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
     # scheduler = get_linear_schedule_with_warmup(optimizer,
     #                                         num_warmup_steps= 0,
     #                                         num_training_steps= len(train_loader)*n_epochs)
