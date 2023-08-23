@@ -128,3 +128,13 @@ plots/varipred_output_kde/varipred_kde_lognorm_sep.pdf
 plots/varipred_output_kde/varipred_kde_sep.pdf
 
 data/VariPred/missing_vp_train_files.txt
+
+src/data/VariPred/model_eval_result.txt
+
+src/model/model.ckpt
+
+*.cif
+
+data/FDA_approved_drug_targets_2023_Q2.xlsx
+
+src/data/VariPred/model_performance.txt

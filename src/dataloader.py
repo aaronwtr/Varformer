@@ -14,10 +14,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 from Bio import SeqIO
 from sklearn.model_selection import train_test_split
+from pymatgen.io.cif import CifParser
 
 import plot
 import utils
 import config
+
 
 class MissenseVariantLoader:
     def __init__(self, preprocess=False, train=False, predict=False, evaluation=False):
@@ -167,7 +169,8 @@ class MissenseVariantLoader:
             data["wt_aa"] = wt_aa
             data["mt_aa"] = mt_aa
             data = data.drop(columns=["Amino_acids"])
-            data = data.rename(columns={"vp_cv_id": "target_id", "Protein_position": "aa_index", "ClinSigSimple": "label"})
+            data = data.rename(
+                columns={"vp_cv_id": "target_id", "Protein_position": "aa_index", "ClinSigSimple": "label"})
             cols = ["target_id", "UNIPARC", "aa_index", "wt_aa", "mt_aa", "label"]
             data = data[cols]
             seq_ids = []
@@ -178,10 +181,12 @@ class MissenseVariantLoader:
                     wt_seq, mt_seq = self.fetch_amino_acid_sequence(data["UNIPARC"].iloc[i], data["mt_aa"].iloc[i],
                                                                     data["aa_index"].iloc[i])
                     seq_ids.append(seq_id)
-                    sequence_table.append([seq_id, data["UNIPARC"].iloc[i], data["aa_index"].iloc[i], data["wt_aa"].iloc[i],
-                                           data["mt_aa"].iloc[i], wt_seq, mt_seq, data["label"].iloc[i]])
-            sequence_table = pd.DataFrame(sequence_table, columns=["target_id", "uniparc_id", "aa_index", "wt_aa", "mt_aa",
-                                                                   "wt_seq", "mt_seq", "label"])
+                    sequence_table.append(
+                        [seq_id, data["UNIPARC"].iloc[i], data["aa_index"].iloc[i], data["wt_aa"].iloc[i],
+                         data["mt_aa"].iloc[i], wt_seq, mt_seq, data["label"].iloc[i]])
+            sequence_table = pd.DataFrame(sequence_table,
+                                          columns=["target_id", "uniparc_id", "aa_index", "wt_aa", "mt_aa",
+                                                   "wt_seq", "mt_seq", "label"])
             variants_id = str(self.elgh_path.split("_")[-1].split(".")[0])
             sequence_table.to_csv(f"../data/VariPred/train/variants_{variants_id}.csv", index=False)
         else:
@@ -356,7 +361,7 @@ class GeneCharacterisation:
     """
 
     def __init__(self):
-        self.files_and_dirs = os.listdir("data")
+        self.files_and_dirs = os.listdir("../data")
         self.data_name_mapping = {
             "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
             "gnomad.exomes.v2.1.1.lof_metrics.by_gene.csv": "gnomAD Exomes Loss-of-Function Metrics",
@@ -366,28 +371,37 @@ class GeneCharacterisation:
             "part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet": "Mouse Knockout Phenotypes"
         }
         self.files = self._get_files()
-        self.datasets = self._load_data()
-        self.chem_features = self._chem_feature_extractor()
-        self.gnomad_features = self._gnomad_feature_extractor()
-        self.bin_tract_features = self._tractability_feature_extractor()
-        self.tract_features = self._tractability_feature_calculator()
-        self.ppi_features = self._ppi_feature_extractor()
-        self.mouse_ko_features = self._mouse_knockout_feature_extractor()
+        self.datasets = self.load_data()
 
-        self.ot_fda_approvals = self._ground_truth_extractor()
+        # Population genomics data
+        self.gh_data = self.load_gh_data()
+
+        # OpenTargets proof-of-concept model
+        # self.bin_tract_features = self._tractability_feature_extractor()
+        # self.tract_features = self._tractability_feature_calculator()
+
+        # Our model
+        self.alphafold_features = self._alphafold_feature_extractor()
+        # self.ppi_features = self._ppi_feature_extractor()
+        # self.mouse_ko_features = self._mouse_knockout_feature_extractor()
+        # self.chem_features = self._chem_feature_extractor()
+        # self.gnomad_features = self._gnomad_feature_extractor()
+        #
+        # # Ground truth
+        # self.ot_fda_approvals = self._ground_truth_extractor()
 
     def _get_files(self):
         """
         Get the files from the data directory.
         """
         files = []
-        exclude = ['.DS_Store', 'elgh']
+        exclude = ['.DS_Store', 'elgh', 'clinvar', 'VariPred', 'string_data_counts.pkl']
 
         for file in self.files_and_dirs:
             if "." in file and file not in exclude:
-                files.append(f"data/{file}")
+                files.append(f"../data/{file}")
             elif file not in exclude:
-                file_path = f"data/{file}"
+                file_path = f"../data/{file}"
                 _file = self._dir_parser(file_path)
                 files.append(_file)
         return files
@@ -407,7 +421,7 @@ class GeneCharacterisation:
                 path = f"{path}/{subfile}"
                 self._dir_parser(path)
 
-    def _load_data(self):
+    def load_data(self):
         """
         Load the data from the files.
         """
@@ -419,19 +433,54 @@ class GeneCharacterisation:
         else:
             for file in self.files:
                 file_name = file.split("/")[-1]
-                file_id = self.data_name_mapping[file_name]
-                if any(word in file for word in ["csv", "txt"]):
-                    datasets[file_id] = pd.read_csv(file)
-                elif "xlsb" in file:
-                    datasets[file_id] = pd.read_excel(file)
-                elif "parquet" in file:
-                    datasets[file_id] = pd.read_parquet(file)
-                else:
-                    raise ValueError(
-                        "The file format is not supported. Make sure data is .csv, .txt, Excel, or parquet.")
+                if file_name in self.data_name_mapping.keys():
+                    file_id = self.data_name_mapping[file_name]
+                    if any(word in file for word in ["csv", "txt"]):
+                        datasets[file_id] = pd.read_csv(file)
+                    elif "xlsb" in file:
+                        datasets[file_id] = pd.read_excel(file)
+                    elif "parquet" in file:
+                        datasets[file_id] = pd.read_parquet(file)
+                    else:
+                        raise ValueError(
+                            "The file format is not supported. Make sure data is .csv, .txt, Excel, or parquet.")
             with open('data/datasets.pkl', 'wb') as fp:
                 pkl.dump(datasets, fp)
             return datasets
+
+    @staticmethod
+    def load_gh_data():
+        """
+        Load the Genes & Health variant data and the reference genome.
+        """
+        variant_data = pd.read_csv(config.MIVA_PATH, sep="\t")
+        variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
+        return variant_data
+
+    def _alphafold_feature_extractor(self):
+        """
+        Extract AlphaFold features from the AlphaFold API. Specifically, we get the average pLDDT score for the proteins
+        in our dataset
+        """
+        uniprot_data = self.gh_data[["SWISSPROT", "TREMBL", "varipred_id"]]
+        uniprot_data["uniprot_id"] = uniprot_data["SWISSPROT"].fillna(uniprot_data["TREMBL"])
+        uniprot_data = uniprot_data.drop(["SWISSPROT", "TREMBL"], axis=1).rename(columns={"uniprot_id": "UNIPROT"})
+        uniprot_ids = uniprot_data["UNIPROT"].unique().tolist()
+
+        for qualifier in tqdm(uniprot_ids):
+            # TODO: Download SWISSPROT AlphaFold version
+            cif_file_path = f"{config.AF_PATH}AF-{qualifier}-model_v4.cif"
+            target_format = "_ma_qa_metric_global.metric_value\t"
+
+            extracted_values = {}
+
+            with open(cif_file_path, "r") as cif_file:
+                for line in cif_file:
+                    if line.startswith(target_format):
+                        value = line[len(target_format):].strip()
+                        extracted_values[qualifier] = float(value)
+                        print(f"Extracted value for {qualifier}: {value}")
+                        AF - A0A087WYW1 - F1 - model_v4
 
     def _chem_feature_extractor(self):
         """
@@ -526,7 +575,7 @@ class GeneCharacterisation:
         Featurise PPI data, i.e. count and normalize the PPIs for each protein with a confidence score above a threshold.
         TODO: Use another version of STRING dataset where we can select the experimentally validated PPIs.
         """
-        with open('data/9606.protein.info.v11.5.txt', 'r') as f:
+        with open('../data/9606.protein.info.v11.5.txt', 'r') as f:
             protein_info = f.readlines()
         protein_info = [x.strip().split('\t') for x in protein_info]
         protein_info = pd.DataFrame(protein_info)
