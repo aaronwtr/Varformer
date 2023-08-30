@@ -5,5 +5,5 @@ GENOME_PATH = "../data/hg38.fasta"
 VP_INFERENCE_PATH = "../models/VariPred/VariPred/predict.sh"
 VP_TRAINING_PATH = "../models/VariPred/VariPred/train_VariPred.sh"
 VP_OUTPUT_PATH = "../data/VariPred/output/"
-AF_PATH = "../data/alphafold/"
+AF_PATH = "../data/alphafold/swissprot_cif_v4/"
 NUM_VP_BATCHES = 1000

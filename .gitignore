@@ -39,6 +39,8 @@ src/__pycache__/dataloader.cpython-38.pyc
 
 data/datasets.pkl
 
+data/alphafold/
+
 src/__pycache__/
 
 data/gnomad_feature_description.pdf

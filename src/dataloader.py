@@ -469,18 +469,37 @@ class GeneCharacterisation:
 
         for qualifier in tqdm(uniprot_ids):
             # TODO: Download SWISSPROT AlphaFold version
-            cif_file_path = f"{config.AF_PATH}AF-{qualifier}-model_v4.cif"
-            target_format = "_ma_qa_metric_global.metric_value\t"
+            try:
+                cif_file_path = f"{config.AF_PATH}AF-{qualifier}-F1-model_v4.cif"
+                target_format = "_ma_qa_metric_global.metric_value\t"
 
-            extracted_values = {}
+                extracted_values = {}
 
-            with open(cif_file_path, "r") as cif_file:
-                for line in cif_file:
-                    if line.startswith(target_format):
-                        value = line[len(target_format):].strip()
-                        extracted_values[qualifier] = float(value)
-                        print(f"Extracted value for {qualifier}: {value}")
-                        AF - A0A087WYW1 - F1 - model_v4
+                with open(cif_file_path, "r") as cif_file:
+                    for line in cif_file:
+                        if line.startswith(target_format):
+                            value = line[len(target_format):].strip()
+                            extracted_values[qualifier] = float(value)
+                            print(f"\nExtracted value for {qualifier}: {value}")
+            except FileNotFoundError:
+                base_url = "https://alphafold.ebi.ac.uk/api/uniprot/summary"
+                api_key = "AIzaSyCeurAJz7ZGjPQUtEaerUkBZ3TaBkXrY94"
+
+                url = f"{base_url}/{qualifier}.json?key={api_key}"
+
+                response = requests.get(url)
+
+                if response.status_code == 200:
+                    data = response.json()
+                    value = float(data["structures"][0]["summary"]["confidence_avg_local_score"])
+                    extracted_values[qualifier] = value
+                    print(f"\nExtracted value for {qualifier}: {value}")
+                else:
+                    print(f"\nError: Unable to fetch data for {qualifier}. Status code: {response.status_code}. "
+                          f"Inserting NaN.")
+                    extracted_values[qualifier] = np.nan
+
+
 
     def _chem_feature_extractor(self):
         """
