@@ -140,3 +140,5 @@ src/model/model.ckpt
 data/FDA_approved_drug_targets_2023_Q2.xlsx
 
 src/data/VariPred/model_performance.txt
+
+models/VariPred/VariPred/model/finetuned_model.ckpt

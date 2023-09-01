@@ -382,6 +382,7 @@ class GeneCharacterisation:
 
         # Our model
         self.alphafold_features = self._alphafold_feature_extractor()
+        print(self.alphafold_features)
         # self.ppi_features = self._ppi_feature_extractor()
         # self.mouse_ko_features = self._mouse_knockout_feature_extractor()
         # self.chem_features = self._chem_feature_extractor()
@@ -466,40 +467,41 @@ class GeneCharacterisation:
         uniprot_data["uniprot_id"] = uniprot_data["SWISSPROT"].fillna(uniprot_data["TREMBL"])
         uniprot_data = uniprot_data.drop(["SWISSPROT", "TREMBL"], axis=1).rename(columns={"uniprot_id": "UNIPROT"})
         uniprot_ids = uniprot_data["UNIPROT"].unique().tolist()
+        extracted_values = {}
+        if os.path.exists('../data/alphafold/af_plddt_features.pkl'):
+            with open('../data/alphafold/af_plddt_features.pkl', 'rb') as fp:
+                extracted_values = pkl.load(fp)
+            return extracted_values
+        else:
+            for qualifier in tqdm(uniprot_ids):
+                try:
+                    cif_file_path = f"{config.AF_PATH}AF-{qualifier}-F1-model_v4.cif"
+                    target_format = "_ma_qa_metric_global.metric_value\t"
 
-        for qualifier in tqdm(uniprot_ids):
-            # TODO: Download SWISSPROT AlphaFold version
-            try:
-                cif_file_path = f"{config.AF_PATH}AF-{qualifier}-F1-model_v4.cif"
-                target_format = "_ma_qa_metric_global.metric_value\t"
+                    with open(cif_file_path, "r") as cif_file:
+                        for line in cif_file:
+                            if line.startswith(target_format):
+                                value = line[len(target_format):].strip()
+                                extracted_values[qualifier] = float(value)
+                except FileNotFoundError:
+                    base_url = "https://alphafold.ebi.ac.uk/api/uniprot/summary"
+                    api_key = "AIzaSyCeurAJz7ZGjPQUtEaerUkBZ3TaBkXrY94"
 
-                extracted_values = {}
+                    url = f"{base_url}/{qualifier}.json?key={api_key}"
 
-                with open(cif_file_path, "r") as cif_file:
-                    for line in cif_file:
-                        if line.startswith(target_format):
-                            value = line[len(target_format):].strip()
-                            extracted_values[qualifier] = float(value)
-                            print(f"\nExtracted value for {qualifier}: {value}")
-            except FileNotFoundError:
-                base_url = "https://alphafold.ebi.ac.uk/api/uniprot/summary"
-                api_key = "AIzaSyCeurAJz7ZGjPQUtEaerUkBZ3TaBkXrY94"
+                    response = requests.get(url)
 
-                url = f"{base_url}/{qualifier}.json?key={api_key}"
-
-                response = requests.get(url)
-
-                if response.status_code == 200:
-                    data = response.json()
-                    value = float(data["structures"][0]["summary"]["confidence_avg_local_score"])
-                    extracted_values[qualifier] = value
-                    print(f"\nExtracted value for {qualifier}: {value}")
-                else:
-                    print(f"\nError: Unable to fetch data for {qualifier}. Status code: {response.status_code}. "
-                          f"Inserting NaN.")
-                    extracted_values[qualifier] = np.nan
-
-
+                    if response.status_code == 200:
+                        data = response.json()
+                        value = float(data["structures"][0]["summary"]["confidence_avg_local_score"])
+                        extracted_values[qualifier] = value
+                    else:
+                        print(f"\nError: Unable to fetch data for {qualifier}. Status code: {response.status_code}. "
+                              f"Inserting 0.0.")
+                        extracted_values[qualifier] = 0.0
+            with open('../data/alphafold/af_plddt_features.pkl', 'wb') as fp:
+                pkl.dump(extracted_values, fp)
+            return extracted_values
 
     def _chem_feature_extractor(self):
         """
