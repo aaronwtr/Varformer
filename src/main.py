@@ -15,5 +15,5 @@ def gene_characterisation():
 
 
 if __name__ == "__main__":
-    # load_missense_variants()
-    gene_characterisation()
+    load_missense_variants()
+    # gene_characterisation()
