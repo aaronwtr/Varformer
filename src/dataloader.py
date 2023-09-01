@@ -46,6 +46,9 @@ class MissenseVariantLoader:
         if train:
             # NOTE: In order to prepare the data for training, first all the datasets generated in evaluation need to be
             # loaded.
+
+            # raw_data here is dummy file, normally should be done on cluster for all batch files
+
             raw_data = pd.read_csv("../data/elgh/train_batch_mivas/variant_data_396.csv")
             train, test, val = self.train_test_val_loader(raw_data)
             utils.run_shell_script(config.VP_TRAINING_PATH)
@@ -160,7 +163,7 @@ class MissenseVariantLoader:
         variants_id = str(self.elgh_path.split("_")[-1].split(".")[0])
         sequence_table.to_csv(f"../data/VariPred/input/variants_{variants_id}.csv", index=False)
 
-    def train_test_val_loader(self, data):
+    def train_test_val_loader(self, data, downsampling=True):
         train_files = os.listdir("../data/VariPred/train/")
         if len(train_files) != 1000:
             data = data[["vp_cv_id", "UNIPARC", "Protein_position", "Amino_acids", "ClinSigSimple"]]
@@ -204,6 +207,18 @@ class MissenseVariantLoader:
                 test.to_csv("../data/VariPred/test.csv", index=False)
                 print(f"Train, val and test data loaded with sizes: {len(train)}, {len(val)}, {len(test)}")
                 return train, val, test
+            elif downsampling and not os.path.exists("../data/VariPred/train_downsample.csv"):
+                train = pd.read_csv("../data/VariPred/train.csv")
+                test = pd.read_csv("../data/VariPred/test.csv")
+                val = pd.read_csv("../data/VariPred/test.csv")
+                train = utils.downsampler(train)
+                test = utils.downsampler(test)
+                val = utils.downsampler(val)
+                train.to_csv("../data/VariPred/train_downsample.csv", index=False)
+                test.to_csv("../data/VariPred/test_downsample.csv", index=False)
+                val.to_csv("../data/VariPred/val_downsample.csv", index=False)
+                print(f"Train, val and test data downsampled with sizes: {len(train)}, {len(val)}, {len(test)}")
+                return train, test, val
             else:
                 train = pd.read_csv("../data/VariPred/train.csv")
                 val = pd.read_csv("../data/VariPred/val.csv")
