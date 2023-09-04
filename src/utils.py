@@ -250,7 +250,7 @@ def varipred_evaluation(varipred_data, clinvar_data, posthoc=False):
     varipred_data, clinvar_data = clinvar_varipred_id(varipred_data, clinvar_data)
     eval_df = combine_varipred_clinvar(varipred_data, clinvar_data)
     if posthoc:
-        eval_df["vp_classification"] = np.where(eval_df["vp_probability"] > 0.049, 1, 0)
+        eval_df["vp_classification"] = np.where(eval_df["vp_probability"] > 0.018, 1, 0)
     varipred_eval(eval_df)
 
 
