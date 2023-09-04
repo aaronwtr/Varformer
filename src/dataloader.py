@@ -61,7 +61,7 @@ class MissenseVariantLoader:
                     if file.endswith('.csv'):
                         self.predict_pathogenicity(file[:-4])
             else:
-                variant_files = os.listdir('data/VariPred/input/')
+                variant_files = os.listdir('../data/VariPred/input/')
                 variant_files = sorted(variant_files, key=utils.extract_number)
                 for file in variant_files:
                     if file.endswith('.csv'):
@@ -74,8 +74,8 @@ class MissenseVariantLoader:
             self.variant_data = utils.combine_varipred_elgh(varipred_output, self.variant_data)
 
         if evaluation:
-            clinvar_data = pd.read_csv("data/clinvar/variant_summary.txt", sep="\t")
-            utils.varipred_evaluation(self.variant_data, clinvar_data, posthoc=True)
+            clinvar_data = pd.read_csv("../data/clinvar/variant_summary.txt", sep="\t")
+            utils.varipred_evaluation(self.variant_data, clinvar_data, posthoc=False)
 
     def load_data(self):
         """
@@ -219,6 +219,12 @@ class MissenseVariantLoader:
                 val.to_csv("../data/VariPred/val_downsample.csv", index=False)
                 print(f"Train, val and test data downsampled with sizes: {len(train)}, {len(val)}, {len(test)}")
                 return train, test, val
+            elif downsampling:
+                train = pd.read_csv("../data/VariPred/train_downsample.csv")
+                val = pd.read_csv("../data/VariPred/val_downsample.csv")
+                test = pd.read_csv("../data/VariPred/test_downsample.csv")
+                print(f"Downsampled train, val and test data loaded with sizes: {len(train)}, {len(val)}, {len(test)}")
+                return train, val, test
             else:
                 train = pd.read_csv("../data/VariPred/train.csv")
                 val = pd.read_csv("../data/VariPred/val.csv")
@@ -226,9 +232,9 @@ class MissenseVariantLoader:
                 print(f"Train, val and test data loaded with sizes: {len(train)}, {len(val)}, {len(test)}")
                 return train, val, test
 
-    @staticmethod
-    def predict_pathogenicity(variant_file):
-        file = f"{variant_file}"
+    def predict_pathogenicity(self, variant_file):
+        data_folder = self.args.varipred_input.split('/')[3]
+        file = f"{data_folder}/{variant_file}"
         utils.run_shell_script(config.VP_INFERENCE_PATH, file)
 
     def __process_variants_genomic(self):

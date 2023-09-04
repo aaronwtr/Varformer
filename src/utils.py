@@ -146,7 +146,7 @@ def combine_varipred_elgh(varipred_data, elgh_data):
     merged_df = merged_df[columns]
     new_column_names = {'classification': 'vp_classification', 'probability': 'vp_probability'}
     merged_df.rename(columns=new_column_names, inplace=True)
-    merged_df.to_csv("data/elgh/varipred_elgh_data.csv", sep="\t", index=False)
+    merged_df.to_csv("../data/elgh/varipred_elgh_data.csv", sep="\t", index=False)
 
 
 def clinvar_filtering(clinvar_data):
@@ -166,24 +166,24 @@ def clinvar_filtering(clinvar_data):
             ]
         clinvar_data = clinvar_data.dropna(subset=["ReferenceAlleleVCF", "AlternateAlleleVCF"])
         clinvar_data = clinvar_data[columns]
-        clinvar_data.to_csv("data/clinvar/clinvar_filtered.csv", sep="\t", index=False)
+        clinvar_data.to_csv("../data/clinvar/clinvar_filtered.csv", sep="\t", index=False)
         return clinvar_data
 
 
 def clinvar_varipred_id(varipred_data, clinvar_data):
     """
-    Makes new ID var varipred and clinvar overlap: {gene_name}_{genomic_position}_{ref_allele}_{alt_allele}
+    Makes new ID for varipred and clinvar overlap: {gene_name}_{genomic_position}_{ref_allele}_{alt_allele}
     """
-    if os.path.exists("data/clinvar/clinvar_varipred_id_final.csv"):
-        clinvar_data = pd.read_csv("data/clinvar/clinvar_varipred_id_final.csv", sep="\t")
+    if os.path.exists("../data/clinvar/clinvar_varipred_id_final.csv"):
+        clinvar_data = pd.read_csv("../data/clinvar/clinvar_varipred_id_final.csv", sep="\t")
     else:
         clinvar_data["vp_cv_id"] = clinvar_data["GeneSymbol"] + "_" + clinvar_data["Start"].astype(str) + "_" + \
                                    clinvar_data["ReferenceAlleleVCF"] + "_" + clinvar_data["AlternateAlleleVCF"]
         clinvar_data = clinvar_data.drop_duplicates(subset=['vp_cv_id'])
-        clinvar_data.to_csv("data/clinvar/clinvar_vp_id_final.csv", sep="\t", index=False)
+        clinvar_data.to_csv("../data/clinvar/clinvar_vp_id_final.csv", sep="\t", index=False)
 
-    if os.path.exists("data/VariPred/varipred_vp_id_final.csv"):
-        varipred_data = pd.read_csv("data/VariPred/varipred_vp_id_final.csv", sep="\t")
+    if os.path.exists("../data/VariPred/varipred_vp_id_final.csv"):
+        varipred_data = pd.read_csv("../data/VariPred/varipred_vp_id_final.csv", sep="\t")
     else:
         ref_aa = varipred_data["REF"]
         alt_aa = varipred_data["Allele"]
@@ -191,7 +191,7 @@ def clinvar_varipred_id(varipred_data, clinvar_data):
                                     ref_aa + "_" + alt_aa
 
         varipred_data = varipred_data.drop_duplicates(subset=['vp_cv_id'])
-        varipred_data.to_csv("data/VariPred/varipred_vp_id_final.csv", sep="\t", index=False)
+        varipred_data.to_csv("../data/VariPred/varipred_vp_id_final.csv", sep="\t", index=False)
 
     return varipred_data, clinvar_data
 
@@ -201,14 +201,14 @@ def combine_varipred_clinvar(varipred_data, clinvar_data):
     Combine the VariPred and ClinVar data. The columns we want to keep are: vp_cv_id, SYMBOL, POS, ReferenceAlleleVCF,
     AlternateAlleleVCF, ClinSigSimple, vp_classification, vp_probability
     """
-    if not os.path.exists("data/merged_varipred_clinvar.csv"):
+    if not os.path.exists("../data/merged_varipred_clinvar.csv"):
         merged_df = pd.merge(varipred_data, clinvar_data, on='vp_cv_id', how='inner')
         columns = ["vp_cv_id", "SYMBOL", "ReferenceAlleleVCF", "AlternateAlleleVCF", "POS", "UNIPARC", "Amino_acids",
                    "Protein_position", "ClinSigSimple", "vp_classification", "vp_probability"]
         merged_df = merged_df[columns]
     else:
-        merged_df = pd.read_csv("data/merged_varipred_clinvar.csv", sep="\t")
-    merged_df.to_csv("data/merged_varipred_clinvar.csv", sep="\t", index=False)
+        merged_df = pd.read_csv("../data/merged_varipred_clinvar.csv", sep="\t")
+    merged_df.to_csv("../data/merged_varipred_clinvar.csv", sep="\t", index=False)
     return merged_df
 
 
