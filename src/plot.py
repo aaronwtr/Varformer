@@ -127,6 +127,6 @@ def varipred_kde_plot(df):
     plt.xlim(0, 0.5)
     plt.title('Pathogenicity Probability Distribution')
     plt.legend(loc='upper right')
-    plt.savefig('plots/varipred_kde_sep.pdf')
-    plt.savefig('plots/varipred_kde_sep.png')
+    plt.savefig('plots/varipred_kde_sep_finetuned.pdf')
+    plt.savefig('plots/varipred_kde_sep_finetuned.png')
     plt.show()
