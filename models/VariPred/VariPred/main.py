@@ -138,7 +138,7 @@ def run_VariPred(target_ds,output):
     num_hidden = int(model_size/2) 
     model = utils.MLPClassifier_LeakyReLu(num_input = model_size, num_hidden = num_hidden, num_output = config.label_num).to(config.device)
 
-    storage_path = f'models/VariPred/VariPred/model'
+    storage_path = f'../models/VariPred/VariPred/model'
     
     if not os.path.exists(storage_path):
         print('Please train the model first')

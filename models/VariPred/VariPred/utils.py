@@ -355,7 +355,8 @@ def predict(test_loader, model, device):
 
 
 def predict_results(y_true, preds, record_id, train=False, output_name=None):
-    result_path = f'data/VariPred/'  # path for saving predictions
+    result_path = f'../data/VariPred'  # path for saving predictions
+    output_name = "/".join(output_name.split("/")[2:])
 
     if not os.path.exists(f'{result_path}'):
         os.makedirs(result_path)
@@ -391,9 +392,10 @@ def predict_results(y_true, preds, record_id, train=False, output_name=None):
 
     else:
         preds_bin = np.array(preds >= config.classification_threshold, dtype=int)
-        if not os.path.exists(f'../example/{output_name}.txt'):
+        if not os.path.exists(f'{result_path}/{output_name}.txt'):
+            os.makedirs(result_path, exist_ok=True)
             header = "target_id\tclassification\tprobability\n"
-            with open(f'{result_path}/{output_name}.txt', 'a') as file_writer:
+            with open(f'{result_path}/{output_name}.txt', 'w') as file_writer:
                 file_writer.write(header)
 
         for ids, pred_bin_value, pred_value in zip(record_id, preds_bin, preds):

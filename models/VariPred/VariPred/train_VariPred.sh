@@ -5,8 +5,8 @@
 
 # In this example, we are using the training set named as "train.csv" and the test set named as "test.csv" under the directory "../example/dataset"
 df_path="../data/VariPred"
-train_ds="train"
-test_ds="test"
+train_ds="train_downsample"
+test_ds="test_downsample"
 
 # flag -t means set the model to the training mode
 
