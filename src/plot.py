@@ -110,7 +110,7 @@ def varipred_kde_plot(df):
     sns.kdeplot(pathogenic_probs, label='Pathogenic', fill=True)
     sns.kdeplot(benign_probs, label='Benign', fill=True)
 
-    intersection_point = 0.0491
+    intersection_point = 0.018
 
     # Plot vertical dotted line
     plt.axvline(x=intersection_point, color='black', linestyle='--')
@@ -127,6 +127,6 @@ def varipred_kde_plot(df):
     plt.xlim(0, 0.5)
     plt.title('Pathogenicity Probability Distribution')
     plt.legend(loc='upper right')
-    plt.savefig('plots/varipred_kde_sep_finetuned.pdf')
-    plt.savefig('plots/varipred_kde_sep_finetuned.png')
+    plt.savefig('../plots/varipred_kde_sep_finetuned.pdf')
+    plt.savefig('../plots/varipred_kde_sep_finetuned.png')
     plt.show()

@@ -144,3 +144,5 @@ src/data/VariPred/model_performance.txt
 models/VariPred/VariPred/model/finetuned_model.ckpt
 
 data/VariPred/finetuned_output_1/
+
+plots/varipred_output_kde/varipred_kde_sep_finetuned.pdf
