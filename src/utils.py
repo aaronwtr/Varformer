@@ -258,11 +258,20 @@ def combine_train_files():
     input_files = glob.glob('../data/VariPred/train/*.csv')
     with open('../data/VariPred/all_train.csv', 'w', newline='') as outfile:
         writer = csv.writer(outfile)
+        count = 0
         for filename in input_files:
             with open(filename, 'r', newline='') as readfile:
                 reader = csv.reader(readfile)
                 for row in reader:
-                    writer.writerow(row)
+                    if count == 0:
+                        count += 1
+                        writer.writerow(row)
+                    elif row[0] == 'target_id':
+                        continue
+                    elif len(row[5]) > 1022:
+                        continue
+                    else:
+                        writer.writerow(row)
 
 
 def downsampler(data):
