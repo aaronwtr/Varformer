@@ -109,7 +109,7 @@ plots/sift_pp_pathogenicity_correlation.pdf
 
 data/VariPred/embeds/
 
-data/VariPred/output/
+data/VariPred/pretrained_output/
 
 data/VariPred/missing_vp_files.txt
 
@@ -146,3 +146,11 @@ models/VariPred/VariPred/model/finetuned_model.ckpt
 data/VariPred/finetuned_output_1/
 
 plots/varipred_output_kde/varipred_kde_sep_finetuned.pdf
+
+data/VariPred/model_eval_result.txt
+
+data/VariPred/model_performance.txt
+
+models/VariPred/VariPred/model/finetuned_model_11K_data_36MCC.ckpt
+
+models/VariPred/VariPred/model/finetuned_model_70K_data_20MCC.ckpt

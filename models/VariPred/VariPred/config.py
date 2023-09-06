@@ -46,4 +46,4 @@ early_stop = 3
 dropout = 0.5
 
 # inference_parameters
-classification_threshold = 0.018
+classification_threshold = 0.1

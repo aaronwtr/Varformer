@@ -50,7 +50,7 @@ class MissenseVariantLoader:
             # raw_data here is dummy file, normally should be done on cluster for all batch files
 
             raw_data = pd.read_csv("../data/elgh/train_batch_mivas/variant_data_396.csv")
-            train, test, val = self.train_test_val_loader(raw_data)
+            train, test = self.train_test_val_loader(raw_data)
             utils.run_shell_script(config.VP_TRAINING_PATH)
 
         if predict:
@@ -200,36 +200,35 @@ class MissenseVariantLoader:
                 df = raw_train.copy()
                 df = df[df.target_id != 'target_id']
                 df = df.rename(columns={'target_id': 'seq_id'})
-                train, temp = train_test_split(df, test_size=0.3, random_state=42)
-                test, val = train_test_split(temp, test_size=0.5, random_state=42)
+                train, test = train_test_split(df, test_size=0.2, random_state=42)
                 train.to_csv("../data/VariPred/train.csv", index=False)
-                val.to_csv("../data/VariPred/val.csv", index=False)
+                # val.to_csv("../data/VariPred/val.csv", index=False)
                 test.to_csv("../data/VariPred/test.csv", index=False)
-                print(f"Train, val and test data loaded with sizes: {len(train)}, {len(val)}, {len(test)}")
-                return train, val, test
+                print(f"Train and test data loaded with sizes: {len(train)}, {len(test)}")
+                return train, test
             elif downsampling and not os.path.exists("../data/VariPred/train_downsample.csv"):
                 train = pd.read_csv("../data/VariPred/train.csv")
                 test = pd.read_csv("../data/VariPred/test.csv")
-                val = pd.read_csv("../data/VariPred/test.csv")
+                # val = pd.read_csv("../data/VariPred/test.csv")
                 train = utils.downsampler(train)
                 test = utils.downsampler(test)
-                val = utils.downsampler(val)
+                # val = utils.downsampler(val)
                 train.to_csv("../data/VariPred/train_downsample.csv", index=False)
                 test.to_csv("../data/VariPred/test_downsample.csv", index=False)
-                val.to_csv("../data/VariPred/val_downsample.csv", index=False)
-                print(f"Train, val and test data downsampled with sizes: {len(train)}, {len(val)}, {len(test)}")
-                return train, test, val
+                # val.to_csv("../data/VariPred/val_downsample.csv", index=False)
+                print(f"Train and test data downsampled with sizes: {len(train)}, {len(test)}")
+                return train, test
             elif downsampling:
                 train = pd.read_csv("../data/VariPred/train_downsample.csv")
-                val = pd.read_csv("../data/VariPred/val_downsample.csv")
+                # val = pd.read_csv("../data/VariPred/val_downsample.csv")
                 test = pd.read_csv("../data/VariPred/test_downsample.csv")
-                print(f"Downsampled train, val and test data loaded with sizes: {len(train)}, {len(val)}, {len(test)}")
-                return train, val, test
+                print(f"Downsampled train and test data loaded with sizes: {len(train)}, {len(test)}")
+                return train, test
             else:
                 train = pd.read_csv("../data/VariPred/train.csv")
                 val = pd.read_csv("../data/VariPred/val.csv")
                 test = pd.read_csv("../data/VariPred/test.csv")
-                print(f"Train, val and test data loaded with sizes: {len(train)}, {len(val)}, {len(test)}")
+                print(f"Train and test data loaded with sizes: {len(train)}, {len(val)}, {len(test)}")
                 return train, val, test
 
     def predict_pathogenicity(self, variant_file):

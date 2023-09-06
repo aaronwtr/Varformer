@@ -356,7 +356,8 @@ def predict(test_loader, model, device):
 
 def predict_results(y_true, preds, record_id, train=False, output_name=None):
     result_path = f'../data/VariPred'  # path for saving predictions
-    output_name = "/".join(output_name.split("/")[2:])
+    if not train:
+        output_name = "/".join(output_name.split("/")[2:])
 
     if not os.path.exists(f'{result_path}'):
         os.makedirs(result_path)
