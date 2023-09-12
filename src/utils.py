@@ -276,7 +276,7 @@ def combine_train_files():
 
 def downsampler(data):
     pos_data = data[data.label == 1]
-    num_samples = len(pos_data) * 6
+    num_samples = len(pos_data) * 5
     neg_samples = data[data.label == 0].sample(n=num_samples, random_state=42)
     downsampled_data = pd.concat([pos_data, neg_samples])
     return downsampled_data

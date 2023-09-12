@@ -61,11 +61,7 @@ class MissenseVariantLoader:
                     if file.endswith('.csv'):
                         self.predict_pathogenicity(file[:-4])
             else:
-                variant_files = os.listdir('../data/VariPred/input/')
-                variant_files = sorted(variant_files, key=utils.extract_number)
-                for file in variant_files:
-                    if file.endswith('.csv'):
-                        self.predict_pathogenicity(file[:-4])
+                self.predict_pathogenicity()
 
         varipred_output = utils.preprocess_varipred_output(config.VP_OUTPUT_PATH)
         if os.path.exists("../data/elgh/varipred_elgh_data.csv"):
@@ -200,7 +196,7 @@ class MissenseVariantLoader:
                 df = raw_train.copy()
                 df = df[df.target_id != 'target_id']
                 df = df.rename(columns={'target_id': 'seq_id'})
-                train, test = train_test_split(df, test_size=0.2, random_state=42)
+                train, test = train_test_split(df, test_size=0.2, random_state=42, stratify=df['label'])
                 train.to_csv("../data/VariPred/train.csv", index=False)
                 # val.to_csv("../data/VariPred/val.csv", index=False)
                 test.to_csv("../data/VariPred/test.csv", index=False)
@@ -231,10 +227,13 @@ class MissenseVariantLoader:
                 print(f"Train and test data loaded with sizes: {len(train)}, {len(val)}, {len(test)}")
                 return train, val, test
 
-    def predict_pathogenicity(self, variant_file):
-        data_folder = self.args.varipred_input.split('/')[3]
-        file = f"{data_folder}/{variant_file}"
-        utils.run_shell_script(config.VP_INFERENCE_PATH, file)
+    def predict_pathogenicity(self, variant_file=None):
+        if variant_file is not None:
+            data_folder = self.args.varipred_input.split('/')[3]
+            file = f"{data_folder}/{variant_file}"
+            utils.run_shell_script(config.VP_INFERENCE_PATH, file)
+        else:
+            utils.run_shell_script(config.VP_INFERENCE_PATH)
 
     def __process_variants_genomic(self):
         warnings.filterwarnings('ignore')
