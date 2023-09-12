@@ -230,7 +230,7 @@ def flat_accuracy(preds, labels):
 def trainer(train_loader, val_loader, model, device=config.device, early_stop=config.early_stop, n_epochs=config.n_epochs):
 
     criterion = nn.BCELoss(reduction='sum')  # Define the loss function
-
+    # criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([config.majority_class_weight]).to(device), reduction='sum')
     # Define the optimization algorithm.
     optimizer = torch.optim.Adam(
         model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
@@ -254,6 +254,7 @@ def trainer(train_loader, val_loader, model, device=config.device, early_stop=co
 
             pred = model(b_seq.float())
             b_labels = b_labels.float()
+
             loss = criterion(pred[:, 0], b_labels)
 
             # Compute gradient(backpropagation).
@@ -316,7 +317,8 @@ def trainer(train_loader, val_loader, model, device=config.device, early_stop=co
         if mean_valid_loss < best_loss:
             best_loss = mean_valid_loss
 
-            storage_path = f'./model'
+            # if this doesn't work, print the current working directory and figure out the relative path
+            storage_path = f'../models/VariPred/VariPred/model'
 
             if not os.path.isdir(f'{storage_path}'):
                 # Create directory of saving models.

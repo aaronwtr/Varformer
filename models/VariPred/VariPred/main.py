@@ -104,7 +104,7 @@ def train_VariPred(train_ds, test_ds, valid_ds=None,train=True):
 
 
     print('=============== Predicting & Evaluating the trained model ===============')
-    storage_path = f'./model'
+    storage_path = f'../models/VariPred/VariPred/model'
     checkpoint=torch.load(f'{storage_path}/model.ckpt')
     model.load_state_dict(checkpoint['model_state_dict'])
 
@@ -189,9 +189,10 @@ if __name__ == '__main__':
 
     else:
         # predict the target df with VariPred
-        target_df = pd.read_csv(f'{storage_path}/{args.pred}.csv')
+        # target_df = pd.read_csv(f'{storage_path}/{args.pred}.csv')
+        target_df = pd.read_csv(f'../data/VariPred/train_downsample_5k_clean.csv')
         target_df['label'] = -1 # it doesn't matter what the true label is. It's just to ensure the programme can run properly.  
-        if not os.path.exists(f'{config.esm_storage_path}/{args.pred}.pkl'):
+        if not os.path.exists(f'{config.esm_storage_path}/{args.pred}.pt'):
             print(f'getting embeds for {args.pred}.csv')  
             get_embeds(target_df, dataset = args.pred)
         run_VariPred(target_ds=args.pred, output=args.output)

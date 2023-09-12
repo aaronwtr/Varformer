@@ -154,3 +154,9 @@ data/VariPred/model_performance.txt
 models/VariPred/VariPred/model/finetuned_model_11K_data_36MCC.ckpt
 
 models/VariPred/VariPred/model/finetuned_model_70K_data_20MCC.ckpt
+
+models/VariPred/VariPred/model/fine_tuned_model_10K_data_clean_33MCC.ckpt
+
+models/VariPred/VariPred/model/finetined_model_5k_data_clean_44MCC.ckpt
+
+models/VariPred/VariPred/model/training_tuning_notes.txt
