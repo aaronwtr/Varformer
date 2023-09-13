@@ -20,7 +20,10 @@ def get_embeds(df, dataset):
 
     '''
 
-    model, alphabet = esm.pretrained.esm1b_t33_650M_UR50S()
+    # model, alphabet = esm.pretrained.esm1b_t33_650M_UR50S()
+    # model, alphabet = esm.pretrained.esm2_t48_15B_UR50D()
+    model, alphabet = esm.pretrained.esm2_t36_3B_UR50D()
+
     batch_converter = alphabet.get_batch_converter()
     
     # truncate the long sequence into 1022
