@@ -268,15 +268,16 @@ def combine_train_files():
                         writer.writerow(row)
                     elif row[0] == 'target_id':
                         continue
-                    elif len(row[5]) > 1022:
-                        continue
+                    # elif len(row[5]) > 1022:
+                    #     continue
                     else:
                         writer.writerow(row)
 
 
 def downsampler(data):
     pos_data = data[data.label == 1]
+    neg_data = data[data.label == 0]
     num_samples = len(pos_data) * 5
-    neg_samples = data[data.label == 0].sample(n=num_samples, random_state=42)
-    downsampled_data = pd.concat([pos_data, neg_samples])
+    neg_data = neg_data.sample(n=num_samples, random_state=42)
+    downsampled_data = pd.concat([pos_data, neg_data])
     return downsampled_data
