@@ -25,7 +25,7 @@ def get_embeds(df, dataset):
     # model, alphabet = esm.pretrained.esm2_t36_3B_UR50D()
 
     # batch_converter = alphabet.get_batch_converter()
-    
+
     # truncate the long sequence into 1022
     df['Length'] = df['wt_seq'].apply(lambda x: len(x))
 
@@ -33,16 +33,15 @@ def get_embeds(df, dataset):
         df = utils.df_process(df)
     else:
         df['new_index'] = df['aa_index']
-    
+
     print('data length:', df.shape[0])
 
     df['record_id'] = df['seq_id']
-    
+
     # utils.generate_embeds_and_save(df, save_path = config.esm_storage_path, data_class=dataset, model = model, batch_converter = batch_converter, alphabet = alphabet)
 
 
-def train_VariPred(train_ds, test_ds, valid_ds=None,train=True):
-
+def train_VariPred(train_ds, test_ds, valid_ds=None, train=True):
     '''
 
     input: 
@@ -64,62 +63,61 @@ def train_VariPred(train_ds, test_ds, valid_ds=None,train=True):
         X_valid, y_valid = utils.unpickler(ds_name=valid_ds)
         print('valid set name: ', valid_ds)
     else:
-        X_train, X_valid, y_train, y_valid = train_test_split(X_train,y_train,
-                                                            test_size=0.1,
-                                                            shuffle=True,
-                                                            stratify=y_train,
-                                                            random_state=config.SEED)
+        X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train,
+                                                              test_size=0.1,
+                                                              shuffle=True,
+                                                              stratify=y_train,
+                                                              random_state=config.SEED)
 
-    
     print('X_train shape: ', X_train.shape)
     print('X_test shape: ', X_test.shape)
     print('X_valid shape: ', X_valid.shape)
-    
+
     train_dataset = utils.VariPredDataset(X_train, y_train)
     val_dataset = utils.VariPredDataset(X_valid, y_valid)
     test_dataset = utils.VariPredDataset(X_test, y_test)
 
-    #> Feed dataset to dataloader
+    # > Feed dataset to dataloader
     train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=config.batch_size)
     test_loader = DataLoader(test_dataset, batch_size=config.batch_size)
 
-    
     print('\n\n\n\n')
     print('=============== VariPred model training start ===============')
-    
+
     model_size = X_train.shape[1]
-    num_hidden = int(model_size/2) 
-    
+    num_hidden = int(model_size / 2)
+
     print('model_size: ', model_size)
     print('num_hidden: ', num_hidden)
-    
-    model = utils.MLPClassifier_LeakyReLu(num_input = model_size, num_hidden = num_hidden, num_output = config.label_num).to(config.device)
+
+    model = utils.MLPClassifier_LeakyReLu_2(num_input=model_size, num_hidden_layers=config.hidden_layers,
+                                            num_hidden_units=num_hidden,
+                                            num_output=config.label_num).to(config.device)
+    # model = utils.MLPClassifier_LeakyReLu(num_input = model_size, num_hidden = num_hidden, num_output = config.label_num).to(config.device)
 
     total_params = sum(p.numel() for p in model.parameters())
     print(f'{total_params:,} total parameters.')
     total_trainable_params = sum(
         p.numel() for p in model.parameters() if p.requires_grad)
     print(f'{total_trainable_params:,} training parameters.')
-    
-    utils.trainer(train_loader, val_loader, model)
 
+    utils.trainer(train_loader, val_loader, model)
 
     print('=============== Predicting & Evaluating the trained model ===============')
     storage_path = f'../models/VariPred/VariPred/model'
-    checkpoint=torch.load(f'{storage_path}/model.ckpt')
+    checkpoint = torch.load(f'{storage_path}/model.ckpt')
     model.load_state_dict(checkpoint['model_state_dict'])
 
     preds, y_true = utils.predict(test_loader, model, config.device)
-            
+
     utils.predict_results(y_true, preds,
-                          record_id = record_id,
-                          train = train
+                          record_id=record_id,
+                          train=train
                           )
 
 
-def run_VariPred(target_ds,output):
-
+def run_VariPred(target_ds, output):
     '''
 
     input: 
@@ -137,21 +135,22 @@ def run_VariPred(target_ds,output):
     target_loader = DataLoader(target_dataset, batch_size=config.batch_size)
 
     model_size = X_target.shape[1]
-    num_hidden = int(model_size/2) 
-    model = utils.MLPClassifier_LeakyReLu(num_input = model_size, num_hidden = num_hidden, num_output = config.label_num).to(config.device)
+    num_hidden = int(model_size / 2)
+    model = utils.MLPClassifier_LeakyReLu(num_input=model_size, num_hidden=num_hidden, num_output=config.label_num).to(
+        config.device)
 
     storage_path = f'../models/VariPred/VariPred/model'
-    
+
     if not os.path.exists(storage_path):
         print('Please train the model first')
-    
-    checkpoint=torch.load(f'{storage_path}/model.ckpt', map_location=config.device)
+
+    checkpoint = torch.load(f'{storage_path}/model.ckpt', map_location=config.device)
     model.load_state_dict(checkpoint['model_state_dict'])
-    
+
     preds, y_true = utils.predict(target_loader, model, config.device)
-            
+
     utils.predict_results(y_true, preds,
-                          record_id = record_id,
+                          record_id=record_id,
                           output_name=output
                           )
     print()
@@ -171,10 +170,10 @@ args = parser.parse_args()
 if __name__ == '__main__':
 
     print('=============== Loading data... ===============')
-    
+
     storage_path = args.df_path
     print(storage_path)
-    
+
     print(f'=============== Start getting embeddings ... ===============')
 
     # if necessary, update the parameters of the last MLP layer. 
@@ -183,25 +182,24 @@ if __name__ == '__main__':
         test_df = pd.read_csv(f'{storage_path}/{args.test_ds}.csv')
 
         print(f'getting embeds for {args.train_ds}.csv')
-        get_embeds(train_df, dataset = args.train_ds)
-        
+        get_embeds(train_df, dataset=args.train_ds)
+
         print(f'getting embeds for {args.test_ds}.csv')
-        get_embeds(test_df, dataset = args.test_ds)
+        get_embeds(test_df, dataset=args.test_ds)
         train_VariPred(args.train_ds, args.test_ds)
 
     else:
         # predict the target df with VariPred
         # target_df = pd.read_csv(f'{storage_path}/{args.pred}.csv')
         target_df = pd.read_csv(f'../data/VariPred/train_downsample_5k_clean.csv')
-        target_df['label'] = -1 # it doesn't matter what the true label is. It's just to ensure the programme can run properly.  
+        target_df[
+            'label'] = -1  # it doesn't matter what the true label is. It's just to ensure the programme can run properly.
         if not os.path.exists(f'{config.esm_storage_path}/{args.pred}.pt'):
-            print(f'getting embeds for {args.pred}.csv')  
-            get_embeds(target_df, dataset = args.pred)
+            print(f'getting embeds for {args.pred}.csv')
+            get_embeds(target_df, dataset=args.pred)
         run_VariPred(target_ds=args.pred, output=args.output)
 
-    
-    
     print('\n\n')
     print('=============== No Bug No Error, Finished!!! ===============')
-    
+
     print('\n\n')

@@ -219,6 +219,33 @@ class MLPClassifier_LeakyReLu(nn.Module):
         return x
 
 
+class MLPClassifier_LeakyReLu_2(nn.Module):
+    """Multi-Layer Perceptron (MLP) Model for Classification Tasks."""
+    def __init__(self, num_input, num_hidden_layers, num_hidden_units, num_output):
+        super(MLPClassifier_LeakyReLu_2, self).__init__()
+
+        # Input layer
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.Linear(num_input, num_hidden_units))
+        self.layers.append(nn.LeakyReLU(inplace=True))
+
+        # Hidden layers
+        for _ in range(num_hidden_layers - 1):
+            self.layers.append(nn.Linear(num_hidden_units, num_hidden_units))
+            self.layers.append(nn.LeakyReLU(inplace=True))
+
+        # Output layer
+        self.layers.append(nn.Linear(num_hidden_units, num_output))
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+
+        x = self.softmax(x)
+        return x
+
+
 # train the model
 def flat_accuracy(preds, labels):
     preds = preds.detach().cpu().numpy()

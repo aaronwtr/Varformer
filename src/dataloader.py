@@ -196,24 +196,24 @@ class MissenseVariantLoader:
                 df = raw_train.copy()
                 df = df[df.target_id != 'target_id']
                 df = df.rename(columns={'target_id': 'seq_id'})
-                #train, test = train_test_split(df, test_size=0, random_state=42, stratify=df['label'])
-                df.to_csv("../data/VariPred/train.csv", index=False)
+                train, test = train_test_split(df, test_size=0.1, random_state=42, stratify=df['label'])
+                train.to_csv("../data/VariPred/train.csv", index=False)
                 # val.to_csv("../data/VariPred/val.csv", index=False)
-                # test.to_csv("../data/VariPred/test.csv", index=False)
-                print(f"Train data loaded with size: {len(df)}")
-                return df
+                test.to_csv("../data/VariPred/test.csv", index=False)
+                print(f"Train and test data loaded with size: {len(train)} and {len(test)}")
+                return train, test
             elif downsampling and not os.path.exists("../data/VariPred/train_downsample.csv"):
                 train = pd.read_csv("../data/VariPred/train.csv")
-                # test = pd.read_csv("../data/VariPred/test.csv")
+                test = pd.read_csv("../data/VariPred/test.csv")
                 # val = pd.read_csv("../data/VariPred/test.csv")
                 train = utils.downsampler(train)
-                # test = utils.downsampler(test)
+                test = utils.downsampler(test)
                 # val = utils.downsampler(val)
                 train.to_csv("../data/VariPred/train_downsample.csv", index=False)
-                #test.to_csv("../data/VariPred/test_downsample.csv", index=False)
+                test.to_csv("../data/VariPred/test_downsample.csv", index=False)
                 # val.to_csv("../data/VariPred/val_downsample.csv", index=False)
-                print(f"Train data downsampled with sizes: {len(train)}")
-                return train
+                print(f"Train and test data downsampled with sizes: {len(train)} {len(test)}")
+                return train, test
             elif downsampling:
                 train = pd.read_csv("../data/VariPred/train_downsample.csv")
                 # val = pd.read_csv("../data/VariPred/val_downsample.csv")
