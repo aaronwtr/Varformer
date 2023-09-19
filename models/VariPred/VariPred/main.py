@@ -136,8 +136,12 @@ def run_VariPred(target_ds, output):
 
     model_size = X_target.shape[1]
     num_hidden = int(model_size / 2)
-    model = utils.MLPClassifier_LeakyReLu(num_input=model_size, num_hidden=num_hidden, num_output=config.label_num).to(
-        config.device)
+    # model = utils.MLPClassifier_LeakyReLu(num_input=model_size, num_hidden=num_hidden, num_output=config.label_num).to(
+    #     config.device)
+
+    model = utils.MLPClassifier_LeakyReLu_2(num_input=model_size, num_hidden_layers=config.hidden_layers,
+                                            num_hidden_units=num_hidden,
+                                            num_output=config.label_num).to(config.device)
 
     storage_path = f'../models/VariPred/VariPred/model'
 

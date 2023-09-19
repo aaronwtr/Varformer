@@ -44,7 +44,7 @@ weight_decay = 0
 lr_decay = 0.9
 early_stop = 3
 dropout = 0.5
-hidden_layers = 10
+hidden_layers = 8
 majority_class_weight = 8
 
 # inference_parameters
