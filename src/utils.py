@@ -281,3 +281,33 @@ def downsampler(data):
     neg_data = neg_data.sample(n=num_samples, random_state=42)
     downsampled_data = pd.concat([pos_data, neg_data])
     return downsampled_data
+
+
+def analyze_legacy_pathogenicity(variant_data):
+    """
+    Analyze the pathogenicity determined by SIFT and PolyPhen.
+    """
+    sift = variant_data["SIFT"].values
+    polyphen = variant_data["PolyPhen"].values
+
+    pathogenicity = pd.DataFrame({"sift": sift, "polyphen": polyphen})
+
+    pathogenicity['sift'] = pathogenicity['sift'].str.extract(r'\((.*?)\)').astype(float)
+    pathogenicity['polyphen'] = pathogenicity['polyphen'].str.extract(r'\((.*?)\)').astype(float)
+    plot.variant_sparsity_barplot(pathogenicity, save=True)
+
+    num_vars = len(list(pathogenicity['polyphen'].values))
+
+    sift_nan_count = pathogenicity['sift'].isna().sum()
+    polyphen_nan_count = pathogenicity['polyphen'].isna().sum()
+
+    pp_sparsity = round(polyphen_nan_count / num_vars, 3)
+    sift_sparsity = round(sift_nan_count / num_vars, 3)
+
+    print(f"PolyPhen sparsity: {pp_sparsity}")
+    print(f"SIFT sparsity: {sift_sparsity}")
+
+    plot.pathogenicity_correlation_plot(pathogenicity, save=True)
+
+    print("Done analyzing pathogenicity.")
+
