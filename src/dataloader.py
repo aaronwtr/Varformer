@@ -32,10 +32,12 @@ class MissenseVariantLoader:
         else:
             self.elgh_path = config.MIVA_PATH
         self.genome_path = config.GENOME_PATH
-        self.variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids",
-                             "SIFT", "PolyPhen", "varipred_id"]
-        self.variant_data = self.load_data()
-        # self.analyze_legacy_pathogenicity()
+        self.variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "UNIPARC", "SWISSPROT", "TREMBL",
+                             "Protein_position", "Amino_acids", "SIFT", "PolyPhen", "varipred_id"]
+        self.variant_data = self.load_gh_data()
+        self.variant_data["uniprot_id"] = self.variant_data["SWISSPROT"].fillna(self.variant_data["TREMBL"])
+        am = self.load_am_data()
+        # TODO: Idea - filter am data to contain only those uniprot_ids that overlap with our dataset
         if preprocess:
             self.process_variants_proteomic()
         elif len(os.listdir('../data/VariPred/input')) == config.NUM_VP_BATCHES:
@@ -73,48 +75,26 @@ class MissenseVariantLoader:
             clinvar_data = pd.read_csv("../data/clinvar/variant_summary.txt", sep="\t")
             utils.varipred_evaluation(self.variant_data, clinvar_data, posthoc=False)
 
-    def load_data(self):
+    def load_gh_data(self):
         """
         Load the variant data and the reference genome.
         """
-        if os.path.exists("data/VariPred/varipred_elgh_data.csv"):
-            return pd.read_csv("data/VariPred/varipred_elgh_data.csv")
+        if self.args.data is not None:
+            variant_data = pd.read_csv(self.elgh_path)
         else:
-            if self.args.data is not None:
-                variant_data = pd.read_csv(self.elgh_path)
-            else:
-                variant_data = pd.read_csv(self.elgh_path, sep="\t")
-            variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
-            variant_data = variant_data[self.variant_cols]
-            return variant_data
+            variant_data = pd.read_csv(self.elgh_path, sep="\t")
+        variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
+        variant_data = variant_data[self.variant_cols]
+        return variant_data
 
-    def analyze_legacy_pathogenicity(self):
-        """
-        Analyze the pathogenicity determined by SIFT and PolyPhen.
-        """
-        sift = self.variant_data["SIFT"].values
-        polyphen = self.variant_data["PolyPhen"].values
-
-        pathogenicity = pd.DataFrame({"sift": sift, "polyphen": polyphen})
-
-        pathogenicity['sift'] = pathogenicity['sift'].str.extract(r'\((.*?)\)').astype(float)
-        pathogenicity['polyphen'] = pathogenicity['polyphen'].str.extract(r'\((.*?)\)').astype(float)
-        plot.variant_sparsity_barplot(pathogenicity, save=True)
-
-        num_vars = len(list(pathogenicity['polyphen'].values))
-
-        sift_nan_count = pathogenicity['sift'].isna().sum()
-        polyphen_nan_count = pathogenicity['polyphen'].isna().sum()
-
-        pp_sparsity = round(polyphen_nan_count / num_vars, 3)
-        sift_sparsity = round(sift_nan_count / num_vars, 3)
-
-        print(f"PolyPhen sparsity: {pp_sparsity}")
-        print(f"SIFT sparsity: {sift_sparsity}")
-
-        plot.pathogenicity_correlation_plot(pathogenicity, save=True)
-
-        print("Done analyzing pathogenicity.")
+    def load_am_data(self):
+        if os.path.exists("../data/alphamissense/am_df.pkl"):
+            am = pd.read_pickle("../data/alphamissense/am_df.pkl")
+            return am
+        else:
+            am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
+            am.to_pickle("../data/alphamissense/am_df.pkl")
+            return am
 
     @staticmethod
     def fetch_amino_acid_sequence(uniparc_id, mt_aa, aa_index):

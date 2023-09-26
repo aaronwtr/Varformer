@@ -3,7 +3,7 @@ from dataloader import MissenseVariantLoader, GeneCharacterisation
 
 
 def load_missense_variants():
-    MVL = MissenseVariantLoader(train=True)
+    MVL = MissenseVariantLoader()
     print("Missense variants loaded!\n")
     return 0
 
