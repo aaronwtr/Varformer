@@ -194,8 +194,8 @@ if __name__ == '__main__':
 
     else:
         # predict the target df with VariPred
-        # target_df = pd.read_csv(f'{storage_path}/{args.pred}.csv')
-        target_df = pd.read_csv(f'../data/VariPred/train_downsample_5k_clean.csv')
+        target_df = pd.read_csv(f'{storage_path}/{args.pred}.csv')
+        # target_df = pd.read_csv(f'../data/VariPred/train_downsample_5k_clean.csv')
         target_df[
             'label'] = -1  # it doesn't matter what the true label is. It's just to ensure the programme can run properly.
         if not os.path.exists(f'{config.esm_storage_path}/{args.pred}.pt'):
