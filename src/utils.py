@@ -7,7 +7,7 @@ import re
 import csv
 import glob
 
-from sklearn.metrics import matthews_corrcoef, confusion_matrix, roc_curve, auc
+from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_score
 from Bio import Seq
 
 def count_scaling(counts):
@@ -186,7 +186,7 @@ def clinvar_varipred_id(varipred_data, clinvar_data):
         varipred_data = pd.read_csv("../data/VariPred/varipred_vp_id_final.csv", sep="\t")
     else:
         ref_aa = varipred_data["REF"]
-        alt_aa = varipred_data["Allele"]
+        alt_aa = varipred_data["ALT"]
         varipred_data["vp_cv_id"] = varipred_data["SYMBOL"] + "_" + varipred_data["POS"].astype(str) + "_" + \
                                     ref_aa + "_" + alt_aa
 
@@ -311,3 +311,13 @@ def analyze_legacy_pathogenicity(variant_data):
 
     print("Done analyzing pathogenicity.")
 
+
+def evaluate_am(am_data):
+    """
+    Evaluate the performance of the AM model. Calculate the labels for AM given the same threshold as VariPred.
+    Map the labels from the test data to the AM data and calculate the performance metrics.
+    """
+    test_data = pd.read_csv("../data/VariPred/test_downsample.csv")
+    test_data = test_data[["seq", "label"]]
+    print(am_data)
+    # add a temporary identifier to am_data that overlaps with test_data

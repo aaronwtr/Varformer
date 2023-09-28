@@ -35,9 +35,17 @@ class MissenseVariantLoader:
         self.variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "UNIPARC", "SWISSPROT", "TREMBL",
                              "Protein_position", "Amino_acids", "SIFT", "PolyPhen", "varipred_id"]
         self.variant_data = self.load_gh_data()
+        self.variant_data = self.variant_data.rename(columns={'Allele': 'ALT'})
         self.variant_data["uniprot_id"] = self.variant_data["SWISSPROT"].fillna(self.variant_data["TREMBL"])
+
         am = self.load_am_data()
-        # TODO: Idea - filter am data to contain only those uniprot_ids that overlap with our dataset
+        am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
+        self.variant_data['variant_id'] = self.variant_data['#CHROM'] + '_' + self.variant_data['POS'].astype(str) + \
+                                            '_' + self.variant_data['REF'] + '_' + self.variant_data['ALT']
+        am = am[['am_pathogenicity', 'variant_id']]
+
+        self.variant_data = self.variant_data.merge(am, on='variant_id')
+
         if preprocess:
             self.process_variants_proteomic()
         elif len(os.listdir('../data/VariPred/input')) == config.NUM_VP_BATCHES:
@@ -87,14 +95,10 @@ class MissenseVariantLoader:
         variant_data = variant_data[self.variant_cols]
         return variant_data
 
-    def load_am_data(self):
-        if os.path.exists("../data/alphamissense/am_df.pkl"):
-            am = pd.read_pickle("../data/alphamissense/am_df.pkl")
-            return am
-        else:
-            am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
-            am.to_pickle("../data/alphamissense/am_df.pkl")
-            return am
+    @staticmethod
+    def load_am_data():
+        am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
+        return am
 
     @staticmethod
     def fetch_amino_acid_sequence(uniparc_id, mt_aa, aa_index):
