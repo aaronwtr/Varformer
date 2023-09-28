@@ -8,12 +8,12 @@
 #target_ds="train_downsample_5k_clean.pt"
 #output_name="output/VariPred_output_finetuned_5k_clean"
 
-df_path="../data/VariPred/input/"
-target_ds=$1
-output_name="output/VariPred_output_$1"
+df_path="../data/VariPred"
+target_ds="test_downsample"
+output_name="VariPred_output_finetuned_test_preds_51_MCC"
 
 
-python3 models/VariPred/VariPred/main.py \
+python3 ../models/VariPred/VariPred/main.py \
                 -p ${df_path} \
                 -i ${target_ds} \
                 -o ${output_name}

@@ -74,6 +74,7 @@ class MissenseVariantLoader:
                 self.predict_pathogenicity()
 
         varipred_output = utils.preprocess_varipred_output(config.VP_OUTPUT_PATH)
+        # NOTE: THE VARIPRED OUTPUT BEING LOADED HERE IS AN OLD MODEL. THE NEW MODEL HAS NOT BEEN RUN EXOME-WIDE YET.
         if os.path.exists("../data/elgh/varipred_elgh_data.csv"):
             self.variant_data = pd.read_csv("../data/elgh/varipred_elgh_data.csv", sep="\t")
         else:
