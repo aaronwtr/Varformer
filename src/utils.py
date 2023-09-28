@@ -318,6 +318,15 @@ def evaluate_am(am_data):
     Map the labels from the test data to the AM data and calculate the performance metrics.
     """
     test_data = pd.read_csv("../data/VariPred/test_downsample.csv")
-    test_data = test_data[["seq", "label"]]
-    print(am_data)
-    # add a temporary identifier to am_data that overlaps with test_data
+    test_data = test_data[["seq_id", "label"]]
+    am_data["seq_id"] = am_data["SYMBOL"] + "_" + am_data["POS"].astype(str) + "_" + am_data["REF"] + "_" + \
+                     am_data["ALT"]
+    merged_df = pd.merge(am_data, test_data, on='seq_id', how='inner')
+    merged_df.drop('vp_probability', axis=1, inplace=True) # remove out model outputs
+    vp_test_output = pd.read_csv("../data/VariPred/VariPred_output_finetuned_test_preds_51_MCC.txt", sep="\t" )
+    vp_test_output = vp_test_output[["seq_id", "probability"]]
+    merged_df = pd.merge(merged_df, vp_test_output, on='seq_id', how='inner') # add new model outputs
+    merged_df.rename(columns={"probability": "vp_pathogenicity"}, inplace=True)
+    print(merged_df)
+    # TODO calculate new labels for vp_pathogenicity and calculate labels for am_pathogenicity with threshold 0.45
+

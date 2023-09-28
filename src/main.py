@@ -1,3 +1,5 @@
+import pandas as pd
+
 import utils
 from dataloader import MissenseVariantLoader, GeneCharacterisation
 
