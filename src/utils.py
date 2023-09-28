@@ -10,6 +10,7 @@ import glob
 from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_score
 from Bio import Seq
 
+
 def count_scaling(counts):
     """
     Implements $x' = \frac{x - x_{min}}{x_{max} - x_{min}}$.
@@ -46,7 +47,7 @@ def split_data(data_path, num_batches):
     """
     # variant_cols = ["#CHROM", "SYMBOL", "UNIPARC", "Protein_position", "Amino_acids"]
     train_cols = ["vp_cv_id", "SYMBOL", "ReferenceAlleleVCF", "AlternateAlleleVCF", "POS", "UNIPARC", "Amino_acids",
-                    "Protein_position", "ClinSigSimple", "vp_classification", "vp_probability"]
+                  "Protein_position", "ClinSigSimple", "vp_classification", "vp_probability"]
     variant_data = pd.read_csv(data_path, sep="\t")
     variant_data = variant_data[train_cols]
     batches = np.array_split(variant_data, num_batches)
@@ -319,14 +320,23 @@ def evaluate_am(am_data):
     """
     test_data = pd.read_csv("../data/VariPred/test_downsample.csv")
     test_data = test_data[["seq_id", "label"]]
-    am_data["seq_id"] = am_data["SYMBOL"] + "_" + am_data["POS"].astype(str) + "_" + am_data["REF"] + "_" + \
-                     am_data["ALT"]
-    merged_df = pd.merge(am_data, test_data, on='seq_id', how='inner')
-    merged_df.drop('vp_probability', axis=1, inplace=True) # remove out model outputs
-    vp_test_output = pd.read_csv("../data/VariPred/VariPred_output_finetuned_test_preds_51_MCC.txt", sep="\t" )
-    vp_test_output = vp_test_output[["seq_id", "probability"]]
-    merged_df = pd.merge(merged_df, vp_test_output, on='seq_id', how='inner') # add new model outputs
-    merged_df.rename(columns={"probability": "vp_pathogenicity"}, inplace=True)
-    print(merged_df)
-    # TODO calculate new labels for vp_pathogenicity and calculate labels for am_pathogenicity with threshold 0.45
 
+    am_data["seq_id"] = am_data["SYMBOL"] + "_" + am_data["POS"].astype(str) + "_" + am_data["REF"] + "_" + \
+                        am_data["ALT"]
+
+    merged_df = pd.merge(am_data, test_data, on='seq_id', how='inner')
+    merged_df.drop('vp_probability', axis=1, inplace=True)  # remove out model outputs
+
+    vp_test_output = pd.read_csv("../data/VariPred/VariPred_output_finetuned_test_preds_51_MCC.txt", sep="\t")
+    vp_test_output = vp_test_output[["target_id", "probability"]]
+    vp_test_output.rename(columns={"target_id": "seq_id"}, inplace=True)
+
+    merged_df = pd.merge(merged_df, vp_test_output, on='seq_id', how='inner')  # add new model outputs
+    merged_df.rename(columns={"probability": "vp_pathogenicity"}, inplace=True)
+    merged_df["am_classification"] = np.where(merged_df["am_pathogenicity"] > 0.45, 1, 0)
+    merged_df["vp_classification"] = np.where(merged_df["vp_pathogenicity"] > 0.45, 1, 0)
+
+    columns = merged_df.columns.tolist()
+    columns = columns[:14] + [columns[16]] + [columns[18]] + [columns[15]] + [columns[14]] + [columns[19]] \
+              + [columns[17]]
+    merged_df = merged_df[columns]
