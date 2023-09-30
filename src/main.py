@@ -5,7 +5,7 @@ from dataloader import MissenseVariantLoader, GeneCharacterisation
 
 
 def load_missense_variants():
-    MVL = MissenseVariantLoader()
+    MVL = MissenseVariantLoader(train=True)
     print("Missense variants loaded!\n")
     return MVL
 
@@ -18,6 +18,9 @@ def gene_characterisation():
 
 if __name__ == "__main__":
     mvl = load_missense_variants()
-    variant = mvl.variant_data
-    utils.evaluate_am(variant)
+    # variant = mvl.variant_data
+    # utils.evaluate_am(variant)
+
+    # utils.clinvar_crossfolds()
+
     # gene_characterisation()
