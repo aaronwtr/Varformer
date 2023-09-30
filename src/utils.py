@@ -324,6 +324,8 @@ def evaluate_am(am_data):
     am_data["seq_id"] = am_data["SYMBOL"] + "_" + am_data["POS"].astype(str) + "_" + am_data["REF"] + "_" + \
                         am_data["ALT"]
 
+    vars_not_in_am = test_data[~test_data.seq_id.isin(am_data.seq_id)]
+
     merged_df = pd.merge(am_data, test_data, on='seq_id', how='inner')
     merged_df.drop('vp_probability', axis=1, inplace=True)  # remove out model outputs
 
@@ -333,10 +335,35 @@ def evaluate_am(am_data):
 
     merged_df = pd.merge(merged_df, vp_test_output, on='seq_id', how='inner')  # add new model outputs
     merged_df.rename(columns={"probability": "vp_pathogenicity"}, inplace=True)
-    merged_df["am_classification"] = np.where(merged_df["am_pathogenicity"] > 0.45, 1, 0)
-    merged_df["vp_classification"] = np.where(merged_df["vp_pathogenicity"] > 0.45, 1, 0)
+
+    threshold = 0.45
+
+    merged_df["am_classification"] = np.where(merged_df["am_pathogenicity"] > threshold, 1, 0)
+    merged_df["vp_classification"] = np.where(merged_df["vp_pathogenicity"] > threshold, 1, 0)
 
     columns = merged_df.columns.tolist()
     columns = columns[:14] + [columns[16]] + [columns[18]] + [columns[15]] + [columns[14]] + [columns[19]] \
               + [columns[17]]
     merged_df = merged_df[columns]
+    print("AlphaMissense performance metrics:")
+    eval_metrics(merged_df["label"], merged_df["am_classification"], threshold)
+
+    print("VariPred performance metrics:")
+    eval_metrics(merged_df["label"], merged_df["vp_classification"], threshold)
+
+
+def eval_metrics(y_true, preds, threshold):
+    label_names = {'0': 0, '1': 1}
+
+    auc_value = roc_auc_score(y_true, preds)
+    print('AUC score: ', auc_value)
+
+    y_true_np = np.array(y_true)
+    preds = np.array(preds >= threshold, dtype=int)
+
+    mcc = matthews_corrcoef(y_true_np, preds)
+    print('MCC: ', mcc)
+
+    report = classification_report(
+        y_true_np, preds, target_names=label_names)
+    print(report)

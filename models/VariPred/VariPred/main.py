@@ -20,11 +20,11 @@ def get_embeds(df, dataset):
 
     '''
 
-    # model, alphabet = esm.pretrained.esm1b_t33_650M_UR50S()
+    model, alphabet = esm.pretrained.esm1b_t33_650M_UR50S()
     # model, alphabet = esm.pretrained.esm2_t48_15B_UR50D()
     # model, alphabet = esm.pretrained.esm2_t36_3B_UR50D()
 
-    # batch_converter = alphabet.get_batch_converter()
+    batch_converter = alphabet.get_batch_converter()
 
     # truncate the long sequence into 1022
     df['Length'] = df['wt_seq'].apply(lambda x: len(x))
@@ -38,7 +38,7 @@ def get_embeds(df, dataset):
 
     df['record_id'] = df['seq_id']
 
-    # utils.generate_embeds_and_save(df, save_path = config.esm_storage_path, data_class=dataset, model = model, batch_converter = batch_converter, alphabet = alphabet)
+    utils.generate_embeds_and_save(df, save_path = config.esm_storage_path, data_class=dataset, model = model, batch_converter = batch_converter, alphabet = alphabet)
 
 
 def train_VariPred(train_ds, test_ds, valid_ds=None, train=True):

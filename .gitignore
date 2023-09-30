@@ -168,3 +168,15 @@ models/VariPred/VariPred/model/finetuned_model_4k_data_51MCC.ckpt
 data/alphamissense/AlphaMissense_hg38.tsv
 
 data/VariPred/VariPred_output_finetuned_test_preds_51_MCC.txt
+
+data/VariPred/output/model_eval_result.txt
+
+data/VariPred/output/varipred_output_finetuned_fold_1.txt
+
+data/VariPred/output/model_performance.txt
+
+models/VariPred/VariPred/model/finetuned_model_4k_data_51MCC_fold_1.ckpt
+
+models/VariPred/VariPred/model/model_fold_2.ckpt
+
+models/VariPred/VariPred/model/model_fold_3.ckpt
