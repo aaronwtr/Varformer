@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pickle as pkl
 import os
 import subprocess
 import config
@@ -318,7 +319,8 @@ def evaluate_am(am_data):
     Evaluate the performance of the AM model. Calculate the labels for AM given the same threshold as VariPred.
     Map the labels from the test data to the AM data and calculate the performance metrics.
     """
-    test_data = pd.read_csv("../data/VariPred/test_downsample.csv")
+    fold = 5
+    test_data = pd.read_csv(f"../data/VariPred/test_downsample_fold_{fold}.csv")
     test_data = test_data[["seq_id", "label"]]
 
     am_data["seq_id"] = am_data["SYMBOL"] + "_" + am_data["POS"].astype(str) + "_" + am_data["REF"] + "_" + \
@@ -329,7 +331,7 @@ def evaluate_am(am_data):
     merged_df = pd.merge(am_data, test_data, on='seq_id', how='inner')
     merged_df.drop('vp_probability', axis=1, inplace=True)  # remove out model outputs
 
-    vp_test_output = pd.read_csv("../data/VariPred/VariPred_output_finetuned_test_preds_51_MCC.txt", sep="\t")
+    vp_test_output = pd.read_csv(f"../data/VariPred/output/varipred_output_finetuned_fold_{fold}.txt", sep="\t")
     vp_test_output = vp_test_output[["target_id", "probability"]]
     vp_test_output.rename(columns={"target_id": "seq_id"}, inplace=True)
 
@@ -346,13 +348,19 @@ def evaluate_am(am_data):
               + [columns[17]]
     merged_df = merged_df[columns]
     print("AlphaMissense performance metrics:")
-    eval_metrics(merged_df["label"], merged_df["am_classification"], threshold)
+    eval_metrics(merged_df["label"], merged_df["am_classification"], threshold, 'am', fold=fold)
 
     print("VariPred performance metrics:")
-    eval_metrics(merged_df["label"], merged_df["vp_classification"], threshold)
+    eval_metrics(merged_df["label"], merged_df["vp_classification"], threshold, 'vp', fold=fold)
 
 
-def eval_metrics(y_true, preds, threshold):
+# noinspection PyTypeChecker
+def eval_metrics(y_true, preds, threshold, model, fold):
+    if os.path.exists(f"../data/VariPred/output/{model}_crossval_results.pkl"):
+        with open(f"../data/VariPred/output/{model}_crossval_results.pkl", "rb") as f:
+            results = pkl.load(f)
+    else:
+        results = {}
     label_names = {'0': 0, '1': 1}
 
     auc_value = roc_auc_score(y_true, preds)
@@ -365,5 +373,12 @@ def eval_metrics(y_true, preds, threshold):
     print('MCC: ', mcc)
 
     report = classification_report(
-        y_true_np, preds, target_names=label_names)
+        y_true_np, preds, target_names=label_names, output_dict=True)
     print(report)
+    results[f'fold_{fold}'] = {'auroc': auc_value,
+                               'mcc': mcc,
+                               'classification_report': report
+                               }
+
+    with open(f"../data/VariPred/output/{model}_crossval_results.pkl", "wb") as f:
+        pkl.dump(results, f)

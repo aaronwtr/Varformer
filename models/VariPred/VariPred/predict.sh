@@ -9,8 +9,8 @@
 #output_name="output/VariPred_output_finetuned_5k_clean"
 
 df_path="../data/VariPred"
-target_ds="test_downsample_fold_3"
-output_name="varipred_output_finetuned_fold_3"
+target_ds="test_downsample_fold_5"
+output_name="varipred_output_finetuned_fold_5"
 
 
 python3 ../models/VariPred/VariPred/main.py \
