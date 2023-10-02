@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
 import seaborn as sns
+import pandas as pd
 
 
 def tractability_plot(tractability_scores, fda_labels, plottype=None, fda=True):
@@ -130,3 +132,65 @@ def varipred_kde_plot(df):
     plt.savefig('../plots/varipred_kde_sep_finetuned.pdf')
     plt.savefig('../plots/varipred_kde_sep_finetuned.png')
     plt.show()
+
+
+def plot_crossvalidation_results(model1, model2):
+    auroc1 = [v['auroc'] for k, v in model1.items()]
+    auroc2 = [v['auroc'] for k, v in model2.items()]
+    auroc = pd.DataFrame({'AlphaMissense': auroc1, 'VariPred': auroc2})
+    auroc = pd.melt(auroc, var_name='model', value_name='auROC')
+
+    mcc1 = [v['mcc'] for k, v in model1.items()]
+    mcc2 = [v['mcc'] for k, v in model2.items()]
+    mcc = pd.DataFrame({'AlphaMissense': mcc1, 'VariPred': mcc2})
+    mcc = pd.melt(mcc, var_name='model', value_name='MCC')
+
+    acc1 = [v['classification_report']['accuracy'] for k, v in model1.items()]
+    acc2 = [v['classification_report']['accuracy'] for k, v in model2.items()]
+    acc = pd.DataFrame({'AlphaMissense': acc1, 'VariPred': acc2})
+    acc = pd.melt(acc, var_name='model', value_name='accuracy')
+
+    f1_1 = [v['classification_report']['weighted avg']['f1-score'] for k, v in model1.items()]
+    f1_2 = [v['classification_report']['weighted avg']['f1-score'] for k, v in model2.items()]
+    f1 = pd.DataFrame({'AlphaMissense': f1_1, 'VariPred': f1_2})
+    f1 = pd.melt(f1, var_name='model', value_name='f1-score')
+
+    plt.figure(figsize=(9, 5))
+    sns.set_style("whitegrid")
+
+    ax = sns.barplot(auroc, x="auROC", y="model", palette="Paired", errorbar="sd", capsize=.05)
+    ax.set(xlabel='auROC')
+    ax.set(xlim=(0.0, 1.005))
+    sns.despine()
+    plt.savefig("../plots/varipred_alphamissense_comp/auroc.png")
+    plt.savefig("../plots/varipred_alphamissense_comp/auroc.pdf")
+
+    plt.figure(figsize=(9, 5))
+    sns.set_style("whitegrid")
+
+    ax = sns.barplot(mcc, x="MCC", y="model", palette="Paired", errorbar="sd", capsize=.05)
+    ax.set(xlabel='MCC')
+    ax.set(xlim=(0.0, 1.005))
+    sns.despine()
+    plt.savefig("../plots/varipred_alphamissense_comp/mcc.png")
+    plt.savefig("../plots/varipred_alphamissense_comp/mcc.pdf")
+
+    plt.figure(figsize=(9, 5))
+    sns.set_style("whitegrid")
+
+    ax = sns.barplot(acc, x="accuracy", y="model", palette="Paired", errorbar="sd", capsize=.05)
+    ax.set(xlabel='Accuracy')
+    ax.set(xlim=(0.0, 1.005))
+    sns.despine()
+    plt.savefig("../plots/varipred_alphamissense_comp/accuracy.png")
+    plt.savefig("../plots/varipred_alphamissense_comp/accuracy.pdf")
+
+    plt.figure(figsize=(9, 5))
+    sns.set_style("whitegrid")
+
+    ax = sns.barplot(f1, x="f1-score", y="model", palette="Paired", errorbar="sd", capsize=.05)
+    ax.set(xlabel='Class weighted F1-score')
+    ax.set(xlim=(0.0, 1.005))
+    sns.despine()
+    plt.savefig("../plots/varipred_alphamissense_comp/f1_score.png")
+    plt.savefig("../plots/varipred_alphamissense_comp/f1_score.pdf")
