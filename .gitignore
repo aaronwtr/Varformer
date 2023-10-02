@@ -184,3 +184,5 @@ models/VariPred/VariPred/model/model_fold_3.ckpt
 data/VariPred/output/
 
 models/VariPred/VariPred/model/
+
+plots/varipred_alphamissense_comp/
