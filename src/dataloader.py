@@ -369,9 +369,9 @@ class GeneCharacterisation:
         self.data_name_mapping = {
             "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
             "gnomad.exomes.v2.1.1.lof_metrics.by_gene.csv": "gnomAD Exomes Loss-of-Function Metrics",
-            "STRING_PPIs.txt": "STRING Protein-Protein Interactions",
+            "9606.protein.links.full.v12.0.txt": "STRING Protein-Protein Interactions",
             "tractability.xlsb": "Tractability Scores",
-            "FDA_approved_drug_targets_2022.xlsb": "FDA Approved Drug Targets",
+            "FDA_approved_drug_targets_2023_Q2.xlsx": "FDA Approved Drug Targets",
             "part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet": "Mouse Knockout Phenotypes"
         }
         self.files = self._get_files()
@@ -386,8 +386,7 @@ class GeneCharacterisation:
 
         # Our model
         self.alphafold_features = self._alphafold_feature_extractor()
-        print(self.alphafold_features)
-        # self.ppi_features = self._ppi_feature_extractor()
+        self.ppi_features = self._ppi_feature_extractor()
         # self.mouse_ko_features = self._mouse_knockout_feature_extractor()
         # self.chem_features = self._chem_feature_extractor()
         # self.gnomad_features = self._gnomad_feature_extractor()
@@ -431,8 +430,8 @@ class GeneCharacterisation:
         Load the data from the files.
         """
         datasets = {}
-        if "datasets.pkl" in os.listdir('data/'):
-            with open('data/datasets.pkl', 'rb') as fp:
+        if "datasets.pkl" in os.listdir('../data/'):
+            with open('../data/datasets.pkl', 'rb') as fp:
                 datasets = pkl.load(fp)
             return datasets
         else:
@@ -441,15 +440,18 @@ class GeneCharacterisation:
                 if file_name in self.data_name_mapping.keys():
                     file_id = self.data_name_mapping[file_name]
                     if any(word in file for word in ["csv", "txt"]):
-                        datasets[file_id] = pd.read_csv(file)
-                    elif "xlsb" in file:
+                        if '9606' not in file:
+                            datasets[file_id] = pd.read_csv(file)
+                        else:
+                            datasets[file_id] = pd.read_csv(file, sep=" ")
+                    elif any(word in file for word in ["xlsx", "xlsb"]):
                         datasets[file_id] = pd.read_excel(file)
                     elif "parquet" in file:
                         datasets[file_id] = pd.read_parquet(file)
                     else:
                         raise ValueError(
                             "The file format is not supported. Make sure data is .csv, .txt, Excel, or parquet.")
-            with open('data/datasets.pkl', 'wb') as fp:
+            with open('../data/datasets.pkl', 'wb') as fp:
                 pkl.dump(datasets, fp)
             return datasets
 
@@ -597,21 +599,23 @@ class GeneCharacterisation:
 
     def _ppi_feature_extractor(self, threshold=500):
         """
-        Featurise PPI data, i.e. count and normalize the PPIs for each protein with a confidence score above a threshold.
-        TODO: Use another version of STRING dataset where we can select the experimentally validated PPIs.
+        Featurise PPI data, i.e. count and normalize the PPIs for each PPI that is experimentally validated.
         """
-        with open('../data/9606.protein.info.v11.5.txt', 'r') as f:
-            protein_info = f.readlines()
-        protein_info = [x.strip().split('\t') for x in protein_info]
+        # TODO: update protein info to v12.0 and map protein1 and protein2 to uniprot gene ids
+        protein_info = []  # To store the parsed data
+        with open("../data/9606.protein.links.full.v12.0.txt", "r") as file:
+            for line in file:
+                fields = line.strip().split('\t')
+                protein_info.append(fields)
         protein_info = pd.DataFrame(protein_info)
         protein_info.columns = protein_info.iloc[0]
 
         keys = list(self.datasets.keys())
-        string_data_raw = self.datasets[keys[4]]
-        string_data_raw[['protein1', 'protein2', 'combined_score']] = string_data_raw[
-            'protein1 protein2 combined_score'].str.split(expand=True)
-        string_data_raw.drop('protein1 protein2 combined_score', axis=1, inplace=True)
-        string_data_raw['combined_score'] = string_data_raw['combined_score'].astype(int)
+        string_data_raw = self.datasets[keys[2]]
+        string_data_raw = string_data_raw[["protein1", "protein2", "experiments"]]
+        # transform experiments column to int
+        string_data_raw['experiments'] = string_data_raw['experiments'].astype(int)
+        string_data_raw = string_data_raw[string_data_raw['experiments'] > 0]
 
         count = 0
 

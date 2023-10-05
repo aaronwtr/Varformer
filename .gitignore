@@ -186,3 +186,5 @@ data/VariPred/output/
 models/VariPred/VariPred/model/
 
 plots/varipred_alphamissense_comp/
+
+data/9606.protein.links.full.v12.0.txt
