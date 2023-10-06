@@ -7,6 +7,8 @@ import config
 import re
 import csv
 import glob
+import biorosetta as br
+import warnings
 
 from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_score
 from Bio import Seq
@@ -382,3 +384,13 @@ def eval_metrics(y_true, preds, threshold, model, fold):
 
     with open(f"../data/VariPred/output/{model}_crossval_results.pkl", "wb") as f:
         pkl.dump(results, f)
+
+
+def map_gene_names(list_of_genes, source_type, target_type):
+    idmap = br.IDMapper('all')
+    list_of_targets = idmap.convert(list_of_genes, source_type, target_type)
+    if 'N/A' in list_of_targets:
+        warnings.warn("Some genes were not found in the mapping. Check the input list of genes.")
+        missing = [list_of_genes[i] for i, x in enumerate(list_of_targets) if x == 'N/A']
+        warnings.warn(f"Number of missing genes: {len(missing)}")
+    return dict(zip(list_of_genes, list_of_targets))

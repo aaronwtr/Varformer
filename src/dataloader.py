@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 from Bio import SeqIO
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
 from pymatgen.io.cif import CifParser
 
 import plot
@@ -41,7 +42,7 @@ class MissenseVariantLoader:
         am = self.load_am_data()
         am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
         self.variant_data['variant_id'] = self.variant_data['#CHROM'] + '_' + self.variant_data['POS'].astype(str) + \
-                                           '_' + self.variant_data['REF'] + '_' + self.variant_data['ALT']
+                                          '_' + self.variant_data['REF'] + '_' + self.variant_data['ALT']
         am = am[['am_pathogenicity', 'variant_id']]
 
         self.variant_data = self.variant_data.merge(am, on='variant_id')
@@ -597,11 +598,10 @@ class GeneCharacterisation:
 
         return tract_sm, tract_ab
 
-    def _ppi_feature_extractor(self, threshold=500):
+    def _ppi_feature_extractor(self):
         """
         Featurise PPI data, i.e. count and normalize the PPIs for each PPI that is experimentally validated.
         """
-        # TODO: update protein info to v12.0 and map protein1 and protein2 to uniprot gene ids
         protein_info = []  # To store the parsed data
         with open("../data/9606.protein.links.full.v12.0.txt", "r") as file:
             for line in file:
@@ -613,43 +613,47 @@ class GeneCharacterisation:
         keys = list(self.datasets.keys())
         string_data_raw = self.datasets[keys[2]]
         string_data_raw = string_data_raw[["protein1", "protein2", "experiments"]]
-        # transform experiments column to int
         string_data_raw['experiments'] = string_data_raw['experiments'].astype(int)
         string_data_raw = string_data_raw[string_data_raw['experiments'] > 0]
 
-        count = 0
+        protein_names_1 = string_data_raw['protein1'].tolist()
+        protein_names_2 = string_data_raw['protein2'].tolist()
+        protein_names_1 = [protein.split('.')[1] for protein in protein_names_1]
+        protein_names_2 = [protein.split('.')[1] for protein in protein_names_2]
 
-        if os.path.exists('data/string_data_counts.pkl'):
-            with open('data/string_data_counts.pkl', 'rb') as f:
-                string_data_counts = pkl.load(f)
-                count = len(string_data_counts)
+        string_data_raw['protein1'] = protein_names_1
+        string_data_raw['protein2'] = protein_names_2
+        protein_names = list(set(protein_names_1))
 
-        batch_len = 1000
-        loop_len = np.ceil(len(list(string_data_raw['protein1'].unique())) / batch_len)
-        for i in range((int(loop_len))):
-            if not os.path.exists('data/string_data_counts.pkl'):
-                string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[:batch_len]})
+        mapped_names = utils.map_gene_names(protein_names, 'ensp', 'symb')
+
+        string_data_raw['protein1'] = string_data_raw['protein1'].map(mapped_names)
+        string_data_raw['protein2'] = string_data_raw['protein2'].map(mapped_names)
+        string_data_raw = string_data_raw[string_data_raw['protein1'] != 'N/A']
+        string_data_raw = string_data_raw[string_data_raw['protein2'] != 'N/A']
+
+        protein_counts = {}
+
+        # note we only need to do this for one column, since both columns contain the same proteins
+        for protein in string_data_raw['protein1']:
+            if protein not in protein_counts:
+                protein_counts[protein] = 1
             else:
-                try:
-                    string_data_counts = pd.DataFrame(
-                        {'Protein': string_data_raw['protein1'].unique()[count:count + batch_len]})
-                except IndexError:
-                    string_data_counts = pd.DataFrame({'Protein': string_data_raw['protein1'].unique()[count:]})
+                protein_counts[protein] += 1
 
-            string_data_counts['Num_PPIs'] = [sum(string_data_raw[(string_data_raw['protein1'] == gene) |
-                                                                  (string_data_raw['protein2'] == gene)]
-                                                  ['combined_score'] > threshold)
-                                              for gene in string_data_counts['Protein']]
-            count += 1000
-            if os.path.exists('data/string_data_counts.pkl'):
-                with open('data/string_data_counts.pkl', 'rb') as f:
-                    string_data_counts_prev = pkl.load(f)
-                string_data_counts = pd.concat([string_data_counts_prev, string_data_counts], ignore_index=True)
+        scaler = MinMaxScaler(feature_range=(1e-5, 1))
 
-            with open('data/string_data_counts.pkl', 'wb') as f:
-                pkl.dump(string_data_counts, f)
+        protein_counts = pd.DataFrame.from_dict(protein_counts, orient='index', columns=['count'])
+        protein_counts['count'] = scaler.fit_transform(protein_counts['count'].values.reshape(-1, 1))
+        protein_counts = protein_counts.to_dict()['count']
 
-        return string_data_counts
+        # NOTE: We don't weight the counts by experimental evidence as this would magnify bias in studied proteins.
+        # string_data_raw['experiments'] = scaler.fit_transform(stxing_data_raw['experiments'].values.reshape(-1, 1))
+        # for protein in tqdm(protein_counts):
+        #     protein_counts[protein] *= string_data_raw[string_data_raw['protein1'] == protein]['experiments'].mean()
+        # print(protein_counts)
+
+        return protein_counts
 
     def _mouse_knockout_feature_extractor(self):
         keys = list(self.datasets.keys())
