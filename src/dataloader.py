@@ -371,9 +371,9 @@ class GeneCharacterisation:
             "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
             "gnomad.exomes.v2.1.1.lof_metrics.by_gene.csv": "gnomAD Exomes Loss-of-Function Metrics",
             "9606.protein.links.full.v12.0.txt": "STRING Protein-Protein Interactions",
-            "tractability.xlsb": "Tractability Scores",
-            "FDA_approved_drug_targets_2023_Q2.xlsx": "FDA Approved Drug Targets",
-            "part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet": "Mouse Knockout Phenotypes"
+            "part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet": "Mouse Knockout Phenotypes",
+
+            "FDA_approved_drug_targets_2023_Q2.xlsx": "FDA Approved Drug Targets"
         }
         self.files = self._get_files()
         self.datasets = self.load_data()
