@@ -478,6 +478,12 @@ class GeneCharacterisation:
         if os.path.exists('../data/alphafold/af_plddt_features.pkl'):
             with open('../data/alphafold/af_plddt_features.pkl', 'rb') as fp:
                 extracted_values = pkl.load(fp)
+
+                scaler = MinMaxScaler(feature_range=(0, 1))
+                extracted_values = pd.DataFrame.from_dict(extracted_values, orient='index')
+                extracted_values['pLDDT'] = scaler.fit_transform(extracted_values.values.reshape(-1, 1))
+                extracted_values = extracted_values.to_dict()['pLDDT']
+
             return extracted_values
         else:
             for qualifier in tqdm(uniprot_ids):
@@ -506,6 +512,7 @@ class GeneCharacterisation:
                         print(f"\nError: Unable to fetch data for {qualifier}. Status code: {response.status_code}. "
                               f"Inserting 0.0.")
                         extracted_values[qualifier] = 0.0
+            # If regenerating pldtt features, add normalization here and save to pickle
             with open('../data/alphafold/af_plddt_features.pkl', 'wb') as fp:
                 pkl.dump(extracted_values, fp)
             return extracted_values
@@ -625,7 +632,7 @@ class GeneCharacterisation:
         string_data_raw['protein2'] = protein_names_2
         protein_names = list(set(protein_names_1))
 
-        mapped_names = utils.map_gene_names(protein_names, 'ensp', 'symb')
+        mapped_names = utils.map_gene_names(protein_names, 'ensp', 'ensg')
 
         string_data_raw['protein1'] = string_data_raw['protein1'].map(mapped_names)
         string_data_raw['protein2'] = string_data_raw['protein2'].map(mapped_names)
@@ -641,7 +648,7 @@ class GeneCharacterisation:
             else:
                 protein_counts[protein] += 1
 
-        scaler = MinMaxScaler(feature_range=(1e-5, 1))
+        scaler = MinMaxScaler(feature_range=(0, 1))
 
         protein_counts = pd.DataFrame.from_dict(protein_counts, orient='index', columns=['count'])
         protein_counts['count'] = scaler.fit_transform(protein_counts['count'].values.reshape(-1, 1))
