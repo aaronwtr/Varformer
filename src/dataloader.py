@@ -664,16 +664,96 @@ class GeneCharacterisation:
 
     def _mouse_knockout_feature_extractor(self):
         keys = list(self.datasets.keys())
-        df = self.datasets[keys[5]]
+        df = self.datasets[keys[4]]
         target_counts = {}
         for target in df['targetInModel']:
-            if target in target_counts:
-                target_counts[target] += 1
+            if target.upper() in target_counts:
+                target_counts[target.upper()] += 1
             else:
-                target_counts[target] = 1
-        target_freqs = {k: v / sum(target_counts.values()) for k, v in target_counts.items()}
+                target_counts[target.upper()] = 1
+
+        gene_names = list(target_counts.keys())
+        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
+        for gene_name in gene_names:
+            if gene_name in mapped_names:
+                target_counts[mapped_names[gene_name]] = target_counts.pop(gene_name)
+
+        target_counts = {k: v for k, v in target_counts.items() if k != 'N/A'}
+
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        target_freqs = pd.DataFrame.from_dict(target_counts, orient='index', columns=['count'])
+        target_freqs['count'] = scaler.fit_transform(target_freqs['count'].values.reshape(-1, 1))
+        target_freqs = target_freqs.to_dict()['count']
         return target_freqs
 
+    ################################################ ARCHIVED FEATURES ################################################
+
+    # Tractability features were used in the OpenTargets proof-of-concept model. They are not used in our model.
+    def _tractability_feature_extractor(self):
+        """
+        DEPRECATED: This function is deprecated. Function was used to load OpenTargets tractability data.
+        """
+        keys = list(self.datasets.keys())
+        tract_data_raw = self.datasets[keys[3]]
+        sym_col = ['symbol']
+        sm_cols = tract_data_raw.filter(regex='(SM_B)').columns.tolist()[3:]
+        sm_cols = sym_col + sm_cols
+        ab_cols = tract_data_raw.filter(regex='(AB_B)').columns.tolist()[3:]
+        ab_cols = sym_col + ab_cols
+        pr_cols = tract_data_raw.filter(regex='(PR_B)').columns.tolist()[3:]
+        pr_cols = sym_col + pr_cols
+
+        tract_data_sm = tract_data_raw.loc[:, sm_cols]
+        tract_data_ab = tract_data_raw.loc[:, ab_cols]
+        tract_data_pr = tract_data_raw.loc[:, pr_cols]
+
+        return tract_data_sm, tract_data_ab, tract_data_pr
+
+    def __tractability_feature_calculator(self):
+        """
+        DEPRECATED: This function is deprecated. Function was used to calculate tractability scores for the OpenTargets
+        proof-of-concept model.
+        """
+        with open('data/Tractability/ab_shap_values.pkl', 'rb') as f:
+            ab_shap_values = pkl.load(f)
+        with open('data/Tractability/sm_shap_values.pkl', 'rb') as f:
+            sm_shap_values = pkl.load(f)
+
+        tract_sm = self.bin_tract_features[0]
+        tract_ab = self.bin_tract_features[1]
+
+        tract_sm_float = tract_sm.iloc[:, 1:].astype(float)
+        tract_ab_float = tract_ab.iloc[:, 1:].astype(float)
+
+        ab_mean_shap = np.abs(np.mean(ab_shap_values, axis=0))
+        sm_mean_shap = np.abs(np.mean(sm_shap_values[:, 1:], axis=0))
+
+        weighted_tract_sm = tract_sm_float * sm_mean_shap
+        weighted_tract_ab = tract_ab_float * ab_mean_shap
+
+        tract_score_sm = weighted_tract_sm.sum(axis=1)
+        tract_score_ab = weighted_tract_ab.sum(axis=1)
+
+        tract_sm['tractability_score'] = tract_score_sm
+        tract_ab['tractability_score'] = tract_score_ab
+
+        return tract_sm, tract_ab
+
+    def __ground_truth_extractor(self):
+        """
+        DEPRECATED: This function is deprecated. Function was used to load OpenTargets tractability ground truth data.
+        """
+        keys = list(self.datasets.keys())
+        tract_data_raw = self.datasets[keys[3]]
+        sm_cols = tract_data_raw.filter(regex='(SM_B)').columns.tolist()[0]
+        ab_cols = tract_data_raw.filter(regex='(AB_B)').columns.tolist()[0]
+        pr_cols = tract_data_raw.filter(regex='(PR_B)').columns.tolist()[0]
+
+        ground_truth_sm = tract_data_raw.loc[:, sm_cols]
+        ground_truth_ab = tract_data_raw.loc[:, ab_cols]
+        ground_truth_pr = tract_data_raw.loc[:, pr_cols]
+
+        return ground_truth_sm, ground_truth_ab, ground_truth_pr
 
 class __WildtypeLoader:
     """
