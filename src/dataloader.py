@@ -381,19 +381,15 @@ class GeneCharacterisation:
         # Population genomics data
         self.gh_data = self.load_gh_data()
 
-        # OpenTargets proof-of-concept model
-        # self.bin_tract_features = self._tractability_feature_extractor()
-        # self.tract_features = self._tractability_feature_calculator()
-
         # Our model
+        # NOTE: genes can be represented with uniprot ids or ensg ids.
         self.alphafold_features = self._alphafold_feature_extractor()
         self.ppi_features = self._ppi_feature_extractor()
-        # self.mouse_ko_features = self._mouse_knockout_feature_extractor()
+        self.mouse_ko_features = self._mouse_knockout_feature_extractor()
         # self.chem_features = self._chem_feature_extractor()
         # self.gnomad_features = self._gnomad_feature_extractor()
-        #
+
         # # Ground truth
-        # self.ot_fda_approvals = self._ground_truth_extractor()
 
     def _get_files(self):
         """
@@ -459,7 +455,7 @@ class GeneCharacterisation:
     @staticmethod
     def load_gh_data():
         """
-        Load the Genes & Health variant data and the reference genome.
+        Load the Genes & Health variant data.
         """
         variant_data = pd.read_csv(config.MIVA_PATH, sep="\t")
         variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
@@ -545,65 +541,6 @@ class GeneCharacterisation:
         gnom_data = gnom_data_raw["pLI"].fillna(0.0)
 
         return gnom_data
-
-    def _tractability_feature_extractor(self):
-        """
-        Extract tractability scores from the tractability dataset.
-        """
-        keys = list(self.datasets.keys())
-        tract_data_raw = self.datasets[keys[3]]
-        sym_col = ['symbol']
-        sm_cols = tract_data_raw.filter(regex='(SM_B)').columns.tolist()[3:]
-        sm_cols = sym_col + sm_cols
-        ab_cols = tract_data_raw.filter(regex='(AB_B)').columns.tolist()[3:]
-        ab_cols = sym_col + ab_cols
-        pr_cols = tract_data_raw.filter(regex='(PR_B)').columns.tolist()[3:]
-        pr_cols = sym_col + pr_cols
-
-        tract_data_sm = tract_data_raw.loc[:, sm_cols]
-        tract_data_ab = tract_data_raw.loc[:, ab_cols]
-        tract_data_pr = tract_data_raw.loc[:, pr_cols]
-
-        return tract_data_sm, tract_data_ab, tract_data_pr
-
-    def _ground_truth_extractor(self):
-        keys = list(self.datasets.keys())
-        tract_data_raw = self.datasets[keys[3]]
-        sm_cols = tract_data_raw.filter(regex='(SM_B)').columns.tolist()[0]
-        ab_cols = tract_data_raw.filter(regex='(AB_B)').columns.tolist()[0]
-        pr_cols = tract_data_raw.filter(regex='(PR_B)').columns.tolist()[0]
-
-        ground_truth_sm = tract_data_raw.loc[:, sm_cols]
-        ground_truth_ab = tract_data_raw.loc[:, ab_cols]
-        ground_truth_pr = tract_data_raw.loc[:, pr_cols]
-
-        return ground_truth_sm, ground_truth_ab, ground_truth_pr
-
-    def _tractability_feature_calculator(self):
-        with open('data/Tractability/ab_shap_values.pkl', 'rb') as f:
-            ab_shap_values = pkl.load(f)
-        with open('data/Tractability/sm_shap_values.pkl', 'rb') as f:
-            sm_shap_values = pkl.load(f)
-
-        tract_sm = self.bin_tract_features[0]
-        tract_ab = self.bin_tract_features[1]
-
-        tract_sm_float = tract_sm.iloc[:, 1:].astype(float)
-        tract_ab_float = tract_ab.iloc[:, 1:].astype(float)
-
-        ab_mean_shap = np.abs(np.mean(ab_shap_values, axis=0))
-        sm_mean_shap = np.abs(np.mean(sm_shap_values[:, 1:], axis=0))
-
-        weighted_tract_sm = tract_sm_float * sm_mean_shap
-        weighted_tract_ab = tract_ab_float * ab_mean_shap
-
-        tract_score_sm = weighted_tract_sm.sum(axis=1)
-        tract_score_ab = weighted_tract_ab.sum(axis=1)
-
-        tract_sm['tractability_score'] = tract_score_sm
-        tract_ab['tractability_score'] = tract_score_ab
-
-        return tract_sm, tract_ab
 
     def _ppi_feature_extractor(self):
         """
