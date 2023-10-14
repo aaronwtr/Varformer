@@ -3,6 +3,7 @@ import matplotlib
 import numpy as np
 import seaborn as sns
 import pandas as pd
+from scipy.stats import pearsonr
 
 
 def tractability_plot(tractability_scores, fda_labels, plottype=None, fda=True):
@@ -194,3 +195,39 @@ def plot_crossvalidation_results(model1, model2):
     sns.despine()
     plt.savefig("../plots/varipred_alphamissense_comp/f1_score.png")
     plt.savefig("../plots/varipred_alphamissense_comp/f1_score.pdf")
+
+
+def af_protlen_corr(data, feature_name):
+    """
+    This function takes in a nested dictionary of alphafold features and plots two correlation plots: one for mean af
+    feature and one for the max af feature, against protein length.
+    """
+    if feature_name not in data:
+        print(f"Feature '{feature_name}' not found in the data.")
+        return
+
+    feature_data = data[feature_name]
+
+    x_values = []
+    y_values = []
+
+    for protein_id, value in feature_data.items():
+        protein_len = data['protein_len'].get(protein_id, 0)
+
+        if protein_len is not None and not np.isnan(protein_len) and value != 0:
+            x_values.append(protein_len)
+            y_values.append(value)
+
+    plt.figure(figsize=(8, 6))
+    plt.scatter(x_values, y_values, alpha=0.2)
+    plt.xlabel('Protein length')
+    plt.ylabel(f'{feature_name.capitalize()} normalised pLDDT score')
+    plt.ylim(-0.01, 1.03)
+    plt.grid(True)
+
+    correlation_coefficient, _ = pearsonr(x_values, y_values)
+    plt.text(max(x_values) * 1.03, 0.03, f'Pearson correlation = {correlation_coefficient:.2f}', fontsize=12,
+             color='black', horizontalalignment='right')
+
+    plt.savefig(f"../plots/af_feature_protlen_correlation/af_{feature_name}_protlen_corr.png")
+    plt.savefig(f"../plots/af_feature_protlen_correlation/af_{feature_name}_protlen_corr.pdf")

@@ -188,3 +188,7 @@ models/VariPred/VariPred/model/
 plots/varipred_alphamissense_comp/
 
 data/9606.protein.links.full.v12.0.txt
+
+plots/af_feature_protlen_correlation/af_max_protlen_corr.pdf
+
+plots/af_feature_protlen_correlation/af_mean_protlen_corr.pdf
