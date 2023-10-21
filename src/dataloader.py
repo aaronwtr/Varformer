@@ -387,10 +387,10 @@ class GeneCharacterisation:
         # Our model
         # NOTE: genes can be represented with uniprot ids or ensg ids.
         self.alphafold_features = self.alphafold_feature_extractor()
-        self.ppi_features = self._ppi_feature_extractor()
-        self.mouse_ko_features = self._mouse_knockout_feature_extractor()
-
-        # self.chem_features = self._chem_feature_extractor()
+        self.ppi_features = self.ppi_feature_extractor()
+        self.mouse_ko_features = self.mouse_knockout_feature_extractor()
+        self.chem_features = self.chem_feature_extractor()
+        print(self.chem_features)
         # self.gnomad_features = self._gnomad_feature_extractor()
 
         # # Ground truth
@@ -495,7 +495,6 @@ class GeneCharacterisation:
         Extract AlphaFold features from the AlphaFold API. Specifically, we get the average pLDDT score for the proteins
         in our dataset
         """
-        features = {}
         uniprot_data = self.gh_data[["SWISSPROT", "TREMBL", "varipred_id"]]
         uniprot_data["uniprot_id"] = uniprot_data["SWISSPROT"].fillna(uniprot_data["TREMBL"])
         uniprot_data = uniprot_data.drop(["SWISSPROT", "TREMBL"], axis=1).rename(columns={"uniprot_id": "UNIPROT"})
@@ -557,7 +556,7 @@ class GeneCharacterisation:
                 pkl.dump(features, fp)
             return features
 
-    def _chem_feature_extractor(self):
+    def chem_feature_extractor(self):
         """
         Extract chemical features from the CTD dataset. Note: we can further disentangle this data based on interaction
         type, e.g. increasing or decreasing action of target. This is not yet implemented.
@@ -568,9 +567,18 @@ class GeneCharacterisation:
         chem_features = chem_features[chem_features["Organism"] == "Homo sapiens"]
         gene_counts = chem_features["GeneSymbol"].value_counts(normalize=True)
         chem_features = pd.DataFrame({
-            "GeneSymbol": gene_counts.index,
-            "Count": gene_counts.values,
+            "symbol": gene_counts.index,
+            "count": gene_counts.values,
         })
+
+        gene_names = list(chem_features["symbol"])
+        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
+        chem_features['symbol'] = chem_features['symbol'].map(mapped_names)
+        chem_features = chem_features[chem_features['symbol'] != 'N/A']
+
+        scaler = MinMaxScaler()
+        chem_features["count"] = scaler.fit_transform(chem_features[["count"]])
+        chem_features = chem_features.set_index("symbol")["count"].to_dict()
 
         return chem_features
 
@@ -586,7 +594,7 @@ class GeneCharacterisation:
 
         return gnom_data
 
-    def _ppi_feature_extractor(self):
+    def ppi_feature_extractor(self):
         """
         Featurise PPI data, i.e. count and normalize the PPIs for each PPI that is experimentally validated.
         """
@@ -636,14 +644,14 @@ class GeneCharacterisation:
         protein_counts = protein_counts.to_dict()['count']
 
         # NOTE: We don't weight the counts by experimental evidence as this would magnify bias in studied proteins.
-        # string_data_raw['experiments'] = scaler.fit_transform(stxing_data_raw['experiments'].values.reshape(-1, 1))
+        # string_data_raw['experiments'] = scaler.fit_transform(string_data_raw['experiments'].values.reshape(-1, 1))
         # for protein in tqdm(protein_counts):
         #     protein_counts[protein] *= string_data_raw[string_data_raw['protein1'] == protein]['experiments'].mean()
         # print(protein_counts)
 
         return protein_counts
 
-    def _mouse_knockout_feature_extractor(self):
+    def mouse_knockout_feature_extractor(self):
         keys = list(self.datasets.keys())
         df = self.datasets[keys[4]]
         target_counts = {}
