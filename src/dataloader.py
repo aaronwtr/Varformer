@@ -565,7 +565,7 @@ class GeneCharacterisation:
         chem_data = self.datasets[keys[0]]
         chem_features = chem_data[["GeneSymbol", "# ChemicalName", "Organism", "InteractionActions"]]
         chem_features = chem_features[chem_features["Organism"] == "Homo sapiens"]
-        gene_counts = chem_features["GeneSymbol"].value_counts(normalize=True)
+        gene_counts = chem_features["GeneSymbol"].value_counts()
         chem_features = pd.DataFrame({
             "symbol": gene_counts.index,
             "count": gene_counts.values,
@@ -579,7 +579,6 @@ class GeneCharacterisation:
         scaler = MinMaxScaler()
         chem_features["count"] = scaler.fit_transform(chem_features[["count"]])
         chem_features = chem_features.set_index("symbol")["count"].to_dict()
-
         return chem_features
 
     def _gnomad_feature_extractor(self):
