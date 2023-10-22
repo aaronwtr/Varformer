@@ -390,8 +390,8 @@ class GeneCharacterisation:
         self.ppi_features = self.ppi_feature_extractor()
         self.mouse_ko_features = self.mouse_knockout_feature_extractor()
         self.chem_features = self.chem_feature_extractor()
-        print(self.chem_features)
-        # self.gnomad_features = self._gnomad_feature_extractor()
+        self.gnomad_features = self.gnomad_feature_extractor()
+        # TODO Load pathogenicity features from varipred
 
         # # Ground truth
 
@@ -581,16 +581,22 @@ class GeneCharacterisation:
         chem_features = chem_features.set_index("symbol")["count"].to_dict()
         return chem_features
 
-    def _gnomad_feature_extractor(self):
+    def gnomad_feature_extractor(self):
         """
         Extract target conservation scores from gnomAD data. Note that pLI measures the probability of a gene being
-        loss-of-function intolerant.
+        loss-of-function intolerant. There are more potential features we can extract from the gnomAD data.
         """
         keys = list(self.datasets.keys())
-        gnom_data = self.datasets[keys[2]]
+        gnom_data = self.datasets[keys[1]]
         gnom_data_raw = gnom_data[["gene", "pLI"]]
-        gnom_data = gnom_data_raw["pLI"].fillna(0.0)
-
+        # fill the nans with 0.0 in gnoma_data_raw
+        gnom_data_raw["pLI"] = gnom_data_raw["pLI"].fillna(0.0)
+        gnom_data = gnom_data_raw
+        gene_names = list(gnom_data["gene"])
+        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
+        gnom_data['gene'] = gnom_data['gene'].map(mapped_names)
+        gnom_data = gnom_data[gnom_data['gene'] != 'N/A']
+        gnom_data = gnom_data.set_index("gene")["pLI"].to_dict()
         return gnom_data
 
     def ppi_feature_extractor(self):
