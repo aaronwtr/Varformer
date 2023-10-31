@@ -196,3 +196,5 @@ plots/af_feature_protlen_correlation/af_mean_protlen_corr.pdf
 data/alphamissense/AlphaMissense_hg38.tsv.zip
 
 data/alphamissense/am_df.pkl.zip
+
+data/VariPred/finetuned_output_2/

@@ -4,13 +4,15 @@
 # output_path: file name for the predicted results (in .txt format)
 
 # In this example, we are using the training set named as "target.csv" under the directory "../example/dataset"
-#df_path="../data/VariPred/embeds/"
-#target_ds="train_downsample_5k_clean.pt"
-#output_name="output/VariPred_output_finetuned_5k_clean"
+# kFOLD VALIDATION PREDICTION
+#df_path="../data/VariPred"
+#target_ds="test_downsample_fold_5"
+#output_name="varipred_output_finetuned_fold_5"
 
-df_path="../data/VariPred"
-target_ds="test_downsample_fold_5"
-output_name="varipred_output_finetuned_fold_5"
+# REGULAR PREDICTION
+df_path="../data/VariPred/input"
+target_ds=$1
+output_name="../data/VariPred/output/VariPred_output_$1"
 
 
 python3 ../models/VariPred/VariPred/main.py \

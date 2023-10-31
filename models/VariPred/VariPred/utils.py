@@ -422,12 +422,12 @@ def predict_results(y_true, preds, record_id, train=False, output_name=None):
 
     else:
         preds_bin = np.array(preds >= config.classification_threshold, dtype=int)
-        if not os.path.exists(f'{result_path}/{output_name}.txt'):
-            os.makedirs(result_path, exist_ok=True)
-            header = "target_id\tclassification\tprobability\n"
-            with open(f'{result_path}/{output_name}.txt', 'w') as file_writer:
-                file_writer.write(header)
+        # if not os.path.exists(f'{output_name}.txt'):
+        #     os.makedirs(output_name, exist_ok=True)
+        #     header = "target_id\tclassification\tprobability\n"
+        #     with open(f'{output_name}.txt', 'w') as file_writer:
+        #         file_writer.write(header)
 
         for ids, pred_bin_value, pred_value in zip(record_id, preds_bin, preds):
-            with open(f'{result_path}/{output_name}.txt', 'a+') as f:
+            with open(f'{output_name}.txt', 'a+') as f:
                 f.write(f'{ids}\t{pred_bin_value}\t{pred_value}\n')
