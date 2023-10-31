@@ -42,13 +42,17 @@ class MissenseVariantLoader:
         self.variant_data = self.variant_data.rename(columns={'Allele': 'ALT'})
         self.variant_data["uniprot_id"] = self.variant_data["SWISSPROT"].fillna(self.variant_data["TREMBL"])
 
-        am = self.load_am_data()
-        am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
-        self.variant_data['variant_id'] = self.variant_data['#CHROM'] + '_' + self.variant_data['POS'].astype(str) + \
-                                          '_' + self.variant_data['REF'] + '_' + self.variant_data['ALT']
-        am = am[['am_pathogenicity', 'variant_id']]
+        try:
+            am = self.load_am_data()
+            am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
+            self.variant_data['variant_id'] = self.variant_data['#CHROM'] + '_' + self.variant_data['POS'].astype(str) + \
+                                              '_' + self.variant_data['REF'] + '_' + self.variant_data['ALT']
+            am = am[['am_pathogenicity', 'variant_id']]
 
-        self.variant_data = self.variant_data.merge(am, on='variant_id')
+            self.variant_data = self.variant_data.merge(am, on='variant_id')
+        except FileNotFoundError:
+            print("AlphaMissense not found. Comparison done and deleted data for storage purposes, or data still needs"
+                  " to be downloaded.")
 
         if preprocess:
             self.process_variants_proteomic()
@@ -70,10 +74,11 @@ class MissenseVariantLoader:
         if predict:
             if self.args.varipred_input is not None:
                 variant_files = os.listdir(self.args.varipred_input)
+                data_dir = self.args.varipred_input.split('/')[4]
                 variant_files = sorted(variant_files, key=utils.extract_number)
                 for file in variant_files:
                     if file.endswith('.csv'):
-                        self.predict_pathogenicity(file[:-4])
+                        self.predict_pathogenicity(f"{data_dir}/{file[:-4]}")
             else:
                 self.predict_pathogenicity()
 
@@ -218,8 +223,9 @@ class MissenseVariantLoader:
 
     def predict_pathogenicity(self, variant_file=None):
         if variant_file is not None:
-            data_folder = self.args.varipred_input.split('/')[3]
-            file = f"{data_folder}/{variant_file}"
+            # data_folder = self.args.varipred_input.split('/')[3]
+            # file = f"{data_folder}/{variant_file}"
+            file = f"{variant_file}"
             utils.run_shell_script(config.VP_INFERENCE_PATH, file)
         else:
             utils.run_shell_script(config.VP_INFERENCE_PATH)
@@ -558,8 +564,9 @@ class GeneCharacterisation:
 
     def chem_feature_extractor(self):
         """
-        Extract chemical features from the CTD dataset. Note: we can further disentangle this data based on interaction
-        type, e.g. increasing or decreasing action of target. This is not yet implemented.
+        Extract chemical features from the CTD dataset. We count the number of known chemical interactions for each gene
+        Note: we can further disentangle this data based on interaction type, e.g. increasing or decreasing action of
+        target. This is not yet implemented.
         """
         keys = list(self.datasets.keys())
         chem_data = self.datasets[keys[0]]
