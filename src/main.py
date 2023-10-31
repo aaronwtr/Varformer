@@ -21,3 +21,5 @@ def gene_characterisation():
 if __name__ == "__main__":
     # mvl = load_missense_variants()
     gc = gene_characterisation()
+
+    # TODO: Properly load pathogenicity features from mvl
