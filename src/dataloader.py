@@ -83,7 +83,7 @@ class MissenseVariantLoader:
                 self.predict_pathogenicity()
 
         varipred_output = utils.preprocess_varipred_output(config.VP_OUTPUT_PATH)
-        # NOTE: THE VARIPRED OUTPUT BEING LOADED HERE IS AN OLD MODEL. THE NEW MODEL HAS NOT BEEN RUN EXOME-WIDE YET.
+
         if os.path.exists("../data/elgh/varipred_elgh_data.csv"):
             self.variant_data = pd.read_csv("../data/elgh/varipred_elgh_data.csv", sep="\t")
         else:
@@ -392,11 +392,13 @@ class GeneCharacterisation:
 
         # Our model
         # NOTE: genes can be represented with uniprot ids or ensg ids.
-        self.alphafold_features = self.alphafold_feature_extractor()
-        self.ppi_features = self.ppi_feature_extractor()
-        self.mouse_ko_features = self.mouse_knockout_feature_extractor()
-        self.chem_features = self.chem_feature_extractor()
-        self.gnomad_features = self.gnomad_feature_extractor()
+        # self.alphafold_features = self.alphafold_feature_extractor()
+        # self.ppi_features = self.ppi_feature_extractor()
+        # self.mouse_ko_features = self.mouse_knockout_feature_extractor()
+        # self.chem_features = self.chem_feature_extractor()
+        # self.gnomad_features = self.gnomad_feature_extractor()
+        self.pathogenicity_features = self.load_pathogenicity_features()
+
         # TODO Load pathogenicity features from varipred
 
         # # Ground truth
@@ -686,6 +688,23 @@ class GeneCharacterisation:
         target_freqs['count'] = scaler.fit_transform(target_freqs['count'].values.reshape(-1, 1))
         target_freqs = target_freqs.to_dict()['count']
         return target_freqs
+
+    def load_pathogenicity_features(self):
+        varipred_output = pd.read_csv("../data/VariPred/varipred_output_data.csv", sep="\t")
+        print(varipred_output)
+        varipred_features = {}
+        for row in varipred_output.iterrows():
+            target_id = row[1]['target_id']
+            prob = row[1]['probability']
+            # check if target_id is in the keys of varipred_features
+            if target_id in varipred_features:
+                varipred_features[target_id].append(prob)
+            else:
+                varipred_features[target_id] = [prob]
+
+        # TODO: Map the variant-level probas to gene-level probas. To do this we need the ELGH dataset instead of
+        #  VariPred
+
 
     ################################################ ARCHIVED FEATURES ################################################
 
