@@ -33,7 +33,8 @@ class MissenseVariantLoader:
         else:
             self.elgh_path = config.MIVA_PATH
         self.genome_path = config.GENOME_PATH
-        self.variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "Gene", "HGVSp", "AF_ELGH", "UNIPARC", "SWISSPROT",
+        self.variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "Gene", "HGVSp", "AF_ELGH", "UNIPARC",
+                             "SWISSPROT",
                              "TREMBL", "Protein_position", "Amino_acids", "SIFT", "PolyPhen", "varipred_id"]
         self.variant_data = self.load_gh_data()
         self.variant_data = self.variant_data.rename(columns={'Allele': 'ALT'})
@@ -389,16 +390,18 @@ class GeneCharacterisation:
 
         # Our model
         # NOTE: genes can be represented with uniprot ids or ensg ids.
-        # self.alphafold_features = self.alphafold_feature_extractor()
-        # self.ppi_features = self.ppi_feature_extractor()
-        # self.mouse_ko_features = self.mouse_knockout_feature_extractor()
-        # self.chem_features = self.chem_feature_extractor()
-        # self.gnomad_features = self.gnomad_feature_extractor()
+        self.alphafold_features = self.alphafold_feature_extractor()
+        self.ppi_features = self.ppi_feature_extractor()
+        self.mouse_ko_features = self.mouse_knockout_feature_extractor()
+        self.chem_features = self.chem_feature_extractor()
+        self.gnomad_features = self.gnomad_feature_extractor()
         self.pathogenicity_features = self.load_pathogenicity_features()
 
-        # TODO Load pathogenicity features from varipred
+        # TODO: Combine all the features into a single feature matrix. Use the ELGH variant data as a frame work such
+        #  that we can easily map between ensg, uniprot, and symbols as contained in the ELGH variant data.
 
         # # Ground truth
+        # TODO: Load ground truth data (i.e. label all the genes in our feature set with FDA approval status)
 
     def _get_files(self):
         """
