@@ -9,14 +9,15 @@ import csv
 import glob
 import biorosetta as br
 import warnings
+import requests
 
 from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_score
-from Bio import Seq
+from Bio import Seq, SeqIO, Entrez
 
 
 def count_scaling(counts):
     """
-    Implements $x' = \frac{x - x_{min}}{x_{max} - x_{min}}$.
+    Implements \(x' = \frac{x - x_{min}}{x_{max} - x_{min}}\).
     :param counts: array of count
     :return: list of features scaled between 0 and 1.
     """
@@ -394,3 +395,67 @@ def map_gene_names(list_of_genes, source_type, target_type):
         missing = [list_of_genes[i] for i, x in enumerate(list_of_targets) if x == 'N/A']
         warnings.warn(f"Number of missing genes: {len(missing)}")
     return dict(zip(list_of_genes, list_of_targets))
+
+
+def get_protein_length(ensp, ensg):
+    ensp_api_url = f"https://rest.ensembl.org/sequence/id/{ensp}"
+    ensg_api_url = f"https://rest.ensembl.org/sequence/id/{ensg}?type=protein;multiple_sequences=1"
+
+    headers = {
+        'Content-Type': 'application/json'
+    }
+
+    try:
+        response = requests.get(ensp_api_url, headers=headers)
+
+        if response.status_code == 200:
+            data = response.json()
+
+            protein = data.get('seq', None)
+            protein_length = len(protein)
+
+            if protein_length is not None:
+                return protein_length
+            else:
+                raise KeyError(f"Protein length for {ensp} not found in the response.")
+        else:
+            raise KeyError(f"Failed to retrieve protein information. Status code: {response.status_code}")
+    except KeyError:
+        response = requests.get(ensg_api_url, headers=headers)
+
+        if response.status_code == 200:
+            data = response.json()
+            protein = data[0].get('seq', None)
+            protein_length = len(protein)
+
+            if protein_length is not None:
+                return protein_length
+            else:
+                raise KeyError(f"Protein length for {ensg} not found in the response.")
+        else:
+            raise KeyError(f"Failed to retrieve protein information. Status code: {response.status_code}")
+
+
+def get_protein_length_up(up):
+    uniprot_api_url = f"https://www.uniprot.org/uniprot/{up}.fasta"
+
+    response = requests.get(uniprot_api_url)
+    try:
+        if response.status_code == 200:
+            output = response.text
+            protein_sequence = output.split("\n")[1:]
+            protein_sequence = "".join(protein_sequence)
+            protein_length = len(protein_sequence)
+            if protein_length == 0:
+                raise ValueError(f"Protein length for {up} not found in the response.")
+
+            return protein_length
+        else:
+            raise KeyError(f"Failed to retrieve protein sequence from UniProt. Status code: {response.status_code}")
+
+    except ValueError:
+        print(f"Protein length for {up} not found in the response.")
+        return 0
+    except KeyError:
+        print(f"Failed to retrieve protein sequence from UniProt. Status code: {response.status_code}")
+        return 0

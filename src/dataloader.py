@@ -9,8 +9,6 @@ import gc
 import warnings
 import argparse
 import shutil
-import ensembl_rest
-import matplotlib.pyplot as plt
 
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -18,9 +16,8 @@ from functools import partial
 from Bio import SeqIO
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-from pymatgen.io.cif import CifParser
+from Bio import SeqIO
 
-import plot
 import utils
 import config
 
@@ -36,8 +33,8 @@ class MissenseVariantLoader:
         else:
             self.elgh_path = config.MIVA_PATH
         self.genome_path = config.GENOME_PATH
-        self.variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "UNIPARC", "SWISSPROT", "TREMBL",
-                             "Protein_position", "Amino_acids", "SIFT", "PolyPhen", "varipred_id"]
+        self.variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "Gene", "HGVSp", "AF_ELGH", "UNIPARC", "SWISSPROT",
+                             "TREMBL", "Protein_position", "Amino_acids", "SIFT", "PolyPhen", "varipred_id"]
         self.variant_data = self.load_gh_data()
         self.variant_data = self.variant_data.rename(columns={'Allele': 'ALT'})
         self.variant_data["uniprot_id"] = self.variant_data["SWISSPROT"].fillna(self.variant_data["TREMBL"])
@@ -689,22 +686,39 @@ class GeneCharacterisation:
         target_freqs = target_freqs.to_dict()['count']
         return target_freqs
 
-    def load_pathogenicity_features(self):
-        varipred_output = pd.read_csv("../data/VariPred/varipred_output_data.csv", sep="\t")
-        print(varipred_output)
-        varipred_features = {}
+    @staticmethod
+    def load_pathogenicity_features():
+        """
+        Load the pathogenicity features amd map them from variant-level probas to gene-level probas. To do this we need
+        to implement: \( 1/N \sum v_i * \alpha_i \), where N is number of variants in a given gene, v_i is variant
+        proba, and \alpha_i is the allele frequency of variant i.
+        """
+        varipred_output = pd.read_csv("../data/elgh/varipred_elgh_data.csv", sep="\t")
+        varipred_features_variant = {}
         for row in varipred_output.iterrows():
-            target_id = row[1]['target_id']
-            prob = row[1]['probability']
-            # check if target_id is in the keys of varipred_features
-            if target_id in varipred_features:
-                varipred_features[target_id].append(prob)
+            ensg = row[1]['Gene']
+            prob = row[1]['vp_probability']
+            allele_freq = row[1]['AF_ELGH']
+            if ensg not in list(varipred_features_variant.keys()):
+                varipred_features_variant[ensg] = [prob * allele_freq]
             else:
-                varipred_features[target_id] = [prob]
+                varipred_features_variant[ensg].append(prob * allele_freq)
 
-        # TODO: Map the variant-level probas to gene-level probas. To do this we need the ELGH dataset instead of
-        #  VariPred
+        varipred_features_gene = {}
+        for ensg, probs in varipred_features_variant.items():
+            varipred_features_gene[ensg] = sum(probs) / len(probs)
 
+        values = list(varipred_features_gene.values())
+        values = [[value] for value in values]  # Convert values to a 2D array
+
+        scaler = MinMaxScaler()
+        normalized_values = scaler.fit_transform(values)
+        normalized_values = [value[0] for value in normalized_values]  # Convert back to 1D array
+
+        varipred_features_gene = {key: normalized_value for key, normalized_value in zip(varipred_features_gene.keys(),
+                                                                                         normalized_values)}
+
+        return varipred_features_gene
 
     ################################################ ARCHIVED FEATURES ################################################
 
