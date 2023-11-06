@@ -390,12 +390,45 @@ class GeneCharacterisation:
 
         # Our model
         # NOTE: genes can be represented with uniprot ids or ensg ids.
-        self.alphafold_features = self.alphafold_feature_extractor()
-        self.ppi_features = self.ppi_feature_extractor()
-        self.mouse_ko_features = self.mouse_knockout_feature_extractor()
-        self.chem_features = self.chem_feature_extractor()
-        self.gnomad_features = self.gnomad_feature_extractor()
-        self.pathogenicity_features = self.load_pathogenicity_features()
+        if len(os.listdir('../data/features/')) == 0:
+            self.alphafold_features = self.alphafold_feature_extractor()
+            with open('../data/features/alphafold_features.pkl', 'wb') as fp:
+                pkl.dump(self.alphafold_features, fp)
+
+            self.ppi_features = self.ppi_feature_extractor()
+            with open('../data/features/ppi_features.pkl', 'wb') as fp:
+                pkl.dump(self.ppi_features, fp)
+
+            self.mouse_ko_features = self.mouse_knockout_feature_extractor()
+            with open('../data/features/mouse_ko_features.pkl', 'wb') as fp:
+                pkl.dump(self.mouse_ko_features, fp)
+
+            self.chem_features = self.chem_feature_extractor()
+            with open('../data/features/chem_features.pkl', 'wb') as fp:
+                pkl.dump(self.chem_features, fp)
+
+            self.gnomad_features = self.gnomad_feature_extractor()
+            with open('../data/features/gnomad_features.pkl', 'wb') as fp:
+                pkl.dump(self.gnomad_features, fp)
+
+            self.pathogenicity_features = self.load_pathogenicity_features()
+            with open('../data/features/pathogenicity_features.pkl', 'wb') as fp:
+                pkl.dump(self.pathogenicity_features, fp)
+        else:
+            with open('../data/features/alphafold_features.pkl', 'rb') as fp:
+                self.alphafold_features = pkl.load(fp)
+            with open('../data/features/ppi_features.pkl', 'rb') as fp:
+                self.ppi_features = pkl.load(fp)
+            with open('../data/features/mouse_ko_features.pkl', 'rb') as fp:
+                self.mouse_ko_features = pkl.load(fp)
+            with open('../data/features/chem_features.pkl', 'rb') as fp:
+                self.chem_features = pkl.load(fp)
+            with open('../data/features/gnomad_features.pkl', 'rb') as fp:
+                self.gnomad_features = pkl.load(fp)
+            with open('../data/features/pathogenicity_features.pkl', 'rb') as fp:
+                self.pathogenicity_features = pkl.load(fp)
+
+        self.gene_features = self.combine_features()
 
         # TODO: Combine all the features into a single feature matrix. Use the ELGH variant data as a frame work such
         #  that we can easily map between ensg, uniprot, and symbols as contained in the ELGH variant data.
@@ -722,6 +755,17 @@ class GeneCharacterisation:
                                                                                          normalized_values)}
 
         return varipred_features_gene
+
+    def combine_features(self):
+        """
+        Combine all the features into a single feature matrix. Use the ELGH variant data as a frame work such
+        that we can easily map between ensg, uniprot, and symbols as contained in the ELGH variant data.
+        """
+        # Gene column is the ensg id
+        # Still need to combine SWISSPROT and TREMBL columns to UNIPROT column
+
+        print(self.gh_data)
+        return 0
 
     ################################################ ARCHIVED FEATURES ################################################
 
