@@ -761,10 +761,12 @@ class GeneCharacterisation:
         Combine all the features into a single feature matrix. Use the ELGH variant data as a frame work such
         that we can easily map between ensg, uniprot, and symbols as contained in the ELGH variant data.
         """
-        # Gene column is the ensg id
-        # Still need to combine SWISSPROT and TREMBL columns to UNIPROT column
+        self.gh_data["UNIPROT"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
+        self.gh_data = self.gh_data.drop(["SWISSPROT", "TREMBL"], axis=1)
 
-        print(self.gh_data)
+        feature_matrix = self.gh_data[["Gene", "UNIPROT"]]
+        feature_matrix = feature_matrix.rename(columns={"Gene": "ENSG"})
+        print(feature_matrix)
         return 0
 
     ################################################ ARCHIVED FEATURES ################################################
