@@ -766,7 +766,37 @@ class GeneCharacterisation:
 
         feature_matrix = self.gh_data[["Gene", "UNIPROT"]]
         feature_matrix = feature_matrix.rename(columns={"Gene": "ENSG"})
-        print(feature_matrix)
+
+        ensg_features = {
+            "chem": self.chem_features,
+            "gnomad": self.gnomad_features,
+            "mouse_ko": self.mouse_ko_features,
+            "ppi": self.ppi_features,
+            "pathogenicity": self.pathogenicity_features
+        }
+        uniprot_features = {
+            "alphafold": self.alphafold_features["mean"]
+        }
+
+        for feature, values in ensg_features.items():
+            feature_matrix[feature] = feature_matrix["ENSG"].map(values)
+        for feature, values in uniprot_features.items():
+            feature_matrix[feature] = feature_matrix["UNIPROT"].map(values)
+
+        feature_matrix = feature_matrix.drop(["UNIPROT"], axis=1)
+
+        feature_matrix = feature_matrix.fillna(0.0)
+
+        utils.count_zeros(feature_matrix)
+
+        plot.correlation_heatmap(feature_matrix)
+
+        return feature_matrix
+
+    def add_ground_truth(self):
+        """
+        Add the ground truth labels to the feature matrix.
+        """
         return 0
 
     ################################################ ARCHIVED FEATURES ################################################
