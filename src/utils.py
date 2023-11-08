@@ -459,3 +459,15 @@ def get_protein_length_up(up):
     except KeyError:
         print(f"Failed to retrieve protein sequence from UniProt. Status code: {response.status_code}")
         return 0
+
+
+def count_zeros(df):
+    """
+    For each column in a given dataframe, count how many zeros occur
+    :return:
+    """
+    print("Feature sparsity:")
+
+    for col in df.columns:
+        num_zeros = len(df[df[col] == 0])
+        print(f"{col}: {round(num_zeros / len(df) * 100, 2)}%")
