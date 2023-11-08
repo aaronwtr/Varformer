@@ -1,5 +1,3 @@
-import time
-
 import pandas as pd
 import numpy as np
 import requests
@@ -13,13 +11,13 @@ import shutil
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
-from Bio import SeqIO
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from Bio import SeqIO
 
 import utils
 import config
+import plot
 
 
 class MissenseVariantLoader:
@@ -380,7 +378,7 @@ class GeneCharacterisation:
             "9606.protein.links.full.v12.0.txt": "STRING Protein-Protein Interactions",
             "part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet": "Mouse Knockout Phenotypes",
 
-            "FDA_approved_drug_targets_2023_Q2.xlsx": "FDA Approved Drug Targets"
+            "FDA_approved_drug_targets_2023_Q3.xlsx": "FDA Approved Drug Targets"
         }
         self.files = self._get_files()
         self.datasets = self.load_data()
@@ -428,13 +426,14 @@ class GeneCharacterisation:
             with open('../data/features/pathogenicity_features.pkl', 'rb') as fp:
                 self.pathogenicity_features = pkl.load(fp)
 
-        self.gene_features = self.combine_features()
+        self.features = self.combine_features()
 
-        # TODO: Combine all the features into a single feature matrix. Use the ELGH variant data as a frame work such
-        #  that we can easily map between ensg, uniprot, and symbols as contained in the ELGH variant data.
+        # Ground truth
+        self.target = self.load_ground_truth()
 
-        # # Ground truth
-        # TODO: Load ground truth data (i.e. label all the genes in our feature set with FDA approval status)
+        # Combine features and target
+        # TODO: Implement make_data() method
+        self.data = self.make_data()
 
     def _get_files(self):
         """
@@ -505,6 +504,12 @@ class GeneCharacterisation:
         variant_data = pd.read_csv(config.MIVA_PATH, sep="\t")
         variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
         return variant_data
+
+    def load_ground_truth(self):
+        """
+        Load the ground truth data.
+        """
+        return self.datasets["FDA Approved Drug Targets"]
 
     def download_af_cifs(self):
         uniprot_data = self.gh_data[["SWISSPROT", "TREMBL", "varipred_id"]]
