@@ -231,3 +231,41 @@ def af_protlen_corr(data, feature_name):
 
     plt.savefig(f"../plots/af_feature_protlen_correlation/af_{feature_name}_protlen_corr.png")
     plt.savefig(f"../plots/af_feature_protlen_correlation/af_{feature_name}_protlen_corr.pdf")
+
+
+def feature_correlation(dataframe):
+    feature_names = dataframe.columns[1:]
+    fig, axes = plt.subplots(nrows=len(feature_names), ncols=len(feature_names), figsize=(40, 40))
+
+    for i, feature_x in enumerate(feature_names):
+        for j, feature_y in enumerate(feature_names):
+            ax = axes[i, j]
+
+            if i == j:
+                ax.hist(dataframe[feature_x], bins=20, alpha=0.7)
+                ax.set_xlabel(feature_x)
+                ax.set_ylabel('Frequency')
+            else:
+                ax.scatter(dataframe[feature_x], dataframe[feature_y], alpha=0.5)
+                ax.set_xlabel(feature_x)
+                ax.set_ylabel(feature_y)
+                ax.axline((0, 0), slope=1, color='black', linestyle='--')
+
+                correlation = dataframe[[feature_x, feature_y]].corr().iloc[0, 1]
+                ax.annotate(f'Corr: {correlation:.2f}', xy=(0.5, 0.9), xycoords='axes fraction', ha='center')
+
+    plt.tight_layout()
+    plt.show()
+    # plt.savefig('../plots/features/feature_correlations.pdf')
+
+
+def correlation_heatmap(df):
+    feature_df = df.iloc[:, 1:]
+    correlation_matrix = feature_df.corr()
+
+    # Create a heatmap
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(correlation_matrix, cmap="Blues", annot=True, fmt=".2f")
+    plt.title("Pearson Correlation Heatmap")
+    plt.savefig('../plots/feature_correlation_heatmaps/feature_correlations_heatmap_nov2023.pdf')
+    plt.savefig('../plots/feature_correlation_heatmaps/feature_correlations_heatmap_nov2023.png')
