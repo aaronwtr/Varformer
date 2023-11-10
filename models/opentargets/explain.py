@@ -3,7 +3,7 @@ import shap
 import pickle as pkl
 
 from model import XGBoostClassifier
-from src.dataloader import GeneCharacterisation
+from src.preprocessing import GeneCharacterisationPreprocessor
 
 
 def make_model(X, y, model_type):
