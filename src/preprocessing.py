@@ -20,7 +20,7 @@ import config
 import plot
 
 
-class MissenseVariantLoader:
+class MissenseVariantPreprocessor:
     def __init__(self, preprocess=False, train=False, predict=False, evaluation=False):
         parser = argparse.ArgumentParser(description='Script to process variants')
         parser.add_argument('--data', type=str)
@@ -365,7 +365,7 @@ class MissenseVariantLoader:
                              f"({sequence[pos]}).")
 
 
-class GeneCharacterisation:
+class GeneCharacterisationPreprocessor:
     """
     This class loads and combines the different data sources into a single feature matrix to be fed into our model.
     """
@@ -434,6 +434,10 @@ class GeneCharacterisation:
         # Combine features and target
         # TODO: Implement make_data() method
         self.data = self.make_data()
+
+        # Explore the data
+        # plot.umap(self.data)
+
 
     def _get_files(self):
         """
@@ -808,7 +812,7 @@ class GeneCharacterisation:
 
         utils.count_zeros(feature_matrix)
 
-        plot.correlation_heatmap(feature_matrix)
+        # plot.correlation_heatmap(feature_matrix)
 
         return feature_matrix
 
