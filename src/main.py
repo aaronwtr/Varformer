@@ -1,23 +1,18 @@
 import pandas as pd
 import pickle as pkl
 
-from dataloader import MissenseVariantLoader, GeneCharacterisation
+from preprocessing import MissenseVariantPreprocessor, GeneCharacterisationPreprocessor
 import plot
 import utils
 
 
-def load_missense_variants():
-    MVL = MissenseVariantLoader()
+def main():
+    MVP = MissenseVariantPreprocessor()
     print("Missense variants loaded!\n")
-    return MVL
 
-
-def gene_characterisation():
-    features = GeneCharacterisation()
+    GCP = GeneCharacterisationPreprocessor()
     print("Gene characterisation features loaded!\n")
-    return features
 
 
 if __name__ == "__main__":
-    # mvl = load_missense_variants()
-    gc = gene_characterisation()
+    main()
