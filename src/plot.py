@@ -3,8 +3,9 @@ import matplotlib
 import numpy as np
 import seaborn as sns
 import pandas as pd
-from scipy.stats import pearsonr
 
+from scipy.stats import pearsonr
+from umap import UMAP
 
 def tractability_plot(tractability_scores, fda_labels, plottype=None, fda=True):
     if plottype == None:
@@ -267,5 +268,29 @@ def correlation_heatmap(df):
     plt.figure(figsize=(10, 8))
     sns.heatmap(correlation_matrix, cmap="Blues", annot=True, fmt=".2f")
     plt.title("Pearson Correlation Heatmap")
-    plt.savefig('../plots/feature_correlation_heatmaps/feature_correlations_heatmap_nov2023.pdf')
-    plt.savefig('../plots/feature_correlation_heatmaps/feature_correlations_heatmap_nov2023.png')
+    # plt.savefig('../plots/feature_correlation_heatmaps/feature_correlations_heatmap_nov2023.pdf')
+    # plt.savefig('../plots/feature_correlation_heatmaps/feature_correlations_heatmap_nov2023.png')
+    plt.close()
+
+
+def umap(df):
+    df_target_0 = df[df['target'] == 0]
+    df_target_1 = df[df['target'] == 1]
+
+    df_target_0_downsampled = df_target_0.sample(n=len(df_target_1), random_state=42)
+
+    df_downsampled = pd.concat([df_target_0_downsampled, df_target_1])
+    features = df_downsampled.iloc[:, 1:-1]
+    target = df_downsampled.iloc[:, -1]
+    gene_names = df_downsampled.iloc[:, 0]
+
+    umap_model = UMAP(n_components=3, n_neighbors=100, min_dist=0.01)
+    umap_results = umap_model.fit_transform(features)
+    umap_df = pd.DataFrame(umap_results, columns=['UMAP1', 'UMAP2'])
+    umap_df['Target'] = target
+    umap_df['Gene'] = gene_names
+
+    sns.scatterplot(x='UMAP1', y='UMAP2',  hue='Target', data=umap_df, palette='Paired')
+    plt.xlabel('UMAP1')
+    plt.ylabel('UMAP2')
+    plt.show()
