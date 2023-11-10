@@ -32,8 +32,8 @@ class MissenseVariantLoader:
             self.elgh_path = config.MIVA_PATH
         self.genome_path = config.GENOME_PATH
         self.variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "Gene", "HGVSp", "AF_ELGH", "UNIPARC",
-                             "SWISSPROT",
-                             "TREMBL", "Protein_position", "Amino_acids", "SIFT", "PolyPhen", "varipred_id"]
+                             "SWISSPROT", "TREMBL", "Protein_position", "Amino_acids", "SIFT", "PolyPhen",
+                             "varipred_id"]
         self.variant_data = self.load_gh_data()
         self.variant_data = self.variant_data.rename(columns={'Allele': 'ALT'})
         self.variant_data["uniprot_id"] = self.variant_data["SWISSPROT"].fillna(self.variant_data["TREMBL"])
