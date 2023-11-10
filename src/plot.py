@@ -284,7 +284,7 @@ def umap(df):
     target = df_downsampled.iloc[:, -1]
     gene_names = df_downsampled.iloc[:, 0]
 
-    umap_model = UMAP(n_components=3, n_neighbors=100, min_dist=0.01)
+    umap_model = UMAP(n_components=2, n_neighbors=100, min_dist=0.01)
     umap_results = umap_model.fit_transform(features)
     umap_df = pd.DataFrame(umap_results, columns=['UMAP1', 'UMAP2'])
     umap_df['Target'] = target
