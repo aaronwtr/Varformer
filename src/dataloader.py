@@ -511,6 +511,20 @@ class GeneCharacterisation:
         """
         return self.datasets["FDA Approved Drug Targets"]
 
+    def make_data(self):
+        """
+        Combine the features and the target.
+        """
+        # check how many target genes are in the features
+        target_genes = list(self.target["Ensembl"])
+        feature_genes = list(self.features["ENSG"])
+        target_genes_in_features = [gene for gene in target_genes if gene in feature_genes]
+        print(f"Found {len(target_genes_in_features)} FDA approved GH genes out of a total of {len(target_genes)} FDA "
+              f"approved genes.")
+        self.features["target"] = 0
+        self.features.loc[self.features["ENSG"].isin(target_genes_in_features), "target"] = 1
+        return self.features
+
     def download_af_cifs(self):
         uniprot_data = self.gh_data[["SWISSPROT", "TREMBL", "varipred_id"]]
         uniprot_data["uniprot_id"] = uniprot_data["SWISSPROT"].fillna(uniprot_data["TREMBL"])
