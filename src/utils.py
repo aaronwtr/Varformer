@@ -3,13 +3,13 @@ import pandas as pd
 import pickle as pkl
 import os
 import subprocess
-import config
 import re
 import csv
 import glob
 import biorosetta as br
 import warnings
 import requests
+import yaml
 
 from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_score
 from Bio import Seq, SeqIO, Entrez
@@ -105,8 +105,8 @@ def correct_aa_position(target_id):
         return '_'.join(parts)
 
 
-def add_varipred_id():
-    variant_data = pd.read_csv(config.MIVA_PATH, sep="\t")
+def add_varipred_id(config):
+    variant_data = pd.read_csv(config['paths']['MIVA_PATH'], sep="\t")
     columns = ["SYMBOL", "Protein_position", "Amino_acids"]
     variant_data_of_interest = variant_data[columns]
 
@@ -118,7 +118,7 @@ def add_varipred_id():
     aa_index = variant_data_of_interest["Protein_position"].astype(str)
     variant_data["varipred_id"] = variant_data_of_interest["SYMBOL"] + "_" + aa_index + "_" + aa_ref + "_" \
                                   + aa_alt
-    variant_data.to_csv(config.MIVA_PATH, sep="\t", index=False)
+    variant_data.to_csv(config['paths']['MIVA_PATH'], sep="\t", index=False)
 
 
 def preprocess_varipred_output(varipred_output_path):
@@ -133,7 +133,7 @@ def preprocess_varipred_output(varipred_output_path):
         dataframes = []
         for filename in files[1:]:
             if filename.endswith(".txt"):
-                file_path = os.path.join(config.VP_OUTPUT_PATH, filename)
+                file_path = os.path.join(varipred_output_path, filename)
                 df = pd.read_csv(file_path, sep='\t')
                 df['target_id'] = df['target_id'].apply(correct_aa_position)
                 dataframes.append(df)
