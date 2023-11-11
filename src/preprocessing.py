@@ -7,6 +7,7 @@ import gc
 import warnings
 import argparse
 import shutil
+import yaml
 
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,12 +17,12 @@ from sklearn.preprocessing import MinMaxScaler
 from Bio import SeqIO
 
 import utils
-import config
 import plot
 
 
 class MissenseVariantPreprocessor:
-    def __init__(self, preprocess=False, train=False, predict=False, evaluation=False):
+    def __init__(self, config=None, preprocess=False, train=False, predict=False, evaluation=False):
+        self.config = config
         parser = argparse.ArgumentParser(description='Script to process variants')
         parser.add_argument('--data', type=str)
         parser.add_argument('--varipred_input', type=str)
@@ -29,8 +30,8 @@ class MissenseVariantPreprocessor:
         if self.args.data is not None:
             self.elgh_path = self.args.data
         else:
-            self.elgh_path = config.MIVA_PATH
-        self.genome_path = config.GENOME_PATH
+            self.elgh_path = self.config['paths']['MIVA_PATH'].strip("\n")
+        self.genome_path = self.config['paths']['GENOME_PATH']
         self.variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "Gene", "HGVSp", "AF_ELGH", "UNIPARC",
                              "SWISSPROT", "TREMBL", "Protein_position", "Amino_acids", "SIFT", "PolyPhen",
                              "varipred_id"]
@@ -52,7 +53,7 @@ class MissenseVariantPreprocessor:
 
         if preprocess:
             self.process_variants_proteomic()
-        elif len(os.listdir('../data/VariPred/input')) == config.NUM_VP_BATCHES:
+        elif len(os.listdir('../data/VariPred/input')) == self.config['varipred']['num_batches']:
             print("Variants already processed.")
         else:
             print('Not all variants are preprocessed yet. Put the preprocess flag to True in the MissenseVariantLoader '
@@ -65,7 +66,7 @@ class MissenseVariantPreprocessor:
 
             raw_data = pd.read_csv("../data/elgh/train_batch_mivas/variant_data_396.csv")
             train = self.train_test_val_loader(raw_data)
-            utils.run_shell_script(config.VP_TRAINING_PATH)
+            utils.run_shell_script(self.config['paths']['VP_TRAINING_PATH'])
 
         if predict:
             if self.args.varipred_input is not None:
@@ -78,7 +79,7 @@ class MissenseVariantPreprocessor:
             else:
                 self.predict_pathogenicity()
 
-        varipred_output = utils.preprocess_varipred_output(config.VP_OUTPUT_PATH)
+        varipred_output = utils.preprocess_varipred_output(self.config['paths']['VP_OUTPUT_PATH'])
 
         if os.path.exists("../data/elgh/varipred_elgh_data.csv"):
             self.variant_data = pd.read_csv("../data/elgh/varipred_elgh_data.csv", sep="\t")
@@ -222,9 +223,9 @@ class MissenseVariantPreprocessor:
             # data_folder = self.args.varipred_input.split('/')[3]
             # file = f"{data_folder}/{variant_file}"
             file = f"{variant_file}"
-            utils.run_shell_script(config.VP_INFERENCE_PATH, file)
+            utils.run_shell_script(self.config['paths']['VP_INFERENCE_PATH'], file)
         else:
-            utils.run_shell_script(config.VP_INFERENCE_PATH)
+            utils.run_shell_script(self.config['paths']['VP_INFERENCE_PATH'])
 
     def __process_variants_genomic(self):
         warnings.filterwarnings('ignore')
@@ -369,8 +370,8 @@ class GeneCharacterisationPreprocessor:
     """
     This class loads and combines the different data sources into a single feature matrix to be fed into our model.
     """
-
-    def __init__(self):
+    def __init__(self, config=None):
+        self.config = config
         self.files_and_dirs = os.listdir("../data")
         self.data_name_mapping = {
             "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
@@ -434,10 +435,9 @@ class GeneCharacterisationPreprocessor:
         # Combine features and target
         # TODO: Implement make_data() method
         self.data = self.make_data()
-
+        print("Data loaded!")
         # Explore the data
         # plot.umap(self.data)
-
 
     def _get_files(self):
         """
@@ -500,12 +500,11 @@ class GeneCharacterisationPreprocessor:
                 pkl.dump(datasets, fp)
             return datasets
 
-    @staticmethod
-    def load_gh_data():
+    def load_gh_data(self):
         """
         Load the Genes & Health variant data.
         """
-        variant_data = pd.read_csv(config.MIVA_PATH, sep="\t")
+        variant_data = pd.read_csv(self.config['paths']['MIVA_PATH'], sep="\t")
         variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
         return variant_data
 
@@ -577,7 +576,7 @@ class GeneCharacterisationPreprocessor:
             else:
                 for qualifier in tqdm(uniprot_ids):
                     extracted_values[qualifier] = {}
-                    cif_file_path = f"{config.AF_PATH}AF-{qualifier}-F1-model_v4.cif"
+                    cif_file_path = f"{self.config['paths']['AF_PATH']}AF-{qualifier}-F1-model_v4.cif"
                     target_format_mean = "_ma_qa_metric_global.metric_value"
                     target_format_max = "_ma_qa_metric_local.ordinal_id"
                     extract = False
@@ -781,7 +780,7 @@ class GeneCharacterisationPreprocessor:
 
     def combine_features(self):
         """
-        Combine all the features into a single feature matrix. Use the ELGH variant data as a frame work such
+        Combine all the features into a single feature matrix. Use the ELGH variant data as a framework such
         that we can easily map between ensg, uniprot, and symbols as contained in the ELGH variant data.
         """
         self.gh_data["UNIPROT"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
@@ -789,6 +788,7 @@ class GeneCharacterisationPreprocessor:
 
         feature_matrix = self.gh_data[["Gene", "UNIPROT"]]
         feature_matrix = feature_matrix.rename(columns={"Gene": "ENSG"})
+        feature_matrix = feature_matrix.drop_duplicates(subset=['ENSG'])
 
         ensg_features = {
             "chem": self.chem_features,
@@ -903,7 +903,7 @@ class GeneCharacterisationPreprocessor:
         extracted_values = {}
         for qualifier in tqdm(uniprot_ids):
             extracted_values[qualifier] = {}
-            cif_file_path = f"{config.AF_PATH}AF-{qualifier}-F1-model_v4.cif"
+            cif_file_path = f"{self.config['paths']['AF_PATH']}AF-{qualifier}-F1-model_v4.cif"
             target_format_mean = "_ma_qa_metric_global.metric_value"
             target_format_max = "_ma_qa_metric_local.ordinal_id"
             extract = False
