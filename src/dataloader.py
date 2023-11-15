@@ -18,3 +18,6 @@ class DrugTargetData(Dataset):
 
     def __len__(self):
         return len(self.labels)
+
+    def label_imbalance(self):
+        return self.labels.sum() / len(self.labels)
