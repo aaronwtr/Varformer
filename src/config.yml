@@ -11,3 +11,7 @@ varipred:
 
 mlp:
   lr: 1e-3
+  epochs: 10
+  width_1: 6
+  width_2: 6
+  batch_size: 128
