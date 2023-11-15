@@ -202,3 +202,5 @@ data/VariPred/finetuned_output_2/
 data/FDA_approved_drug_targets_2023_Q3.xlsx
 
 plots/feature_correlation_heatmaps/feature_correlations_heatmap_nov2023.pdf
+
+src/lightning_logs/*
