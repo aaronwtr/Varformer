@@ -10,15 +10,15 @@ class PyTorchMLP(torch.nn.Module):
 
         self.layers = torch.nn.Sequential(
             # input layer
-            torch.nn.Linear(num_features, self.config['width_1']),
+            torch.nn.Linear(num_features, int(self.config['width_1'])),
             torch.nn.ReLU(),
 
             # hidden layer
-            torch.nn.Linear(self.config['width_1'], self.config['width_2']),
+            torch.nn.Linear(int(self.config['width_1']), int(self.config['width_2'])),
             torch.nn.ReLU(),
 
             # output layer
-            torch.nn.Linear(self.config['width_1'], num_classes)
+            torch.nn.Linear(int(self.config['width_1']), num_classes)
         )
 
     def forward(self, x):
@@ -46,8 +46,8 @@ class LightningMLP(pl.LightningModule):
         features, labels = batch
         logits = self(features)
         loss = F.cross_entropy(logits, labels)
-        self.log('val_loss', loss, prog_bar=True)
+        self.log('val_loss', loss)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.config['lr'])
+        optimizer = torch.optim.Adam(self.parameters(), lr=float(self.config['lr']))
         return optimizer
