@@ -45,8 +45,13 @@ class MissenseVariantPreprocessor:
             self.variant_data['variant_id'] = self.variant_data['#CHROM'] + '_' + self.variant_data['POS'].astype(str) + \
                                               '_' + self.variant_data['REF'] + '_' + self.variant_data['ALT']
             am = am[['am_pathogenicity', 'variant_id']]
-
+            vp_pretrained_data = pd.read_csv("../data/VariPred/varipred_output_data_pretrained.csv", sep="\t")
+            vp_pretrained_data = vp_pretrained_data.rename(columns={'target_id': 'varipred_id', 'probability':
+                'vp_pathogenicity'})
+            # remove the classification column from the pretrained data
+            vp_pretrained_data = vp_pretrained_data.drop(columns=['classification'])
             self.variant_data = self.variant_data.merge(am, on='variant_id')
+            self.variant_data = self.variant_data.merge(vp_pretrained_data, on='varipred_id')
         except FileNotFoundError:
             print("AlphaMissense not found. Comparison done and deleted data for storage purposes, or data still needs"
                   " to be downloaded.")
@@ -370,6 +375,7 @@ class GeneCharacterisationPreprocessor:
     """
     This class loads and combines the different data sources into a single feature matrix to be fed into our model.
     """
+
     def __init__(self, config=None):
         self.config = config
         self.files_and_dirs = os.listdir("../data")

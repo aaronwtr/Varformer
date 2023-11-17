@@ -11,7 +11,7 @@ import warnings
 import requests
 import yaml
 
-from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_score
+from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_score, confusion_matrix, roc_curve, auc
 from Bio import Seq, SeqIO, Entrez
 
 
@@ -149,7 +149,7 @@ def combine_varipred_elgh(varipred_data, elgh_data):
     columns.remove('varipred_id')
     columns = columns + ['classification', 'probability']
     merged_df = merged_df[columns]
-    new_column_names = {'classification': 'vp_classification', 'probability': 'vp_probability'}
+    new_column_names = {'classification': 'vpgh_classification', 'probability': 'vpgh_probability'}
     merged_df.rename(columns=new_column_names, inplace=True)
     merged_df.to_csv("../data/elgh/varipred_elgh_data.csv", sep="\t", index=False)
 
@@ -332,29 +332,41 @@ def evaluate_am(am_data):
     vars_not_in_am = test_data[~test_data.seq_id.isin(am_data.seq_id)]
 
     merged_df = pd.merge(am_data, test_data, on='seq_id', how='inner')
-    merged_df.drop('vp_probability', axis=1, inplace=True)  # remove out model outputs
+    # drop vp_probability
 
     vp_test_output = pd.read_csv(f"../data/VariPred/output/varipred_output_finetuned_fold_{fold}.txt", sep="\t")
     vp_test_output = vp_test_output[["target_id", "probability"]]
     vp_test_output.rename(columns={"target_id": "seq_id"}, inplace=True)
 
     merged_df = pd.merge(merged_df, vp_test_output, on='seq_id', how='inner')  # add new model outputs
-    merged_df.rename(columns={"probability": "vp_pathogenicity"}, inplace=True)
+    merged_df.rename(columns={"probability": "vpgh_pathogenicity"}, inplace=True)
 
     threshold = 0.45
 
     merged_df["am_classification"] = np.where(merged_df["am_pathogenicity"] > threshold, 1, 0)
+    merged_df["vpgh_classification"] = np.where(merged_df["vpgh_pathogenicity"] > threshold, 1, 0)
     merged_df["vp_classification"] = np.where(merged_df["vp_pathogenicity"] > threshold, 1, 0)
 
-    columns = merged_df.columns.tolist()
-    columns = columns[:14] + [columns[16]] + [columns[18]] + [columns[15]] + [columns[14]] + [columns[19]] \
-              + [columns[17]]
-    merged_df = merged_df[columns]
-    print("AlphaMissense performance metrics:")
-    eval_metrics(merged_df["label"], merged_df["am_classification"], threshold, 'am', fold=fold)
+    all_columns = list(merged_df.columns)
+
+    columns_to_reorder = ['am_classification', 'am_pathogenicity', 'vp_classification', 'vp_pathogenicity',
+                          'vpgh_classification', 'vpgh_pathogenicity']
+
+    for col in columns_to_reorder:
+        all_columns.remove(col)
+
+    all_columns = all_columns + columns_to_reorder
+
+    merged_df = merged_df[all_columns]
 
     print("VariPred performance metrics:")
     eval_metrics(merged_df["label"], merged_df["vp_classification"], threshold, 'vp', fold=fold)
+
+    print("VariPred-GH performance metrics:")
+    eval_metrics(merged_df["label"], merged_df["vpgh_classification"], threshold, 'vpgh', fold=fold)
+
+    print("AlphaMissense performance metrics:")
+    eval_metrics(merged_df["label"], merged_df["am_classification"], threshold, 'am', fold=fold)
 
 
 # noinspection PyTypeChecker

@@ -1,8 +1,9 @@
 import yaml
 from sklearn.model_selection import train_test_split
 import lightning as pl
+import utils
 
-from preprocessing import GeneCharacterisationPreprocessor
+from preprocessing import GeneCharacterisationPreprocessor, MissenseVariantPreprocessor
 from dataloader import DrugTargetData
 from model import PyTorchMLP, LightningMLP
 from torch.utils.data import DataLoader
@@ -54,4 +55,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    with open("config.yml", 'r') as stream:
+        config = yaml.safe_load(stream)
+    mvp = MissenseVariantPreprocessor(config=config, evaluation=True)
+    data = mvp.variant_data
+    utils.evaluate_am(data)
+
+    # TODO: plot AUC, MCC and class weighted F1 for VP, VPGH, and AM. Use the crossval results in output folder
