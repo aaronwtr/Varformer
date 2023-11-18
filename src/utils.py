@@ -317,12 +317,11 @@ def analyze_legacy_pathogenicity(variant_data):
     print("Done analyzing pathogenicity.")
 
 
-def evaluate_am(am_data):
+def evaluate_am(am_data, fold):
     """
     Evaluate the performance of the AM model. Calculate the labels for AM given the same threshold as VariPred.
     Map the labels from the test data to the AM data and calculate the performance metrics.
     """
-    fold = 5
     test_data = pd.read_csv(f"../data/VariPred/test_downsample_fold_{fold}.csv")
     test_data = test_data[["seq_id", "label"]]
 
@@ -340,6 +339,9 @@ def evaluate_am(am_data):
 
     merged_df = pd.merge(merged_df, vp_test_output, on='seq_id', how='inner')  # add new model outputs
     merged_df.rename(columns={"probability": "vpgh_pathogenicity"}, inplace=True)
+
+    # add a majority class baseline
+    merged_df["majority_baseline"] = 0
 
     threshold = 0.45
 
@@ -359,14 +361,18 @@ def evaluate_am(am_data):
 
     merged_df = merged_df[all_columns]
 
+    print("Majority class baseline performance metrics:")
+    eval_metrics(merged_df["label"], merged_df["majority_baseline"], 0.5, 'majority_baseline', fold=fold)
+
+
     print("VariPred performance metrics:")
-    eval_metrics(merged_df["label"], merged_df["vp_classification"], threshold, 'vp', fold=fold)
+    eval_metrics(merged_df["label"], merged_df["vp_pathogenicity"], threshold, 'vp', fold=fold)
 
     print("VariPred-GH performance metrics:")
-    eval_metrics(merged_df["label"], merged_df["vpgh_classification"], threshold, 'vpgh', fold=fold)
+    eval_metrics(merged_df["label"], merged_df["vpgh_pathogenicity"], threshold, 'vpgh', fold=fold)
 
     print("AlphaMissense performance metrics:")
-    eval_metrics(merged_df["label"], merged_df["am_classification"], threshold, 'am', fold=fold)
+    eval_metrics(merged_df["label"], merged_df["am_pathogenicity"], threshold, 'am', fold=fold)
 
 
 # noinspection PyTypeChecker
@@ -378,20 +384,28 @@ def eval_metrics(y_true, preds, threshold, model, fold):
         results = {}
     label_names = {'0': 0, '1': 1}
 
+    # TODO: Check how to calculate spearman correlation
+
+    y_true_np = np.array(y_true)
+
+    spearman_corr, _ = spearmanr(y_true_np, preds)
+    print('Spearman correlation: ', spearman_corr)
+
     auc_value = roc_auc_score(y_true, preds)
     print('AUC score: ', auc_value)
 
     y_true_np = np.array(y_true)
-    preds = np.array(preds >= threshold, dtype=int)
+    preds_bin = np.array(preds >= threshold, dtype=int)
 
-    mcc = matthews_corrcoef(y_true_np, preds)
+    mcc = matthews_corrcoef(y_true_np, preds_bin)
     print('MCC: ', mcc)
 
     report = classification_report(
-        y_true_np, preds, target_names=label_names, output_dict=True)
+        y_true_np, preds_bin, target_names=label_names, output_dict=True)
     print(report)
     results[f'fold_{fold}'] = {'auroc': auc_value,
                                'mcc': mcc,
+                               'spearman_corr': spearman_corr,
                                'classification_report': report
                                }
 
