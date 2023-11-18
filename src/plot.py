@@ -4,8 +4,9 @@ import numpy as np
 import seaborn as sns
 import pandas as pd
 
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, spearmanr
 from umap import UMAP
+
 
 def tractability_plot(tractability_scores, fda_labels, plottype=None, fda=True):
     if plottype == None:
@@ -136,31 +137,51 @@ def varipred_kde_plot(df):
     plt.show()
 
 
-def plot_crossvalidation_results(model1, model2):
+def plot_crossvalidation_results(model1, model2, model3):
     auroc1 = [v['auroc'] for k, v in model1.items()]
     auroc2 = [v['auroc'] for k, v in model2.items()]
-    auroc = pd.DataFrame({'AlphaMissense': auroc1, 'VariPred': auroc2})
+    auroc3 = [v['auroc'] for k, v in model3.items()]
+    auroc = pd.DataFrame({'AlphaMissense': auroc1, 'VariPred-GH': auroc2, 'VariPred': auroc3})
     auroc = pd.melt(auroc, var_name='model', value_name='auROC')
 
     mcc1 = [v['mcc'] for k, v in model1.items()]
     mcc2 = [v['mcc'] for k, v in model2.items()]
-    mcc = pd.DataFrame({'AlphaMissense': mcc1, 'VariPred': mcc2})
+    mcc3 = [v['mcc'] for k, v in model3.items()]
+    mcc = pd.DataFrame({'AlphaMissense': mcc1, 'VariPred-GH': mcc2, 'VariPred': mcc3})
     mcc = pd.melt(mcc, var_name='model', value_name='MCC')
 
     acc1 = [v['classification_report']['accuracy'] for k, v in model1.items()]
     acc2 = [v['classification_report']['accuracy'] for k, v in model2.items()]
-    acc = pd.DataFrame({'AlphaMissense': acc1, 'VariPred': acc2})
+    acc3 = [v['classification_report']['accuracy'] for k, v in model3.items()]
+    acc = pd.DataFrame({'AlphaMissense': acc1, 'VariPred-GH': acc2, 'VariPred': acc3})
     acc = pd.melt(acc, var_name='model', value_name='accuracy')
 
     f1_1 = [v['classification_report']['weighted avg']['f1-score'] for k, v in model1.items()]
     f1_2 = [v['classification_report']['weighted avg']['f1-score'] for k, v in model2.items()]
-    f1 = pd.DataFrame({'AlphaMissense': f1_1, 'VariPred': f1_2})
+    f1_3 = [v['classification_report']['weighted avg']['f1-score'] for k, v in model3.items()]
+    f1 = pd.DataFrame({'AlphaMissense': f1_1, 'VariPred-GH': f1_2, 'VariPred': f1_3})
     f1 = pd.melt(f1, var_name='model', value_name='f1-score')
+
+    spearman1 = [v['spearman_corr'] for k, v in model1.items()]
+    spearman2 = [v['spearman_corr'] for k, v in model2.items()]
+    spearman3 = [v['spearman_corr'] for k, v in model3.items()]
+    spearman = pd.DataFrame({'AlphaMissense': spearman1, 'VariPred-GH': spearman2, 'VariPred': spearman3})
+    spearman = pd.melt(spearman, var_name='model', value_name='spearman_corr')
 
     plt.figure(figsize=(9, 5))
     sns.set_style("whitegrid")
 
-    ax = sns.barplot(auroc, x="auROC", y="model", palette="Paired", errorbar="sd", capsize=.05)
+    ax = sns.barplot(spearman, x="spearman_corr", y="model", palette="Blues", errorbar="sd", capsize=.05)
+    ax.set(xlabel='Spearman Correlation')
+    ax.set(xlim=(0.0, 1.005))
+    sns.despine()
+    plt.savefig("../plots/varipred_alphamissense_comp/spearman_corr.png")
+    plt.savefig("../plots/varipred_alphamissense_comp/spearman_corr.pdf")
+
+    plt.figure(figsize=(9, 5))
+    sns.set_style("whitegrid")
+
+    ax = sns.barplot(auroc, x="auROC", y="model", palette="Blues", errorbar="sd", capsize=.05)
     ax.set(xlabel='auROC')
     ax.set(xlim=(0.0, 1.005))
     sns.despine()
@@ -170,7 +191,7 @@ def plot_crossvalidation_results(model1, model2):
     plt.figure(figsize=(9, 5))
     sns.set_style("whitegrid")
 
-    ax = sns.barplot(mcc, x="MCC", y="model", palette="Paired", errorbar="sd", capsize=.05)
+    ax = sns.barplot(mcc, x="MCC", y="model", palette="Blues", errorbar="sd", capsize=.05)
     ax.set(xlabel='MCC')
     ax.set(xlim=(0.0, 1.005))
     sns.despine()
@@ -180,7 +201,7 @@ def plot_crossvalidation_results(model1, model2):
     plt.figure(figsize=(9, 5))
     sns.set_style("whitegrid")
 
-    ax = sns.barplot(acc, x="accuracy", y="model", palette="Paired", errorbar="sd", capsize=.05)
+    ax = sns.barplot(acc, x="accuracy", y="model", palette="Blues", errorbar="sd", capsize=.05)
     ax.set(xlabel='Accuracy')
     ax.set(xlim=(0.0, 1.005))
     sns.despine()
@@ -190,7 +211,7 @@ def plot_crossvalidation_results(model1, model2):
     plt.figure(figsize=(9, 5))
     sns.set_style("whitegrid")
 
-    ax = sns.barplot(f1, x="f1-score", y="model", palette="Paired", errorbar="sd", capsize=.05)
+    ax = sns.barplot(f1, x="f1-score", y="model", palette="Blues", errorbar="sd", capsize=.05)
     ax.set(xlabel='Class weighted F1-score')
     ax.set(xlim=(0.0, 1.005))
     sns.despine()
