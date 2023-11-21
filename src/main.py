@@ -1,9 +1,9 @@
+import os
+
 import yaml
 from sklearn.model_selection import train_test_split
 import lightning as pl
-import utils
-import plot
-import pickle as pkl
+from pytorch_lightning.loggers import WandbLogger
 
 from preprocessing import GeneCharacterisationPreprocessor, MissenseVariantPreprocessor
 from dataloader import DrugTargetData
@@ -14,6 +14,9 @@ from torch.utils.data import DataLoader
 def main():
     with open("config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
+
+    if not os.path.exists('../data/features/pathogenicity_features.pkl'):
+        MissenseVariantPreprocessor(config)
 
     gcp = GeneCharacterisationPreprocessor(config=config)
     print("Gene characterisation features preprocessed!\n")
@@ -40,20 +43,22 @@ def main():
     mlp_pytorch = PyTorchMLP(config=config, num_features=num_features, num_classes=num_classes)
     mlp_lightning = LightningMLP(model=mlp_pytorch, config=config)
 
+    wandb_logger = WandbLogger(log_model="all")
+
     trainer = pl.Trainer(
         max_epochs=int(config['mlp']['epochs']),
-        accelerator='cpu'
+        accelerator='cpu',
+        logger=wandb_logger,
+        show_progress_bar=False
         )
 
     trainer.fit(mlp_lightning, train, test)
 
     # TODO:
-    #  Add metrics and logging of metrics
-    #  Plot training and validation loss
-    #  Add early stopping
-    #  Come up with validation strategy (ACMG gene set)
-    #  Hyperparameter tuning
-    #  Optional: debug mps accelerator (GPU)
+    #  - Normalize features after train, test, splitting
+    #  - Add early stopping
+    #  - Come up with validation strategy (ACMG gene set)
+    #  - Hyperparameter tuning
 
 
 if __name__ == "__main__":
