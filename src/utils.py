@@ -384,8 +384,6 @@ def eval_metrics(y_true, preds, threshold, model, fold):
         results = {}
     label_names = {'0': 0, '1': 1}
 
-    # TODO: Check how to calculate spearman correlation
-
     y_true_np = np.array(y_true)
 
     spearman_corr, _ = spearmanr(y_true_np, preds)
