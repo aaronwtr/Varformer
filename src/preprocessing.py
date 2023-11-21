@@ -38,6 +38,7 @@ class MissenseVariantPreprocessor:
         self.variant_data = self.load_gh_data()
         self.variant_data = self.variant_data.rename(columns={'Allele': 'ALT'})
         self.variant_data["uniprot_id"] = self.variant_data["SWISSPROT"].fillna(self.variant_data["TREMBL"])
+        self.variant_data["uniprot_id"] = self.variant_data["SWISSPROT"].fillna(self.variant_data["TREMBL"])
 
         try:
             am = self.load_am_data()
@@ -395,7 +396,12 @@ class GeneCharacterisationPreprocessor:
 
         # Our model
         # NOTE: genes can be represented with uniprot ids or ensg ids.
-        if len(os.listdir('../data/features/')) == 0:
+        print(len(os.listdir('../data/features/')))
+        if len(os.listdir('../data/features/')) == 1:
+            self.chem_features = self.chem_feature_extractor()
+            with open('../data/features/chem_features.pkl', 'wb') as fp:
+                pkl.dump(self.chem_features, fp)
+
             self.alphafold_features = self.alphafold_feature_extractor()
             with open('../data/features/alphafold_features.pkl', 'wb') as fp:
                 pkl.dump(self.alphafold_features, fp)
@@ -407,10 +413,6 @@ class GeneCharacterisationPreprocessor:
             self.mouse_ko_features = self.mouse_knockout_feature_extractor()
             with open('../data/features/mouse_ko_features.pkl', 'wb') as fp:
                 pkl.dump(self.mouse_ko_features, fp)
-
-            self.chem_features = self.chem_feature_extractor()
-            with open('../data/features/chem_features.pkl', 'wb') as fp:
-                pkl.dump(self.chem_features, fp)
 
             self.gnomad_features = self.gnomad_feature_extractor()
             with open('../data/features/gnomad_features.pkl', 'wb') as fp:
@@ -439,7 +441,6 @@ class GeneCharacterisationPreprocessor:
         self.target = self.load_ground_truth()
 
         # Combine features and target
-        # TODO: Implement make_data() method
         self.data = self.make_data()
         print("Data loaded!")
         # Explore the data
@@ -524,7 +525,6 @@ class GeneCharacterisationPreprocessor:
         """
         Combine the features and the target.
         """
-        # check how many target genes are in the features
         target_genes = list(self.target["Ensembl"])
         feature_genes = list(self.features["ENSG"])
         target_genes_in_features = [gene for gene in target_genes if gene in feature_genes]
@@ -617,13 +617,14 @@ class GeneCharacterisationPreprocessor:
                         extracted_values[qualifier]['mean'] = 0.0
                         extracted_values[qualifier]['max'] = 0.0
                         extracted_values[qualifier]['protein_len'] = np.nan
-            scaler = MinMaxScaler()
-            extracted_values = pd.DataFrame.from_dict(extracted_values, orient='index')
-            extracted_values[['mean', 'max']] = scaler.fit_transform(extracted_values[['mean', 'max']])
-            features = extracted_values.to_dict()
+            # NOTE: normalize AFTER train test split
+            # scaler = MinMaxScaler()
+            # extracted_values = pd.DataFrame.from_dict(extracted_values, orient='index')
+            # extracted_values[['mean', 'max']] = scaler.fit_transform(extracted_values[['mean', 'max']])
+            # features = extracted_values.to_dict()
             with open('../data/alphafold/af_plddt_features.pkl', 'wb') as fp:
-                pkl.dump(features, fp)
-            return features
+                pkl.dump(extracted_values, fp)
+            return extracted_values
 
     def chem_feature_extractor(self):
         """
@@ -646,9 +647,13 @@ class GeneCharacterisationPreprocessor:
         chem_features['symbol'] = chem_features['symbol'].map(mapped_names)
         chem_features = chem_features[chem_features['symbol'] != 'N/A']
 
-        scaler = MinMaxScaler()
-        chem_features["count"] = scaler.fit_transform(chem_features[["count"]])
-        chem_features = chem_features.set_index("symbol")["count"].to_dict()
+        # Transform DataFrame into a dictionary
+        chem_features = chem_features.set_index('symbol')['count'].to_dict()
+
+        # NOTE: normalize AFTER train test split
+        # scaler = MinMaxScaler()
+        # chem_features["count"] = scaler.fit_transform(chem_features[["count"]])
+        # chem_features = chem_features.set_index("symbol")["count"].to_dict()
         return chem_features
 
     def gnomad_feature_extractor(self):
@@ -712,11 +717,12 @@ class GeneCharacterisationPreprocessor:
             else:
                 protein_counts[protein] += 1
 
-        scaler = MinMaxScaler(feature_range=(0, 1))
-
-        protein_counts = pd.DataFrame.from_dict(protein_counts, orient='index', columns=['count'])
-        protein_counts['count'] = scaler.fit_transform(protein_counts['count'].values.reshape(-1, 1))
-        protein_counts = protein_counts.to_dict()['count']
+        # NOTE: normalize AFTER train test split
+        # scaler = MinMaxScaler(feature_range=(0, 1))
+        #
+        # protein_counts = pd.DataFrame.from_dict(protein_counts, orient='index', columns=['count'])
+        # protein_counts['count'] = scaler.fit_transform(protein_counts['count'].values.reshape(-1, 1))
+        # protein_counts = protein_counts.to_dict()['count']
 
         # NOTE: We don't weight the counts by experimental evidence as this would magnify bias in studied proteins.
         # string_data_raw['experiments'] = scaler.fit_transform(string_data_raw['experiments'].values.reshape(-1, 1))
@@ -744,11 +750,12 @@ class GeneCharacterisationPreprocessor:
 
         target_counts = {k: v for k, v in target_counts.items() if k != 'N/A'}
 
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        target_freqs = pd.DataFrame.from_dict(target_counts, orient='index', columns=['count'])
-        target_freqs['count'] = scaler.fit_transform(target_freqs['count'].values.reshape(-1, 1))
-        target_freqs = target_freqs.to_dict()['count']
-        return target_freqs
+        # NOTE: normalize AFTER train test split
+        # scaler = MinMaxScaler(feature_range=(0, 1))
+        # target_freqs = pd.DataFrame.from_dict(target_counts, orient='index', columns=['count'])
+        # target_freqs['count'] = scaler.fit_transform(target_freqs['count'].values.reshape(-1, 1))
+        # target_freqs = target_freqs.to_dict()['count']
+        return target_counts
 
     @staticmethod
     def load_pathogenicity_features():
@@ -761,7 +768,7 @@ class GeneCharacterisationPreprocessor:
         varipred_features_variant = {}
         for row in varipred_output.iterrows():
             ensg = row[1]['Gene']
-            prob = row[1]['vp_probability']
+            prob = row[1]['vpgh_probability']
             allele_freq = row[1]['AF_ELGH']
             if ensg not in list(varipred_features_variant.keys()):
                 varipred_features_variant[ensg] = [prob * allele_freq]
@@ -772,15 +779,16 @@ class GeneCharacterisationPreprocessor:
         for ensg, probs in varipred_features_variant.items():
             varipred_features_gene[ensg] = sum(probs) / len(probs)
 
-        values = list(varipred_features_gene.values())
-        values = [[value] for value in values]  # Convert values to a 2D array
+        # NOTE: normalize AFTER train test split
+        # values = list(varipred_features_gene.values())
+        # values = [[value] for value in values]  # Convert values to a 2D array
 
-        scaler = MinMaxScaler()
-        normalized_values = scaler.fit_transform(values)
-        normalized_values = [value[0] for value in normalized_values]  # Convert back to 1D array
-
-        varipred_features_gene = {key: normalized_value for key, normalized_value in zip(varipred_features_gene.keys(),
-                                                                                         normalized_values)}
+        # scaler = MinMaxScaler()
+        # normalized_values = scaler.fit_transform(values)
+        # normalized_values = [value[0] for value in normalized_values]  # Convert back to 1D array
+        #
+        # varipred_features_gene = {key: normalized_value for key, normalized_value in zip(varipred_features_gene.keys(),
+        #                                                                                  normalized_values)}
 
         return varipred_features_gene
 
