@@ -61,7 +61,8 @@ class LightningMLP(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         features, labels = batch
         logits, probas, bin_preds = self(features)
-        class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))])
+        class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))],
+                                    device=self.device)
         loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
         self.log('train_loss', loss)
         self.log('train_acc', self.model.train_acc(bin_preds, labels))
