@@ -9,7 +9,6 @@ import glob
 import biorosetta as br
 import warnings
 import requests
-import yaml
 
 from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_score, confusion_matrix, roc_curve, auc
 from Bio import Seq, SeqIO, Entrez
