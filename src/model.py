@@ -5,7 +5,7 @@ from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef
 
 
 class PyTorchMLP(torch.nn.Module):
-    def __init__(self, config, num_features, num_classes):
+    def __init__(self, config, num_features):
         super().__init__()
         self.config = config['mlp']
 
@@ -14,13 +14,16 @@ class PyTorchMLP(torch.nn.Module):
             torch.nn.Linear(num_features, int(self.config['width_1'])),
             torch.nn.ReLU(),
 
-            # hidden layer
-            torch.nn.Linear(int(self.config['width_1']), int(self.config['width_2'])),
-            torch.nn.ReLU(),
+            # hidden layer to output layer
+            # torch.nn.Linear(int(self.config['width_1']), int(self.config['width_2'])),
+            torch.nn.Linear(int(self.config['width_1']), 1),
+
+            # Sigmoid activation is done in loss function
+            # torch.nn.Sigmoid()
 
             # output layer
-            torch.nn.Linear(int(self.config['width_2']), 1),
-            torch.nn.Sigmoid()
+            # torch.nn.Linear(int(self.config['width_2']), 1),
+            # torch.nn.Sigmoid()
         )
 
         self.train_acc = Accuracy(task="binary")
@@ -60,7 +63,7 @@ class LightningMLP(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         features, labels = batch
         logits, probas, bin_preds = self(features)
-        loss = F.binary_cross_entropy_with_logits(logits, labels.float())
+        loss = F.binary_cross_entropy_with_logits(logits, labels.float(), pos_weight=torch.tensor([1, 20]))
         self.log('val_loss', loss)
         self.log('val_acc', self.model.train_acc(bin_preds, labels))
         self.log('val_auroc', self.model.train_auroc(bin_preds, labels))
