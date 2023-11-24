@@ -9,10 +9,12 @@ paths:
 varipred:
   num_batches: 1000
 
-mlp:
-  lr: 1e-3
-  epochs: 100
-  width_1: 3  # num_features / 2
-  width_2: 3
-  batch_size: 256
-  threshold: 0.5
+hyperparameters:
+  mlp:
+    optimizer: Adam
+    lr: 1e-4
+    epochs: 100
+    width_1: 3  # num_features / 2
+    width_2: 3
+    batch_size: 256
+    threshold: 0.5
