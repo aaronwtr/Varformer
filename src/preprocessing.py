@@ -7,17 +7,14 @@ import gc
 import warnings
 import argparse
 import shutil
-import yaml
 
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
 from Bio import SeqIO
 
 import utils
-import plot
 
 
 class MissenseVariantPreprocessor:
