@@ -3,15 +3,16 @@ from torch.utils.data import Dataset
 
 
 class DrugTargetData(Dataset):
-    def __init__(self, data, batch_size: int = 32, num_workers: int = 7):
+    def __init__(self, data, labels, gene_names, features, batch_size: int = 32, num_workers: int = 7):
         self.data = data
+        self.labels = labels
+        self.gene_names = gene_names
+        self.features = features
         self.batch_size = batch_size
         self.num_workers = num_workers
 
-        self.gene_names = self.data.iloc[:, 0].values
-
-        x = self.data.iloc[:, 1:-1].values
-        y = self.data.iloc[:, -1].values
+        x = self.data
+        y = self.labels
         self.features = torch.tensor(x, dtype=torch.float32)
         self.labels = torch.tensor(y, dtype=torch.int64)
 
