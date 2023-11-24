@@ -14,7 +14,39 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 
 
-def tuning(trial: optuna.trial.Trial) -> float:
+def tuning():
+    study = optuna.create_study(
+        study_name="gdtp_mlp",
+        direction="maximize"
+    )
+    n_trials = 100
+
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+
+    print("Number of finished trials: {}".format(len(study.trials)))
+
+    print("Best trial, optimized for Spearman:")
+    best_trial = study.best_trial
+
+    print("  Metric: {}".format(best_trial.value))
+
+    print("  Params: ")
+    for key, value in best_trial.params.items():
+        print("    {}: {}".format(key, value))
+
+    with open("best_hyperparameters.txt", "a") as f:
+        if os.stat("best_hyperparameters.txt").st_size == 0:
+            f.write("Run ID\tSpearman Corr.\tHyperparameters\n")
+            run_id = 0
+        else:
+            with open("best_hyperparameters.txt", "r") as f:
+                lines = f.readlines()
+                last_line = lines[-1]
+                run_id = int(last_line.split("\t")[0]) + 1
+        f.write(f"{run_id}\t{best_trial.value}\t{best_trial.params}\n")
+
+
+def objective(trial: optuna.trial.Trial) -> float:
     with open("config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
 
@@ -70,16 +102,16 @@ def training(tag="Training"):
                        features=list(features)),
         batch_size=int(config['mlp']['batch_size']),
         shuffle=True
-        )
+    )
 
     test = DataLoader(
         DrugTargetData(data=test, labels=test_raw.iloc[:, -1].values, gene_names=gene_names_test,
                        features=list(features)),
         batch_size=int(config['mlp']['batch_size']),
         shuffle=False
-        )
+    )
 
-    train_imbalance = 1 / float(train.dataset.label_imbalance().item())     # calculate inverse class frequency
+    train_imbalance = 1 / float(train.dataset.label_imbalance().item())  # calculate inverse class frequency
 
     mlp_pytorch = PyTorchMLP(config=config, num_features=num_features)
     mlp_lightning = LightningMLP(model=mlp_pytorch, config=config, imbalance=train_imbalance)
@@ -107,7 +139,7 @@ def training(tag="Training"):
             max_epochs=int(config['mlp']['epochs']),
             accelerator=accelerator,
             enable_progress_bar=False
-            )
+        )
     else:
         raise ValueError("Invalid tag. Pick from 'Training' or 'Tuning'")
 
@@ -115,42 +147,21 @@ def training(tag="Training"):
 
     return trainer
 
+
+def main(mode="training"):
+    if mode == "training":
+        training()
+    elif mode == "tuning":
+        tuning()
+    else:
+        raise ValueError("Invalid mode. Pick from 'training' or 'tuning'")
+
+
+if __name__ == "__main__":
+    main(mode="tuning")
+
     # TODO:
     #  - Hyperparameter tuning
     #  - Scale up to find loss convergence epoch
     #  - Set up checkpointing to save the model with the best validation auroc
     #  - Come up with validation strategy (ACMG gene set)
-
-
-if __name__ == "__main__":
-    files = os.listdir()
-    study = optuna.create_study(
-        study_name="gdtp_mlp",
-        direction="maximize"
-    )
-    n_trials = 3
-
-    study.optimize(tuning, n_trials=n_trials, show_progress_bar=True)
-
-    print("Number of finished trials: {}".format(len(study.trials)))
-
-    print("Best trial, optimized for Spearman:")
-    best_trial = study.best_trial
-
-    print("  Metric: {}".format(best_trial.value))
-
-    print("  Params: ")
-    for key, value in best_trial.params.items():
-        print("    {}: {}".format(key, value))
-
-    with open("best_hyperparameters.txt", "a") as f:
-        if os.stat("best_hyperparameters.txt").st_size == 0:
-            f.write("Run ID\tSpearman Corr.\tHyperparameters\n")
-            run_id = 0
-        else:
-            with open("best_hyperparameters.txt", "r") as f:
-                lines = f.readlines()
-                last_line = lines[-1]
-                run_id = int(last_line.split("\t")[0]) + 1
-        f.write(f"{run_id}\t{best_trial.value}\t{best_trial.params}\n")
-    
