@@ -396,7 +396,6 @@ class GeneCharacterisationPreprocessor:
 
         # Our model
         # NOTE: genes can be represented with uniprot ids or ensg ids.
-        print(len(os.listdir('../data/features/')))
         if len(os.listdir('../data/features/')) == 1:
             self.chem_features = self.chem_feature_extractor()
             with open('../data/features/chem_features.pkl', 'wb') as fp:

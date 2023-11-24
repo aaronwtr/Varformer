@@ -2,6 +2,7 @@ import os
 
 import yaml
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
 import lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 
@@ -23,24 +24,36 @@ def main():
 
     data = gcp.data
     features = data.iloc[:, 1:-1].values
-    labels = data.iloc[:, -1].values
     num_features = features.shape[1]
-    num_classes = len(set(labels))
 
-    train, test = train_test_split(data, test_size=0.2, random_state=42)
+    train_raw, test_raw = train_test_split(data, test_size=0.2, random_state=42)
+    gene_names_train = train_raw.iloc[:, 0].values
+    gene_names_test = test_raw.iloc[:, 0].values
+
+    train = train_raw.iloc[:, 1:-1].values
+    test = test_raw.iloc[:, 1:-1].values
+
+    scaler = MinMaxScaler()
+    train = scaler.fit_transform(train)
+    test = scaler.transform(test)
 
     train = DataLoader(
-        DrugTargetData(data=train),
+        DrugTargetData(data=train, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train,
+                       features=list(features)),
         batch_size=int(config['mlp']['batch_size']),
         shuffle=True
         )
 
-    test = DataLoader(DrugTargetData(data=test),
-                      batch_size=int(config['mlp']['batch_size']),
-                      shuffle=False
-                      )
+    test = DataLoader(
+        DrugTargetData(data=test, labels=test_raw.iloc[:, -1].values, gene_names=gene_names_test,
+                       features=list(features)),
+        batch_size=int(config['mlp']['batch_size']),
+        shuffle=False
+        )
 
-    mlp_pytorch = PyTorchMLP(config=config, num_features=num_features, num_classes=num_classes)
+    train_imbalance = 1 / float(train.dataset.label_imbalance().item())
+
+    mlp_pytorch = PyTorchMLP(config=config, num_features=num_features)
     mlp_lightning = LightningMLP(model=mlp_pytorch, config=config)
 
     wandb_logger = WandbLogger(log_model="all")
@@ -48,8 +61,8 @@ def main():
     trainer = pl.Trainer(
         max_epochs=int(config['mlp']['epochs']),
         accelerator='cpu',
-        logger=wandb_logger,
-        show_progress_bar=False
+        enable_progress_bar=False,
+        logger=wandb_logger
         )
 
     trainer.fit(mlp_lightning, train, test)
