@@ -206,3 +206,5 @@ plots/feature_correlation_heatmaps/feature_correlations_heatmap_nov2023.pdf
 src/lightning_logs/*
 
 src/wandb/
+
+src/best_hyperparameters.txt
