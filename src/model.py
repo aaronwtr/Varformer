@@ -2,8 +2,12 @@ import torch
 
 import lightning as pl
 import torch.nn.functional as F
+import xgboost as xgb
 
 from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef
+from sklearn.metrics import accuracy_score, roc_auc_score
+from scipy.stats import spearmanr
+from sklearn.model_selection import train_test_split
 
 
 class PyTorchMLP(torch.nn.Module):
@@ -91,3 +95,33 @@ class LightningMLP(pl.LightningModule):
         else:
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
         return optimizer
+
+
+class XGBoostModel:
+    def __init__(self, params=None):
+        if params is None:
+            self.params = {
+                'objective': 'binary:logistic',
+                'eval_metric': 'auc',
+                'learning_rate': 0.1,
+                'max_depth': 5,
+                'n_estimators': 100
+            }
+        else:
+            self.params = params
+        self.model = None
+
+    def fit(self, X, y):
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+        dtrain = xgb.DMatrix(X_train, label=y_train)
+        dval = xgb.DMatrix(X_val, label=y_val)
+        eval_set = [(dtrain, 'train'), (dval, 'eval')]
+        self.model = xgb.train(self.params, dtrain, num_boost_round=1000, evals=eval_set, early_stopping_rounds=10)
+
+    def predict(self, X):
+        dtest = xgb.DMatrix(X)
+        return self.model.predict(dtest)
+
+    def score(self, X, y):
+        y_pred = self.predict(X)
+        return accuracy_score(y, y_pred > 0.5), roc_auc_score(y, y_pred), spearmanr(y, y_pred)[0]
