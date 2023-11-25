@@ -25,7 +25,7 @@ def tuning():
 
     print("Number of finished trials: {}".format(len(study.trials)))
 
-    print("Best trial, optimized for Spearman:")
+    print("Best trial, optimized for auROC:")
     best_trial = study.best_trial
 
     print("  Metric: {}".format(best_trial.value))
@@ -34,15 +34,17 @@ def tuning():
     for key, value in best_trial.params.items():
         print("    {}: {}".format(key, value))
 
+    if not os.path.isfile("best_hyperparameters.txt"):
+        with open("best_hyperparameters.txt", "w") as f:
+            f.write("Run ID\tauROC\tHyperparameters\n")
+        run_id = 0
+    else:
+        with open("best_hyperparameters.txt", "r") as f:
+            lines = f.readlines()
+            last_line = lines[-1]
+            run_id = int(last_line.split("\t")[0]) + 1
+
     with open("best_hyperparameters.txt", "a") as f:
-        if os.stat("best_hyperparameters.txt").st_size == 0:
-            f.write("Run ID\tSpearman Corr.\tHyperparameters\n")
-            run_id = 0
-        else:
-            with open("best_hyperparameters.txt", "r") as f:
-                lines = f.readlines()
-                last_line = lines[-1]
-                run_id = int(last_line.split("\t")[0]) + 1
         f.write(f"{run_id}\t{best_trial.value}\t{best_trial.params}\n")
 
 
@@ -67,7 +69,7 @@ def objective(trial: optuna.trial.Trial) -> float:
 
     trainer.logger.log_hyperparams(hyperparameters)
 
-    return trainer.callback_metrics["val_spearman"].item()
+    return trainer.callback_metrics["val_auroc"].item()
 
 
 def training(tag="Training"):
