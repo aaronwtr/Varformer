@@ -6,6 +6,7 @@ import optuna
 import lightning as pl
 
 from pytorch_lightning.loggers import WandbLogger
+from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from preprocessing import GeneCharacterisationPreprocessor, MissenseVariantPreprocessor
 from dataloader import DrugTargetData
 from model import PyTorchMLP, LightningMLP
@@ -123,18 +124,30 @@ def training(tag="Training"):
     else:
         accelerator = 'cpu'
 
+    lr_monitor = LearningRateMonitor(logging_interval='epoch')
+
     if tag == "Training":
         wandb_logger = WandbLogger(
             project="drug-target-prediction",
-            tags=["mlp", {tag}],
+            tags=["shallow-nn"],
             log_model="all"
+        )
+        run_name = wandb_logger.experiment.name
+        checkpoint_callback = ModelCheckpoint(
+            monitor='val_auroc',
+            dirpath='checkpoints',
+            filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}',
+            save_top_k=1,
+            mode='max',
         )
 
         trainer = pl.Trainer(
             max_epochs=int(config['mlp']['epochs']),
             accelerator=accelerator,
-            enable_progress_bar=False,
-            logger=wandb_logger
+            enable_progress_bar=True,
+            log_every_n_steps=1,
+            logger=wandb_logger,
+            callbacks=[checkpoint_callback, lr_monitor]
         )
     elif tag == "Tuning":
         trainer = pl.Trainer(
@@ -160,10 +173,9 @@ def main(mode="training"):
 
 
 if __name__ == "__main__":
-    main(mode="tuning")
+    main(mode="training")
 
     # TODO:
-    #  - Hyperparameter tuning
-    #  - Scale up to find loss convergence epoch
-    #  - Set up checkpointing to save the model with the best validation auroc
-    #  - Come up with validation strategy (ACMG gene set)
+    #  [X] Hyperparameter tuning
+    #  [ ] Set up checkpointing to save the model with the best validation auroc
+    #  [ ] Come up with validation strategy (ACMG gene set)
