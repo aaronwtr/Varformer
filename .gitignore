@@ -208,3 +208,17 @@ src/lightning_logs/*
 src/wandb/
 
 src/best_hyperparameters.txt
+
+data/hyperparameters/
+
+plots/hyperparam_optimization/.ipynb_checkpoints/batch_size-checkpoint.pdf
+
+notebooks/Untitled.ipynb
+
+notebooks/.ipynb_checkpoints/
+
+plots/hyperparam_optimization/.ipynb_checkpoints/
+
+plots/hyperparam_optimization/
+
+src/checkpoints/
