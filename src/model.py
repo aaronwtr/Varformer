@@ -85,16 +85,22 @@ class LightningMLP(pl.LightningModule):
 
     def configure_optimizers(self):
         if self.config['optimizer'] == "Adam":
-            optimizer = torch.optim.Adam(self.parameters(), lr=float(self.config['lr']))
+            optimizer = torch.optim.Adam(self.parameters(), lr=float(self.config['lr_start']))
         elif self.config['optimizer'] == "SGD":
-            optimizer = torch.optim.SGD(self.parameters(), lr=float(self.config['lr']))
+            optimizer = torch.optim.SGD(self.parameters(), lr=float(self.config['lr_start']))
         elif self.config['optimizer'] == "RMSprop":
-            optimizer = torch.optim.RMSprop(self.parameters(), lr=float(self.config['lr']))
+            optimizer = torch.optim.RMSprop(self.parameters(), lr=float(self.config['lr_start']))
         elif self.config['optimizer'] == "AdamW":
-            optimizer = torch.optim.AdamW(self.parameters(), lr=float(self.config['lr']))
+            optimizer = torch.optim.AdamW(self.parameters(), lr=float(self.config['lr_start']))
         else:
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
-        return optimizer
+        lr_start = float(self.config['lr_start'])
+        lr_end = float(self.config['lr_end'])
+        lr_decay_epochs = int(self.config['epochs'] * 0.5)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
+                                                         lambda epoch: max((lr_end / lr_start) +
+                                            (1 - epoch / lr_decay_epochs) * (1 - lr_end / lr_start), lr_end / lr_start))
+        return [optimizer], [scheduler]
 
 
 class XGBoostModel:
