@@ -2,12 +2,13 @@ import yaml
 import os
 import torch
 import optuna
+import utils
 
 import lightning as pl
 
 from pytorch_lightning.loggers import WandbLogger
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
-from preprocessing import GeneCharacterisationPreprocessor, MissenseVariantPreprocessor
+from preprocessing import GeneCharacterisationPreprocessor
 from dataloader import DrugTargetData
 from model import PyTorchMLP, LightningMLP
 from torch.utils.data import DataLoader
@@ -55,20 +56,24 @@ def objective(trial: optuna.trial.Trial) -> float:
 
     config = config['hyperparameters']
 
-    config['mlp']['width_1'] = trial.suggest_categorical('width_1', [2, 6, 8, 16, 32, 64, 128])
-    config['mlp']['lr'] = trial.suggest_categorical('lr', [1e-2, 1e-3, 1e-4, 1e-5])
-    config['mlp']['batch_size'] = trial.suggest_categorical('batch_size', [64, 128, 256, 512, 1024])
-    config['mlp']['optimizer'] = trial.suggest_categorical('optimizer', ['Adam', 'AdamW', 'RMSprop',
-                                                                         'SGD'])
+    config['mlp']['depth'] = trial.suggest_int('depth', 1, 8, step=1)
+    config['mlp']['dropout'] = trial.suggest_float('dropout', 0.0, 0.5, step=0.1)
+    config['mlp']['threshold'] = trial.suggest_float('threshold', 0.2, 0.8, step=0.05)
 
     trainer = training(tag="Tuning")
 
-    hyperparameters = dict(
-        width_1=config['mlp']['width_1'],
-        lr=config['mlp']['lr']
-    )
-
-    trainer.logger.log_hyperparams(hyperparameters)
+    # hyperparameters = dict(
+    #     depth=config['mlp']['depth'],
+    #     lr=config['mlp']['lr_start'],
+    #     batch_size=config['mlp']['batch_size'],
+    #     optimizer=config['mlp']['optimizer'],
+    #     epochs=config['mlp']['epochs'],
+    #     dropout=config['mlp']['dropout'],
+    #     width=config['mlp']['width'],
+    #     threshold=config['mlp']['threshold']
+    # )
+    #
+    # trainer.logger.log_hyperparams(hyperparameters)
 
     return trainer.callback_metrics["val_auroc"].item()
 
@@ -76,9 +81,6 @@ def objective(trial: optuna.trial.Trial) -> float:
 def training(tag="Training"):
     with open("config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
-
-    if not os.path.exists('../data/features/pathogenicity_features.pkl'):
-        MissenseVariantPreprocessor(config)
 
     gcp = GeneCharacterisationPreprocessor(config=config)
     print("Gene characterisation features preprocessed!\n")
@@ -104,7 +106,8 @@ def training(tag="Training"):
         DrugTargetData(data=train, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train,
                        features=list(features)),
         batch_size=int(config['mlp']['batch_size']),
-        shuffle=True
+        shuffle=True,
+        num_workers=int(config['mlp']['num_workers'])
     )
 
     test = DataLoader(
@@ -124,36 +127,50 @@ def training(tag="Training"):
     else:
         accelerator = 'cpu'
 
-    lr_monitor = LearningRateMonitor(logging_interval='epoch')
+    # lr_monitor = LearningRateMonitor(logging_interval='epoch')
+
+    hyperparameters = dict(
+        depth=config['mlp']['depth'],
+        lr=config['mlp']['lr_start'],
+        batch_size=config['mlp']['batch_size'],
+        optimizer=config['mlp']['optimizer'],
+        epochs=config['mlp']['epochs'],
+        dropout=config['mlp']['dropout'],
+        width=config['mlp']['width']
+    )
 
     if tag == "Training":
         wandb_logger = WandbLogger(
             project="drug-target-prediction",
-            tags=["shallow-nn"],
+            tags=[f"depth{config['mlp']['depth']}-nn"],
             log_model="all"
         )
+        wandb_logger.log_hyperparams(hyperparameters)
         run_name = wandb_logger.experiment.name
         checkpoint_callback = ModelCheckpoint(
-            monitor='val_auroc',
+            monitor='epoch',
             dirpath='checkpoints',
             filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}',
             save_top_k=1,
             mode='max',
         )
 
+        utils.set_seed(42)
         trainer = pl.Trainer(
             max_epochs=int(config['mlp']['epochs']),
             accelerator=accelerator,
             enable_progress_bar=True,
             log_every_n_steps=1,
             logger=wandb_logger,
-            callbacks=[checkpoint_callback, lr_monitor]
+            callbacks=[checkpoint_callback]
         )
     elif tag == "Tuning":
         trainer = pl.Trainer(
             max_epochs=int(config['mlp']['epochs']),
             accelerator=accelerator,
-            enable_progress_bar=False
+            enable_progress_bar=False,
+            logger=False,
+            enable_checkpointing=False
         )
     else:
         raise ValueError("Invalid tag. Pick from 'Training' or 'Tuning'")
@@ -176,6 +193,19 @@ if __name__ == "__main__":
     main(mode="training")
 
     # TODO:
-    #  [X] Hyperparameter tuning
-    #  [ ] Set up checkpointing to save the model with the best validation auroc
-    #  [ ] Come up with validation strategy (ACMG gene set)
+    #  MLP model
+    #  [X] Set up checkpointing to save the model with the best validation auroc
+    #  [X] Make sure to save hyperparameters per model in wandb or locally
+    #  [ ] Hold-out test set (ACMG + randomly sampled negatives)
+    #  [ ] Hyperparameter tuning
+    #  [ ] Find out how many epochs to train for
+    #  [ ] Train final model
+    #  [ ] Set up cross validation
+    #  [ ] Make training data with less class imbalance. Keep val data as is.
+    #  -
+    #  XGBoost baseline:
+    #  [ ] Set up training loop
+    #  [ ] Hyperparameter tuning
+    #  [ ] Train final model
+    #  [ ] Set up cross validation
+    #  [ ] Make training data with less class imbalance. Keep val data as is.
