@@ -14,23 +14,22 @@ class PyTorchMLP(torch.nn.Module):
     def __init__(self, config, num_features):
         super().__init__()
         self.config = config['mlp']
-        self.layers = torch.nn.Sequential(
-            # input layer
-            torch.nn.Linear(num_features, int(self.config['width_1'])),
-            torch.nn.ReLU(),
+        self.layers = []
+        layer_sizes = [num_features] + [num_features // 2] * int(self.config['depth'])
+        layer_size_prev = layer_sizes[0]
+        for layer_size in layer_sizes[1:]:
+            self.layers += [
+                torch.nn.Linear(layer_size_prev, layer_size),
+                torch.nn.BatchNorm1d(layer_size),
+                torch.nn.ReLU(),
+                torch.nn.Dropout(p=float(self.config['dropout']))
+            ]
+            layer_size_prev = layer_size
+        self.layers += [torch.nn.Linear(layer_sizes[-1], 1)]
 
-            # hidden layer to output layer
-            # torch.nn.Linear(int(self.config['width_1']), int(self.config['width_2'])),
-            torch.nn.Linear(int(self.config['width_1']), 1),
+        self.layers = torch.nn.Sequential(*self.layers)
 
-            # Sigmoid activation is done in loss function
-            # torch.nn.Sigmoid()
-
-            # output layer
-            # torch.nn.Linear(int(self.config['width_2']), 1),
-            # torch.nn.Sigmoid()
-        )
-
+        # Xavier initialization
         for m in self.modules():
             if isinstance(m, torch.nn.Linear):
                 torch.nn.init.xavier_uniform_(m.weight)
@@ -94,13 +93,15 @@ class LightningMLP(pl.LightningModule):
             optimizer = torch.optim.AdamW(self.parameters(), lr=float(self.config['lr_start']))
         else:
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
-        lr_start = float(self.config['lr_start'])
-        lr_end = float(self.config['lr_end'])
-        lr_decay_epochs = int(self.config['epochs'] * 0.5)
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
-                                                         lambda epoch: max((lr_end / lr_start) +
-                                            (1 - epoch / lr_decay_epochs) * (1 - lr_end / lr_start), lr_end / lr_start))
-        return [optimizer], [scheduler]
+
+        # lr_start = float(self.config['lr_start'])
+        # lr_end = float(self.config['lr_end'])
+        # lr_decay_epochs = int(self.config['epochs'] * 0.5)
+        # scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
+        #                                                  lambda epoch: max((lr_end / lr_start) +
+        #                                   (1 - epoch / lr_decay_epochs) * (1 - lr_end / lr_start), lr_end / lr_start))
+
+        return optimizer
 
 
 class XGBoostModel:
