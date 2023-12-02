@@ -17,7 +17,702 @@ from Bio import SeqIO
 import utils
 
 
-class MissenseVariantPreprocessor:
+class GeneCharacterisationPreprocessor:
+    """
+    This class loads and combines the different data sources into a single feature matrix to be fed into our model.
+    """
+
+    def __init__(self, config=None):
+        self.config = config
+        self.files_and_dirs = os.listdir("../data")
+        self.data_name_mapping = {
+            "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
+            "gnomad.exomes.v2.1.1.lof_metrics.by_gene.csv": "gnomAD Exomes Loss-of-Function Metrics",
+            "9606.protein.links.full.v12.0.txt": "STRING Protein-Protein Interactions",
+            "part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet": "Mouse Knockout Phenotypes",
+
+            "FDA_approved_drug_targets_2023_Q3.xlsx": "FDA Approved Drug Targets"
+        }
+        self.files = self._get_files()
+        self.datasets = self.load_data()
+
+        self.chem_features = None
+        self.gnomad_features = None
+        self.mouse_ko_features = None
+        self.ppi_features = None
+        self.pathogenicity_features = None
+        self.alphafold_features = None
+
+        # Population genomics data
+        self.gh_data = self.load_gh_data()
+
+        feature_extractors = {
+            'alphafold_features.pkl': self.alphafold_feature_extractor,
+            'chem_features.pkl': self.chem_feature_extractor,
+            'gnomad_features.pkl': self.gnomad_feature_extractor,
+            'mouse_ko_features.pkl': self.mouse_knockout_feature_extractor,
+            'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
+            'ppi_features.pkl': self.ppi_feature_extractor()
+        }
+
+        for feature_file, feature_extractor in feature_extractors.items():
+            if not os.path.isfile(f'../data/features/{feature_file}'):
+                print(f"Extracting {feature_file}...")
+                feature_extractor()
+                with open(f'../data/features/{feature_file}', 'wb') as fp:
+                    pkl.dump(getattr(self, feature_file.split('.')[0]), fp)
+            else:
+                print(f"Loading {feature_file}...")
+                with open(f'../data/features/{feature_file}', 'rb') as fp:
+                    setattr(self, feature_file.split('.')[0], pkl.load(fp))
+
+        self.features = self.combine_features()
+
+        # Ground truth
+        self.target = self.load_ground_truth()
+
+        # Combine features and target
+        self.data = self.make_data()
+        print("Data loaded!")
+
+        # TODO: add alphamissense pathogenicity features
+
+        # Explore the data
+        # plot.umap(self.data)
+
+    def _get_files(self):
+        """
+        Get the files from the data directory.
+        """
+        files = []
+        exclude = ['.DS_Store', 'elgh', 'clinvar', 'VariPred', 'string_data_counts.pkl']
+
+        for file in self.files_and_dirs:
+            if "." in file and file not in exclude:
+                files.append(f"../data/{file}")
+            elif file not in exclude:
+                file_path = f"../data/{file}"
+                _file = self._dir_parser(file_path)
+                files.append(_file)
+        return files
+
+    def _dir_parser(self, path):
+        """
+        Recursive algorithm to parse the directory to get the files and their paths.
+        """
+        exclude = ['.DS_Store', 'elgh']
+        subfiles = os.listdir(path)
+        for subfile in subfiles:
+            excl = '\t'.join(exclude)
+            if "." in subfile and subfile not in excl:
+                path = f"{path}/{subfile}"
+                return f"{path}"
+            elif subfile not in excl:
+                path = f"{path}/{subfile}"
+                self._dir_parser(path)
+
+    def load_data(self):
+        """
+        Load the data from the files.
+        """
+        datasets = {}
+        if "datasets.pkl" in os.listdir('../data/'):
+            with open('../data/datasets.pkl', 'rb') as fp:
+                datasets = pkl.load(fp)
+            return datasets
+        else:
+            for file in self.files:
+                file_name = file.split("/")[-1]
+                if file_name in self.data_name_mapping.keys():
+                    file_id = self.data_name_mapping[file_name]
+                    if any(word in file for word in ["csv", "txt"]):
+                        if '9606' not in file:
+                            datasets[file_id] = pd.read_csv(file)
+                        else:
+                            datasets[file_id] = pd.read_csv(file, sep=" ")
+                    elif any(word in file for word in ["xlsx", "xlsb"]):
+                        datasets[file_id] = pd.read_excel(file)
+                    elif "parquet" in file:
+                        datasets[file_id] = pd.read_parquet(file)
+                    else:
+                        raise ValueError(
+                            "The file format is not supported. Make sure data is .csv, .txt, Excel, or parquet.")
+            with open('../data/datasets.pkl', 'wb') as fp:
+                pkl.dump(datasets, fp)
+            return datasets
+
+    def load_gh_data(self):
+        """
+        Load the Genes & Health variant data.
+        """
+        variant_data = pd.read_csv(self.config['paths']['MIVA_PATH'], sep="\t")
+        variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
+        return variant_data
+
+    def load_ground_truth(self):
+        """
+        Load the ground truth data.
+        """
+        return self.datasets["FDA Approved Drug Targets"]
+
+    def make_data(self):
+        """
+        Combine the features and the target.
+        """
+        target_genes = list(self.target["Ensembl"])
+        feature_genes = list(self.features["ENSG"])
+        target_genes_in_features = [gene for gene in target_genes if gene in feature_genes]
+        print(f"Found {len(target_genes_in_features)} FDA approved GH genes out of a total of {len(target_genes)} FDA "
+              f"approved genes.")
+        self.features["target"] = 0
+        self.features.loc[self.features["ENSG"].isin(target_genes_in_features), "target"] = 1
+        return self.features
+
+    def download_af_cifs(self):
+        uniprot_data = self.gh_data[["SWISSPROT", "TREMBL", "varipred_id"]]
+        uniprot_data["uniprot_id"] = uniprot_data["SWISSPROT"].fillna(uniprot_data["TREMBL"])
+        uniprot_data = uniprot_data.drop(["SWISSPROT", "TREMBL"], axis=1).rename(columns={"uniprot_id": "UNIPROT"})
+        uniprot_ids = uniprot_data["UNIPROT"].unique().tolist()
+
+        url = "https://alphafold.ebi.ac.uk/files/AF-{id}-F1-model_v4.cif"
+
+        folder = "../data/alphafold/alphafold_cifs"
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+
+        for uni_id in tqdm(uniprot_ids):
+            # check if uni_id occurs in swissprot_cif_v4 folder, if so copy it to alphafold_cifs
+            if os.path.exists(f"../data/alphafold/swissprot_cif_v4/AF-{uni_id}-F1-model_v4.cif"):
+                shutil.copy(f"../data/alphafold/swissprot_cif_v4/AF-{uni_id}-F1-model_v4.cif",
+                            f"../data/alphafold/alphafold_cifs/AF-{uni_id}-F1-model_v4.cif")
+                continue
+            file_url = url.format(id=uni_id)
+            file_name = os.path.basename(file_url)
+
+            response = requests.get(file_url)
+            with open(os.path.join(folder, file_name), "wb") as f:
+                f.write(response.content)
+
+    def alphafold_feature_extractor(self):
+        """
+        Extract AlphaFold features from the AlphaFold API. Specifically, we get the average pLDDT score for the proteins
+        in our dataset
+        """
+        uniprot_data = self.gh_data[["SWISSPROT", "TREMBL", "varipred_id"]]
+        uniprot_data["uniprot_id"] = uniprot_data["SWISSPROT"].fillna(uniprot_data["TREMBL"])
+        uniprot_data = uniprot_data.drop(["SWISSPROT", "TREMBL"], axis=1).rename(columns={"uniprot_id": "UNIPROT"})
+        uniprot_ids = uniprot_data["UNIPROT"].unique().tolist()
+        if not os.path.exists('../data/alphafold/alphafold_cifs'):
+            self.download_af_cifs()
+        extracted_values = {}
+        if os.path.exists('../data/alphafold/af_plddt_features.pkl'):
+            with open('../data/alphafold/af_plddt_features.pkl', 'rb') as fp:
+                features = pkl.load(fp)
+            return features
+        else:
+            if os.path.exists('../data/alphafold/af_plddt_features_non_normalized.pkl'):
+                with open('../data/alphafold/af_plddt_features_non_normalized.pkl', 'rb') as fp:
+                    extracted_values = pkl.load(fp)
+            else:
+                for qualifier in tqdm(uniprot_ids):
+                    extracted_values[qualifier] = {}
+                    cif_file_path = f"{self.config['paths']['AF_PATH']}AF-{qualifier}-F1-model_v4.cif"
+                    target_format_mean = "_ma_qa_metric_global.metric_value"
+                    target_format_max = "_ma_qa_metric_local.ordinal_id"
+                    extract = False
+                    values_list = []
+                    with open(cif_file_path, "r") as cif_file:
+                        for line in cif_file:
+                            if line.startswith(target_format_mean):
+                                mean_value = line[len(target_format_mean):].strip()
+                                extracted_values[qualifier]['mean'] = float(mean_value)
+
+                            if line.startswith(target_format_max):
+                                extract = True
+                                continue
+
+                            if line == '#\n':
+                                extract = False
+                                continue
+
+                            if extract:
+                                parts = line.split()
+                                if len(parts) >= 5:
+                                    plddt = float(parts[4])
+                                    values_list.append(plddt)
+                    if len(values_list) != 0:
+                        protein_len = len(values_list)
+                        max_value = max(values_list)
+                        extracted_values[qualifier]['max'] = max_value
+                        # we extract the len for later experiments
+                        extracted_values[qualifier]['protein_len'] = protein_len
+                    else:
+                        print(f"\nError: Unable to fetch data for {qualifier}. Inserting 0.0.")
+                        extracted_values[qualifier]['mean'] = 0.0
+                        extracted_values[qualifier]['max'] = 0.0
+                        extracted_values[qualifier]['protein_len'] = np.nan
+            # NOTE: normalize AFTER train test split
+            # scaler = MinMaxScaler()
+            # extracted_values = pd.DataFrame.from_dict(extracted_values, orient='index')
+            # extracted_values[['mean', 'max']] = scaler.fit_transform(extracted_values[['mean', 'max']])
+            # features = extracted_values.to_dict()
+            self.alphafold_features = extracted_values
+
+    def chem_feature_extractor(self):
+        """
+        Extract chemical features from the CTD dataset. We count the number of known chemical interactions for each gene
+        Note: we can further disentangle this data based on interaction type, e.g. increasing or decreasing action of
+        target. This is not yet implemented.
+        """
+        keys = list(self.datasets.keys())
+        chem_data = self.datasets[keys[0]]
+        chem_features = chem_data[["GeneSymbol", "# ChemicalName", "Organism", "InteractionActions"]]
+        chem_features = chem_features[chem_features["Organism"] == "Homo sapiens"]
+        gene_counts = chem_features["GeneSymbol"].value_counts()
+        chem_features = pd.DataFrame({
+            "symbol": gene_counts.index,
+            "count": gene_counts.values,
+        })
+
+        gene_names = list(chem_features["symbol"])
+        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
+        chem_features['symbol'] = chem_features['symbol'].map(mapped_names)
+        chem_features = chem_features[chem_features['symbol'] != 'N/A']
+
+        # Transform DataFrame into a dictionary
+        chem_features = chem_features.set_index('symbol')['count'].to_dict()
+        self.chem_features = chem_features
+
+        # NOTE: normalize AFTER train test split
+        # scaler = MinMaxScaler()
+        # chem_features["count"] = scaler.fit_transform(chem_features[["count"]])
+        # chem_features = chem_features.set_index("symbol")["count"].to_dict()
+
+    def gnomad_feature_extractor(self):
+        """
+        Extract target conservation scores from gnomAD data. Note that pLI measures the probability of a gene being
+        loss-of-function intolerant. There are more potential features we can extract from the gnomAD data.
+        """
+        keys = list(self.datasets.keys())
+        gnom_data = self.datasets[keys[1]]
+        gnom_data_raw = gnom_data[["gene", "pLI"]]
+        # fill the nans with 0.0 in gnoma_data_raw
+        gnom_data_raw["pLI"] = gnom_data_raw["pLI"].fillna(0.0)
+        gnom_data = gnom_data_raw
+        gene_names = list(gnom_data["gene"])
+        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
+        gnom_data['gene'] = gnom_data['gene'].map(mapped_names)
+        gnom_data = gnom_data[gnom_data['gene'] != 'N/A']
+        gnom_data = gnom_data.set_index("gene")["pLI"].to_dict()
+
+        self.gnomad_features = gnom_data
+
+    def ppi_feature_extractor(self):
+        """
+        Featurise PPI data, i.e. count and normalize the PPIs for each PPI that is experimentally validated.
+        """
+        protein_info = []  # To store the parsed data
+        with open("../data/9606.protein.links.full.v12.0.txt", "r") as file:
+            for line in file:
+                fields = line.strip().split('\t')
+                protein_info.append(fields)
+        protein_info = pd.DataFrame(protein_info)
+        protein_info.columns = protein_info.iloc[0]
+
+        keys = list(self.datasets.keys())
+        string_data_raw = self.datasets[keys[2]]
+        string_data_raw = string_data_raw[["protein1", "protein2", "experiments"]]
+        string_data_raw['experiments'] = string_data_raw['experiments'].astype(int)
+        string_data_raw = string_data_raw[string_data_raw['experiments'] > 0]
+
+        protein_names_1 = string_data_raw['protein1'].tolist()
+        protein_names_2 = string_data_raw['protein2'].tolist()
+        protein_names_1 = [protein.split('.')[1] for protein in protein_names_1]
+        protein_names_2 = [protein.split('.')[1] for protein in protein_names_2]
+
+        string_data_raw['protein1'] = protein_names_1
+        string_data_raw['protein2'] = protein_names_2
+        protein_names = list(set(protein_names_1))
+
+        mapped_names = utils.map_gene_names(protein_names, 'ensp', 'ensg')
+
+        string_data_raw['protein1'] = string_data_raw['protein1'].map(mapped_names)
+        string_data_raw['protein2'] = string_data_raw['protein2'].map(mapped_names)
+        string_data_raw = string_data_raw[string_data_raw['protein1'] != 'N/A']
+        string_data_raw = string_data_raw[string_data_raw['protein2'] != 'N/A']
+
+        protein_counts = {}
+
+        # note we only need to do this for one column, since both columns contain the same proteins
+        for protein in string_data_raw['protein1']:
+            if protein not in protein_counts:
+                protein_counts[protein] = 1
+            else:
+                protein_counts[protein] += 1
+
+        self.ppi_features = protein_counts
+
+        # NOTE: normalize AFTER train test split
+        # scaler = MinMaxScaler(feature_range=(0, 1))
+        #
+        # protein_counts = pd.DataFrame.from_dict(protein_counts, orient='index', columns=['count'])
+        # protein_counts['count'] = scaler.fit_transform(protein_counts['count'].values.reshape(-1, 1))
+        # protein_counts = protein_counts.to_dict()['count']
+
+        # NOTE: We don't weight the counts by experimental evidence as this would magnify bias in studied proteins.
+        # string_data_raw['experiments'] = scaler.fit_transform(string_data_raw['experiments'].values.reshape(-1, 1))
+        # for protein in tqdm(protein_counts):
+        #     protein_counts[protein] *= string_data_raw[string_data_raw['protein1'] == protein]['experiments'].mean()
+        # print(protein_counts)
+
+    def mouse_knockout_feature_extractor(self):
+        keys = list(self.datasets.keys())
+        df = self.datasets[keys[4]]
+        target_counts = {}
+        for target in df['targetInModel']:
+            if target.upper() in target_counts:
+                target_counts[target.upper()] += 1
+            else:
+                target_counts[target.upper()] = 1
+
+        gene_names = list(target_counts.keys())
+        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
+        for gene_name in gene_names:
+            if gene_name in mapped_names:
+                target_counts[mapped_names[gene_name]] = target_counts.pop(gene_name)
+
+        target_counts = {k: v for k, v in target_counts.items() if k != 'N/A'}
+
+        self.mouse_ko_features = target_counts
+
+        # NOTE: normalize AFTER train test split
+        # scaler = MinMaxScaler(feature_range=(0, 1))
+        # target_freqs = pd.DataFrame.from_dict(target_counts, orient='index', columns=['count'])
+        # target_freqs['count'] = scaler.fit_transform(target_freqs['count'].values.reshape(-1, 1))
+        # target_freqs = target_freqs.to_dict()['count']
+
+    def pathogenicity_feature_extractor(self):
+        """
+        Extract variant-level AlphaMissense pathogenicity score and average to gene-level using population statistics.
+        """
+        # genome_path = self.config['paths']['GENOME_PATH']
+        # variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "Gene", "HGVSp", "AF_ELGH", "UNIPARC",
+        #                 "SWISSPROT", "TREMBL", "Protein_position", "Amino_acids", "SIFT", "PolyPhen",
+        #                 "varipred_id"]
+
+        # self.gh_data = self.gh_data.rename(columns={'Allele': 'ALT'})
+        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
+        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
+
+        am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
+
+        am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
+        self.gh_data[['#CHROM', 'POS', 'REF', 'ALT']].info()
+        self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
+        self.gh_data = self.gh_data.explode('ALT')
+        self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
+        self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
+        pos_list = self.gh_data['POS'].tolist()
+        chrom_list = self.gh_data['#CHROM'].tolist()
+        ref_list = self.gh_data['REF'].tolist()
+        alt_list = self.gh_data['ALT'].tolist()
+
+        pos_list = [str(pos) for pos in pos_list]
+        variant_id_list = [chrom + '_' + pos + '_' + ref + '_' + alt for chrom, pos, ref, alt in
+                           zip(chrom_list, pos_list, ref_list, alt_list)]
+        self.gh_data['variant_id'] = variant_id_list
+        self.gh_data[['#CHROM', 'POS', 'REF', 'ALT']].info()
+        am = am[['am_pathogenicity', 'variant_id']]
+
+        self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
+        print(self.gh_data)
+
+        # map the variant-level pathogenicity scores to the gene-level and store in dictionary
+
+        # save to self.pathogenicity_features
+        return 0
+
+    def combine_features(self):
+        """
+        Combine all the features into a single feature matrix. Use the ELGH variant data as a framework such
+        that we can easily map between ensg, uniprot, and symbols as contained in the ELGH variant data.
+        """
+        self.gh_data["UNIPROT"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
+        self.gh_data = self.gh_data.drop(["SWISSPROT", "TREMBL"], axis=1)
+
+        feature_matrix = self.gh_data[["Gene", "UNIPROT"]]
+        feature_matrix = feature_matrix.rename(columns={"Gene": "ENSG"})
+        feature_matrix = feature_matrix.drop_duplicates(subset=['ENSG'])
+
+        ensg_features = {
+            "chemical_interaction_count": self.chem_features,
+            "pli_lof_constraint": self.gnomad_features,
+            "mouse_ko_effect": self.mouse_ko_features,
+            "ppi_count": self.ppi_features,
+            "am_missense_pathogenicity_score": self.pathogenicity_features
+        }
+        uniprot_features = {
+            "af_protein_structure_score": self.alphafold_features["mean"]
+        }
+
+        for feature, values in ensg_features.items():
+            feature_matrix[feature] = feature_matrix["ENSG"].map(values)
+        for feature, values in uniprot_features.items():
+            feature_matrix[feature] = feature_matrix["UNIPROT"].map(values)
+
+        feature_matrix = feature_matrix.drop(["UNIPROT"], axis=1)
+
+        feature_matrix = feature_matrix.fillna(0.0)
+
+        utils.count_zeros(feature_matrix)
+
+        # plot.correlation_heatmap(feature_matrix)
+
+        return feature_matrix
+
+    def add_ground_truth(self):
+        """
+        Add the ground truth labels to the feature matrix.
+        """
+        return 0
+
+    ################################################ ARCHIVED FEATURES ################################################
+
+    # Tractability features were used in the OpenTargets proof-of-concept model. They are not used in our model.
+    def _tractability_feature_extractor(self):
+        """
+        DEPRECATED: This function is deprecated. Function was used to load OpenTargets tractability data.
+        """
+        keys = list(self.datasets.keys())
+        tract_data_raw = self.datasets[keys[3]]
+        sym_col = ['symbol']
+        sm_cols = tract_data_raw.filter(regex='(SM_B)').columns.tolist()[3:]
+        sm_cols = sym_col + sm_cols
+        ab_cols = tract_data_raw.filter(regex='(AB_B)').columns.tolist()[3:]
+        ab_cols = sym_col + ab_cols
+        pr_cols = tract_data_raw.filter(regex='(PR_B)').columns.tolist()[3:]
+        pr_cols = sym_col + pr_cols
+
+        tract_data_sm = tract_data_raw.loc[:, sm_cols]
+        tract_data_ab = tract_data_raw.loc[:, ab_cols]
+        tract_data_pr = tract_data_raw.loc[:, pr_cols]
+
+        return tract_data_sm, tract_data_ab, tract_data_pr
+
+    def __tractability_feature_calculator(self):
+        """
+        DEPRECATED: This function is deprecated. Function was used to calculate tractability scores for the OpenTargets
+        proof-of-concept model.
+        """
+        with open('data/Tractability/ab_shap_values.pkl', 'rb') as f:
+            ab_shap_values = pkl.load(f)
+        with open('data/Tractability/sm_shap_values.pkl', 'rb') as f:
+            sm_shap_values = pkl.load(f)
+
+        tract_sm = self.bin_tract_features[0]
+        tract_ab = self.bin_tract_features[1]
+
+        tract_sm_float = tract_sm.iloc[:, 1:].astype(float)
+        tract_ab_float = tract_ab.iloc[:, 1:].astype(float)
+
+        ab_mean_shap = np.abs(np.mean(ab_shap_values, axis=0))
+        sm_mean_shap = np.abs(np.mean(sm_shap_values[:, 1:], axis=0))
+
+        weighted_tract_sm = tract_sm_float * sm_mean_shap
+        weighted_tract_ab = tract_ab_float * ab_mean_shap
+
+        tract_score_sm = weighted_tract_sm.sum(axis=1)
+        tract_score_ab = weighted_tract_ab.sum(axis=1)
+
+        tract_sm['tractability_score'] = tract_score_sm
+        tract_ab['tractability_score'] = tract_score_ab
+
+        return tract_sm, tract_ab
+
+    def __ground_truth_extractor(self):
+        """
+        DEPRECATED: This function is deprecated. Function was used to load OpenTargets tractability ground truth data.
+        """
+        keys = list(self.datasets.keys())
+        tract_data_raw = self.datasets[keys[3]]
+        sm_cols = tract_data_raw.filter(regex='(SM_B)').columns.tolist()[0]
+        ab_cols = tract_data_raw.filter(regex='(AB_B)').columns.tolist()[0]
+        pr_cols = tract_data_raw.filter(regex='(PR_B)').columns.tolist()[0]
+
+        ground_truth_sm = tract_data_raw.loc[:, sm_cols]
+        ground_truth_ab = tract_data_raw.loc[:, ab_cols]
+        ground_truth_pr = tract_data_raw.loc[:, pr_cols]
+
+        return ground_truth_sm, ground_truth_ab, ground_truth_pr
+
+    def __query_alphafold_api(self):
+        """
+        DEPRECATED: This function is deprecated. Function was used to query the AlphaFold API to get the pLDDT scores
+        for each protein in our dataset.
+        """
+        uniprot_data = self.gh_data[["SWISSPROT", "TREMBL", "varipred_id"]]
+        uniprot_data["uniprot_id"] = uniprot_data["SWISSPROT"].fillna(uniprot_data["TREMBL"])
+        uniprot_data = uniprot_data.drop(["SWISSPROT", "TREMBL"], axis=1).rename(columns={"uniprot_id": "UNIPROT"})
+        uniprot_ids = uniprot_data["UNIPROT"].unique().tolist()
+        extracted_values = {}
+        for qualifier in tqdm(uniprot_ids):
+            extracted_values[qualifier] = {}
+            cif_file_path = f"{self.config['paths']['AF_PATH']}AF-{qualifier}-F1-model_v4.cif"
+            target_format_mean = "_ma_qa_metric_global.metric_value"
+            target_format_max = "_ma_qa_metric_local.ordinal_id"
+            extract = False
+            values_list = []
+        base_url = "https://alphafold.ebi.ac.uk/api/uniprot"
+        api_key = "AIzaSyCeurAJz7ZGjPQUtEaerUkBZ3TaBkXrY94"
+
+        url = f"{base_url}/{qualifier}.json?key={api_key}"
+
+        response = requests.get(url)
+
+        if response.status_code == 200:
+            data = response.json()
+            mean_value = float(data["structures"][0]["summary"]["confidence_avg_local_score"])
+            extracted_values[qualifier]['mean'] = mean_value
+        else:
+            print(f"\nError: Unable to fetch data for {qualifier}. Status code: {response.status_code}. "
+                  f"Inserting 0.0.")
+            extracted_values[qualifier]['mean'] = 0.0
+        return extracted_values
+
+
+class __WildtypeLoader:
+    """
+    This class is deprecatated. Wildtype gets loaded in the VariantLoader class. This class is kept for reference and
+    archive purposes.
+    """
+
+    def __init__(self, uniparc_path, msa_output):
+        """
+        :param uniparc_path: path to the UNIPARC dataset.
+        :param msa_output: path to where the MSA .fasta file will be saved.
+        """
+        self.uniparc_path = uniparc_path
+        self.msa_output = msa_output
+        self.msa_file_name = msa_output.split(os.path.sep)[-1]
+        self.uniparc_col_name = "UNIPARC"
+        self.gene_col_name = "SYMBOL"
+        self._init_verification()
+
+    def _init_verification(self):
+        """
+        Check whether the path points to a valid .csv file. Also check whether the msa output ends in ".fasta".
+        """
+        if not self.uniparc_path.endswith(".csv"):
+            raise TypeError("The path to the UNIPARC dataset must point to a .csv file.")
+        if not self.msa_output.endswith(".fasta"):
+            raise TypeError("The output file must be of type .fasta.")
+
+    def data_reader(self):
+        """
+        Read in the raw .csv data and check whether the data contains the required columns.
+        :return: raw_data as a pandas dataframe.
+        """
+        _raw_data = pd.read_csv(self.uniparc_path, sep="\t")
+        if self.uniparc_col_name not in _raw_data.columns:
+            raise TypeError(f"Change the column name of the column containing the uniparc ids to "
+                            f"'{self.uniparc_col_name}'.")
+        if self.gene_col_name not in _raw_data.columns:
+            raise TypeError(f"Change the column name of the column containing the gene names to "
+                            f"'{self.gene_col_name}'.")
+        return _raw_data
+
+    def parse_data(self, data):
+        """
+        Get UNIPARC ids and gene symbols from the dataset and put them in a dictionary.
+        """
+        uniprot_ids = data[self.uniparc_col_name].tolist()
+        gene_names = data[self.gene_col_name].tolist()
+        uniprot_ids_dict = {}
+        for i in range(len(uniprot_ids)):
+            if gene_names[i] not in uniprot_ids_dict:
+                uniprot_ids_dict[gene_names[i]] = [uniprot_ids[i]]
+            else:
+                uniprot_ids_dict[gene_names[i]].append(uniprot_ids[i])
+        return self._get_msa(uniprot_ids_dict)
+
+    def _get_msa(self, uniprot_ids_dict):
+        """
+        Get the multiple sequence alignment from the UNIPROT database.
+        :param uniprot_ids_dict: dictionary of UNIPROT IDs and gene names.
+        :return: processed MSA data.
+        """
+        cont_idx, num_genes = self._file_tracker(uniprot_ids_dict)
+        if cont_idx == 0:
+            with open(self.msa_output, "w") as f:
+                f.write("")
+            f.close()
+        elif cont_idx == num_genes:
+            print("Data preprocessing completed!")
+            return list(SeqIO.parse(self.msa_output, "fasta"))
+        else:
+            print("Data preprocessing incomplete. Continuing from where it left off.")
+            with open("preprocessing_log.txt", "r") as f:
+                last_processed_gene, last_processed_gene = f.read().split("\t")
+            f.close()
+            new_uniprot_ids_dict = {}
+            found_gene = False
+            for gene_name in uniprot_ids_dict:
+                if found_gene:
+                    new_uniprot_ids_dict[gene_name] = uniprot_ids_dict[gene_name]
+                if gene_name == last_processed_gene:
+                    new_uniprot_ids_dict[gene_name] = uniprot_ids_dict[gene_name][uniprot_ids_dict[gene_name].index(
+                        last_processed_gene) + 1:]
+                    found_gene = True
+            uniprot_ids_dict = new_uniprot_ids_dict
+        print("Parsing the data...")
+        with open(self.msa_output, "a") as f:
+            for gene_name in tqdm(uniprot_ids_dict):
+                for uniprot_id in uniprot_ids_dict[gene_name]:
+                    url = f"https://www.uniprot.org/uniparc/{uniprot_id}.fasta"
+                    response = requests.get(url)
+                    if response.status_code == 200:
+                        fasta_msa = response.text
+                    elif str(uniprot_id) == "nan":
+                        continue
+                    else:
+                        raise ValueError(f"{response.status_code} Could not retrieve the MSA for gene {gene_name}.")
+                    fasta_msa = fasta_msa.replace("status=active", "")
+                    fasta_msa = fasta_msa.replace("status=inactive", "")
+                    fasta_msa = f"{fasta_msa[0:14]}|{gene_name}{fasta_msa[14:]}"
+                    f.write(fasta_msa)
+                    with open("preprocessing_log.txt", "w") as log:
+                        log.write(f"{gene_name}\t{uniprot_id}")
+                    log.close()
+        f.close()
+        print("Data preprocessing completed!")
+        return list(SeqIO.parse(self.msa_output, "fasta"))
+
+    def _file_tracker(self, uniprot_ids_dict):
+        """
+        Track whether there already exists output and if it is complete or not.
+        """
+        num_genes = 0
+        if self.msa_file_name in os.listdir():
+            with open(self.msa_file_name, "r") as f:
+                count = f.read().count(">")
+            f.close()
+            for gene_name in uniprot_ids_dict:
+                num_genes += len(uniprot_ids_dict[gene_name])
+            if count != num_genes:
+                cont_idx = count - 1
+            else:
+                cont_idx = num_genes
+        else:
+            cont_idx = 0
+        return cont_idx, num_genes
+
+
+class __MissenseVariantPreprocessor:
+    """
+    DEPRACATED: This class is deprecated. All the preprocessing is now done in the GeneCharacterisation class. This is
+    because we switched away from using VariPred pathogenicity in favour of AlphaMissense pathogenicity.
+    """
+
     def __init__(self, config=None, preprocess=False, train=False, predict=False, evaluation=False):
         self.config = config
         parser = argparse.ArgumentParser(description='Script to process variants')
@@ -367,697 +1062,3 @@ class MissenseVariantPreprocessor:
         else:
             raise ValueError(f"The reference allele ({ref}) at position {pos} does not match the specified ref allele "
                              f"({sequence[pos]}).")
-
-
-class GeneCharacterisationPreprocessor:
-    """
-    This class loads and combines the different data sources into a single feature matrix to be fed into our model.
-    """
-
-    def __init__(self, config=None):
-        self.config = config
-        self.files_and_dirs = os.listdir("../data")
-        self.data_name_mapping = {
-            "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
-            "gnomad.exomes.v2.1.1.lof_metrics.by_gene.csv": "gnomAD Exomes Loss-of-Function Metrics",
-            "9606.protein.links.full.v12.0.txt": "STRING Protein-Protein Interactions",
-            "part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet": "Mouse Knockout Phenotypes",
-
-            "FDA_approved_drug_targets_2023_Q3.xlsx": "FDA Approved Drug Targets"
-        }
-        self.files = self._get_files()
-        self.datasets = self.load_data()
-
-        # Population genomics data
-        self.gh_data = self.load_gh_data()
-
-        # Our model
-        # NOTE: genes can be represented with uniprot ids or ensg ids.
-        if len(os.listdir('../data/features/')) == 1:
-            self.chem_features = self.chem_feature_extractor()
-            with open('../data/features/chem_features.pkl', 'wb') as fp:
-                pkl.dump(self.chem_features, fp)
-
-            self.alphafold_features = self.alphafold_feature_extractor()
-            with open('../data/features/alphafold_features.pkl', 'wb') as fp:
-                pkl.dump(self.alphafold_features, fp)
-
-            self.ppi_features = self.ppi_feature_extractor()
-            with open('../data/features/ppi_features.pkl', 'wb') as fp:
-                pkl.dump(self.ppi_features, fp)
-
-            self.mouse_ko_features = self.mouse_knockout_feature_extractor()
-            with open('../data/features/mouse_ko_features.pkl', 'wb') as fp:
-                pkl.dump(self.mouse_ko_features, fp)
-
-            self.gnomad_features = self.gnomad_feature_extractor()
-            with open('../data/features/gnomad_features.pkl', 'wb') as fp:
-                pkl.dump(self.gnomad_features, fp)
-
-            self.pathogenicity_features = self.load_pathogenicity_features()
-            with open('../data/features/pathogenicity_features.pkl', 'wb') as fp:
-                pkl.dump(self.pathogenicity_features, fp)
-        else:
-            with open('../data/features/alphafold_features.pkl', 'rb') as fp:
-                self.alphafold_features = pkl.load(fp)
-            with open('../data/features/ppi_features.pkl', 'rb') as fp:
-                self.ppi_features = pkl.load(fp)
-            with open('../data/features/mouse_ko_features.pkl', 'rb') as fp:
-                self.mouse_ko_features = pkl.load(fp)
-            with open('../data/features/chem_features.pkl', 'rb') as fp:
-                self.chem_features = pkl.load(fp)
-            with open('../data/features/gnomad_features.pkl', 'rb') as fp:
-                self.gnomad_features = pkl.load(fp)
-            with open('../data/features/pathogenicity_features.pkl', 'rb') as fp:
-                self.pathogenicity_features = pkl.load(fp)
-
-        self.features = self.combine_features()
-
-        # Ground truth
-        self.target = self.load_ground_truth()
-
-        # Combine features and target
-        self.data = self.make_data()
-        print("Data loaded!")
-        # Explore the data
-        # plot.umap(self.data)
-
-    def _get_files(self):
-        """
-        Get the files from the data directory.
-        """
-        files = []
-        exclude = ['.DS_Store', 'elgh', 'clinvar', 'VariPred', 'string_data_counts.pkl']
-
-        for file in self.files_and_dirs:
-            if "." in file and file not in exclude:
-                files.append(f"../data/{file}")
-            elif file not in exclude:
-                file_path = f"../data/{file}"
-                _file = self._dir_parser(file_path)
-                files.append(_file)
-        return files
-
-    def _dir_parser(self, path):
-        """
-        Recursive algorithm to parse the directory to get the files and their paths.
-        """
-        exclude = ['.DS_Store', 'elgh']
-        subfiles = os.listdir(path)
-        for subfile in subfiles:
-            excl = '\t'.join(exclude)
-            if "." in subfile and subfile not in excl:
-                path = f"{path}/{subfile}"
-                return f"{path}"
-            elif subfile not in excl:
-                path = f"{path}/{subfile}"
-                self._dir_parser(path)
-
-    def load_data(self):
-        """
-        Load the data from the files.
-        """
-        datasets = {}
-        if "datasets.pkl" in os.listdir('../data/'):
-            with open('../data/datasets.pkl', 'rb') as fp:
-                datasets = pkl.load(fp)
-            return datasets
-        else:
-            for file in self.files:
-                file_name = file.split("/")[-1]
-                if file_name in self.data_name_mapping.keys():
-                    file_id = self.data_name_mapping[file_name]
-                    if any(word in file for word in ["csv", "txt"]):
-                        if '9606' not in file:
-                            datasets[file_id] = pd.read_csv(file)
-                        else:
-                            datasets[file_id] = pd.read_csv(file, sep=" ")
-                    elif any(word in file for word in ["xlsx", "xlsb"]):
-                        datasets[file_id] = pd.read_excel(file)
-                    elif "parquet" in file:
-                        datasets[file_id] = pd.read_parquet(file)
-                    else:
-                        raise ValueError(
-                            "The file format is not supported. Make sure data is .csv, .txt, Excel, or parquet.")
-            with open('../data/datasets.pkl', 'wb') as fp:
-                pkl.dump(datasets, fp)
-            return datasets
-
-    def load_gh_data(self):
-        """
-        Load the Genes & Health variant data.
-        """
-        variant_data = pd.read_csv(self.config['paths']['MIVA_PATH'], sep="\t")
-        variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
-        return variant_data
-
-    def load_ground_truth(self):
-        """
-        Load the ground truth data.
-        """
-        return self.datasets["FDA Approved Drug Targets"]
-
-    def make_data(self):
-        """
-        Combine the features and the target.
-        """
-        target_genes = list(self.target["Ensembl"])
-        feature_genes = list(self.features["ENSG"])
-        target_genes_in_features = [gene for gene in target_genes if gene in feature_genes]
-        print(f"Found {len(target_genes_in_features)} FDA approved GH genes out of a total of {len(target_genes)} FDA "
-              f"approved genes.")
-        self.features["target"] = 0
-        self.features.loc[self.features["ENSG"].isin(target_genes_in_features), "target"] = 1
-        return self.features
-
-    def download_af_cifs(self):
-        uniprot_data = self.gh_data[["SWISSPROT", "TREMBL", "varipred_id"]]
-        uniprot_data["uniprot_id"] = uniprot_data["SWISSPROT"].fillna(uniprot_data["TREMBL"])
-        uniprot_data = uniprot_data.drop(["SWISSPROT", "TREMBL"], axis=1).rename(columns={"uniprot_id": "UNIPROT"})
-        uniprot_ids = uniprot_data["UNIPROT"].unique().tolist()
-
-        url = "https://alphafold.ebi.ac.uk/files/AF-{id}-F1-model_v4.cif"
-
-        folder = "../data/alphafold/alphafold_cifs"
-        if not os.path.exists(folder):
-            os.makedirs(folder)
-
-        for uni_id in tqdm(uniprot_ids):
-            # check if uni_id occurs in swissprot_cif_v4 folder, if so copy it to alphafold_cifs
-            if os.path.exists(f"../data/alphafold/swissprot_cif_v4/AF-{uni_id}-F1-model_v4.cif"):
-                shutil.copy(f"../data/alphafold/swissprot_cif_v4/AF-{uni_id}-F1-model_v4.cif",
-                            f"../data/alphafold/alphafold_cifs/AF-{uni_id}-F1-model_v4.cif")
-                continue
-            file_url = url.format(id=uni_id)
-            file_name = os.path.basename(file_url)
-
-            response = requests.get(file_url)
-            with open(os.path.join(folder, file_name), "wb") as f:
-                f.write(response.content)
-
-    def alphafold_feature_extractor(self):
-        """
-        Extract AlphaFold features from the AlphaFold API. Specifically, we get the average pLDDT score for the proteins
-        in our dataset
-        """
-        uniprot_data = self.gh_data[["SWISSPROT", "TREMBL", "varipred_id"]]
-        uniprot_data["uniprot_id"] = uniprot_data["SWISSPROT"].fillna(uniprot_data["TREMBL"])
-        uniprot_data = uniprot_data.drop(["SWISSPROT", "TREMBL"], axis=1).rename(columns={"uniprot_id": "UNIPROT"})
-        uniprot_ids = uniprot_data["UNIPROT"].unique().tolist()
-        if not os.path.exists('../data/alphafold/alphafold_cifs'):
-            self.download_af_cifs()
-        extracted_values = {}
-        if os.path.exists('../data/alphafold/af_plddt_features.pkl'):
-            with open('../data/alphafold/af_plddt_features.pkl', 'rb') as fp:
-                features = pkl.load(fp)
-            return features
-        else:
-            if os.path.exists('../data/alphafold/af_plddt_features_non_normalized.pkl'):
-                with open('../data/alphafold/af_plddt_features_non_normalized.pkl', 'rb') as fp:
-                    extracted_values = pkl.load(fp)
-            else:
-                for qualifier in tqdm(uniprot_ids):
-                    extracted_values[qualifier] = {}
-                    cif_file_path = f"{self.config['paths']['AF_PATH']}AF-{qualifier}-F1-model_v4.cif"
-                    target_format_mean = "_ma_qa_metric_global.metric_value"
-                    target_format_max = "_ma_qa_metric_local.ordinal_id"
-                    extract = False
-                    values_list = []
-                    with open(cif_file_path, "r") as cif_file:
-                        for line in cif_file:
-                            if line.startswith(target_format_mean):
-                                mean_value = line[len(target_format_mean):].strip()
-                                extracted_values[qualifier]['mean'] = float(mean_value)
-
-                            if line.startswith(target_format_max):
-                                extract = True
-                                continue
-
-                            if line == '#\n':
-                                extract = False
-                                continue
-
-                            if extract:
-                                parts = line.split()
-                                if len(parts) >= 5:
-                                    plddt = float(parts[4])
-                                    values_list.append(plddt)
-                    if len(values_list) != 0:
-                        protein_len = len(values_list)
-                        max_value = max(values_list)
-                        extracted_values[qualifier]['max'] = max_value
-                        # we extract the len for later experiments
-                        extracted_values[qualifier]['protein_len'] = protein_len
-                    else:
-                        print(f"\nError: Unable to fetch data for {qualifier}. Inserting 0.0.")
-                        extracted_values[qualifier]['mean'] = 0.0
-                        extracted_values[qualifier]['max'] = 0.0
-                        extracted_values[qualifier]['protein_len'] = np.nan
-            # NOTE: normalize AFTER train test split
-            # scaler = MinMaxScaler()
-            # extracted_values = pd.DataFrame.from_dict(extracted_values, orient='index')
-            # extracted_values[['mean', 'max']] = scaler.fit_transform(extracted_values[['mean', 'max']])
-            # features = extracted_values.to_dict()
-            with open('../data/alphafold/af_plddt_features.pkl', 'wb') as fp:
-                pkl.dump(extracted_values, fp)
-            return extracted_values
-
-    def chem_feature_extractor(self):
-        """
-        Extract chemical features from the CTD dataset. We count the number of known chemical interactions for each gene
-        Note: we can further disentangle this data based on interaction type, e.g. increasing or decreasing action of
-        target. This is not yet implemented.
-        """
-        keys = list(self.datasets.keys())
-        chem_data = self.datasets[keys[0]]
-        chem_features = chem_data[["GeneSymbol", "# ChemicalName", "Organism", "InteractionActions"]]
-        chem_features = chem_features[chem_features["Organism"] == "Homo sapiens"]
-        gene_counts = chem_features["GeneSymbol"].value_counts()
-        chem_features = pd.DataFrame({
-            "symbol": gene_counts.index,
-            "count": gene_counts.values,
-        })
-
-        gene_names = list(chem_features["symbol"])
-        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
-        chem_features['symbol'] = chem_features['symbol'].map(mapped_names)
-        chem_features = chem_features[chem_features['symbol'] != 'N/A']
-
-        # Transform DataFrame into a dictionary
-        chem_features = chem_features.set_index('symbol')['count'].to_dict()
-
-        # NOTE: normalize AFTER train test split
-        # scaler = MinMaxScaler()
-        # chem_features["count"] = scaler.fit_transform(chem_features[["count"]])
-        # chem_features = chem_features.set_index("symbol")["count"].to_dict()
-        return chem_features
-
-    def gnomad_feature_extractor(self):
-        """
-        Extract target conservation scores from gnomAD data. Note that pLI measures the probability of a gene being
-        loss-of-function intolerant. There are more potential features we can extract from the gnomAD data.
-        """
-        keys = list(self.datasets.keys())
-        gnom_data = self.datasets[keys[1]]
-        gnom_data_raw = gnom_data[["gene", "pLI"]]
-        # fill the nans with 0.0 in gnoma_data_raw
-        gnom_data_raw["pLI"] = gnom_data_raw["pLI"].fillna(0.0)
-        gnom_data = gnom_data_raw
-        gene_names = list(gnom_data["gene"])
-        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
-        gnom_data['gene'] = gnom_data['gene'].map(mapped_names)
-        gnom_data = gnom_data[gnom_data['gene'] != 'N/A']
-        gnom_data = gnom_data.set_index("gene")["pLI"].to_dict()
-        return gnom_data
-
-    def ppi_feature_extractor(self):
-        """
-        Featurise PPI data, i.e. count and normalize the PPIs for each PPI that is experimentally validated.
-        """
-        protein_info = []  # To store the parsed data
-        with open("../data/9606.protein.links.full.v12.0.txt", "r") as file:
-            for line in file:
-                fields = line.strip().split('\t')
-                protein_info.append(fields)
-        protein_info = pd.DataFrame(protein_info)
-        protein_info.columns = protein_info.iloc[0]
-
-        keys = list(self.datasets.keys())
-        string_data_raw = self.datasets[keys[2]]
-        string_data_raw = string_data_raw[["protein1", "protein2", "experiments"]]
-        string_data_raw['experiments'] = string_data_raw['experiments'].astype(int)
-        string_data_raw = string_data_raw[string_data_raw['experiments'] > 0]
-
-        protein_names_1 = string_data_raw['protein1'].tolist()
-        protein_names_2 = string_data_raw['protein2'].tolist()
-        protein_names_1 = [protein.split('.')[1] for protein in protein_names_1]
-        protein_names_2 = [protein.split('.')[1] for protein in protein_names_2]
-
-        string_data_raw['protein1'] = protein_names_1
-        string_data_raw['protein2'] = protein_names_2
-        protein_names = list(set(protein_names_1))
-
-        mapped_names = utils.map_gene_names(protein_names, 'ensp', 'ensg')
-
-        string_data_raw['protein1'] = string_data_raw['protein1'].map(mapped_names)
-        string_data_raw['protein2'] = string_data_raw['protein2'].map(mapped_names)
-        string_data_raw = string_data_raw[string_data_raw['protein1'] != 'N/A']
-        string_data_raw = string_data_raw[string_data_raw['protein2'] != 'N/A']
-
-        protein_counts = {}
-
-        # note we only need to do this for one column, since both columns contain the same proteins
-        for protein in string_data_raw['protein1']:
-            if protein not in protein_counts:
-                protein_counts[protein] = 1
-            else:
-                protein_counts[protein] += 1
-
-        # NOTE: normalize AFTER train test split
-        # scaler = MinMaxScaler(feature_range=(0, 1))
-        #
-        # protein_counts = pd.DataFrame.from_dict(protein_counts, orient='index', columns=['count'])
-        # protein_counts['count'] = scaler.fit_transform(protein_counts['count'].values.reshape(-1, 1))
-        # protein_counts = protein_counts.to_dict()['count']
-
-        # NOTE: We don't weight the counts by experimental evidence as this would magnify bias in studied proteins.
-        # string_data_raw['experiments'] = scaler.fit_transform(string_data_raw['experiments'].values.reshape(-1, 1))
-        # for protein in tqdm(protein_counts):
-        #     protein_counts[protein] *= string_data_raw[string_data_raw['protein1'] == protein]['experiments'].mean()
-        # print(protein_counts)
-
-        return protein_counts
-
-    def mouse_knockout_feature_extractor(self):
-        keys = list(self.datasets.keys())
-        df = self.datasets[keys[4]]
-        target_counts = {}
-        for target in df['targetInModel']:
-            if target.upper() in target_counts:
-                target_counts[target.upper()] += 1
-            else:
-                target_counts[target.upper()] = 1
-
-        gene_names = list(target_counts.keys())
-        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
-        for gene_name in gene_names:
-            if gene_name in mapped_names:
-                target_counts[mapped_names[gene_name]] = target_counts.pop(gene_name)
-
-        target_counts = {k: v for k, v in target_counts.items() if k != 'N/A'}
-
-        # NOTE: normalize AFTER train test split
-        # scaler = MinMaxScaler(feature_range=(0, 1))
-        # target_freqs = pd.DataFrame.from_dict(target_counts, orient='index', columns=['count'])
-        # target_freqs['count'] = scaler.fit_transform(target_freqs['count'].values.reshape(-1, 1))
-        # target_freqs = target_freqs.to_dict()['count']
-        return target_counts
-
-    @staticmethod
-    def load_pathogenicity_features():
-        """
-        Load the pathogenicity features amd map them from variant-level probas to gene-level probas. To do this we need
-        to implement: \( 1/N \sum v_i * \alpha_i \), where N is number of variants in a given gene, v_i is variant
-        proba, and \alpha_i is the allele frequency of variant i.
-        """
-        varipred_output = pd.read_csv("../data/elgh/varipred_elgh_data.csv", sep="\t")
-        varipred_features_variant = {}
-        for row in varipred_output.iterrows():
-            ensg = row[1]['Gene']
-            prob = row[1]['vpgh_probability']
-            allele_freq = row[1]['AF_ELGH']
-            if ensg not in list(varipred_features_variant.keys()):
-                varipred_features_variant[ensg] = [prob * allele_freq]
-            else:
-                varipred_features_variant[ensg].append(prob * allele_freq)
-
-        varipred_features_gene = {}
-        for ensg, probs in varipred_features_variant.items():
-            varipred_features_gene[ensg] = sum(probs) / len(probs)
-
-        # NOTE: normalize AFTER train test split
-        # values = list(varipred_features_gene.values())
-        # values = [[value] for value in values]  # Convert values to a 2D array
-
-        # scaler = MinMaxScaler()
-        # normalized_values = scaler.fit_transform(values)
-        # normalized_values = [value[0] for value in normalized_values]  # Convert back to 1D array
-        #
-        # varipred_features_gene = {key: normalized_value for key, normalized_value in zip(varipred_features_gene.keys(),
-        #                                                                                  normalized_values)}
-
-        return varipred_features_gene
-
-    def combine_features(self):
-        """
-        Combine all the features into a single feature matrix. Use the ELGH variant data as a framework such
-        that we can easily map between ensg, uniprot, and symbols as contained in the ELGH variant data.
-        """
-        self.gh_data["UNIPROT"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
-        self.gh_data = self.gh_data.drop(["SWISSPROT", "TREMBL"], axis=1)
-
-        feature_matrix = self.gh_data[["Gene", "UNIPROT"]]
-        feature_matrix = feature_matrix.rename(columns={"Gene": "ENSG"})
-        feature_matrix = feature_matrix.drop_duplicates(subset=['ENSG'])
-
-        ensg_features = {
-            "chem": self.chem_features,
-            "gnomad": self.gnomad_features,
-            "mouse_ko": self.mouse_ko_features,
-            "ppi": self.ppi_features,
-            "pathogenicity": self.pathogenicity_features
-        }
-        uniprot_features = {
-            "alphafold": self.alphafold_features["mean"]
-        }
-
-        for feature, values in ensg_features.items():
-            feature_matrix[feature] = feature_matrix["ENSG"].map(values)
-        for feature, values in uniprot_features.items():
-            feature_matrix[feature] = feature_matrix["UNIPROT"].map(values)
-
-        feature_matrix = feature_matrix.drop(["UNIPROT"], axis=1)
-
-        feature_matrix = feature_matrix.fillna(0.0)
-
-        utils.count_zeros(feature_matrix)
-
-        # plot.correlation_heatmap(feature_matrix)
-
-        return feature_matrix
-
-    def add_ground_truth(self):
-        """
-        Add the ground truth labels to the feature matrix.
-        """
-        return 0
-
-    ################################################ ARCHIVED FEATURES ################################################
-
-    # Tractability features were used in the OpenTargets proof-of-concept model. They are not used in our model.
-    def _tractability_feature_extractor(self):
-        """
-        DEPRECATED: This function is deprecated. Function was used to load OpenTargets tractability data.
-        """
-        keys = list(self.datasets.keys())
-        tract_data_raw = self.datasets[keys[3]]
-        sym_col = ['symbol']
-        sm_cols = tract_data_raw.filter(regex='(SM_B)').columns.tolist()[3:]
-        sm_cols = sym_col + sm_cols
-        ab_cols = tract_data_raw.filter(regex='(AB_B)').columns.tolist()[3:]
-        ab_cols = sym_col + ab_cols
-        pr_cols = tract_data_raw.filter(regex='(PR_B)').columns.tolist()[3:]
-        pr_cols = sym_col + pr_cols
-
-        tract_data_sm = tract_data_raw.loc[:, sm_cols]
-        tract_data_ab = tract_data_raw.loc[:, ab_cols]
-        tract_data_pr = tract_data_raw.loc[:, pr_cols]
-
-        return tract_data_sm, tract_data_ab, tract_data_pr
-
-    def __tractability_feature_calculator(self):
-        """
-        DEPRECATED: This function is deprecated. Function was used to calculate tractability scores for the OpenTargets
-        proof-of-concept model.
-        """
-        with open('data/Tractability/ab_shap_values.pkl', 'rb') as f:
-            ab_shap_values = pkl.load(f)
-        with open('data/Tractability/sm_shap_values.pkl', 'rb') as f:
-            sm_shap_values = pkl.load(f)
-
-        tract_sm = self.bin_tract_features[0]
-        tract_ab = self.bin_tract_features[1]
-
-        tract_sm_float = tract_sm.iloc[:, 1:].astype(float)
-        tract_ab_float = tract_ab.iloc[:, 1:].astype(float)
-
-        ab_mean_shap = np.abs(np.mean(ab_shap_values, axis=0))
-        sm_mean_shap = np.abs(np.mean(sm_shap_values[:, 1:], axis=0))
-
-        weighted_tract_sm = tract_sm_float * sm_mean_shap
-        weighted_tract_ab = tract_ab_float * ab_mean_shap
-
-        tract_score_sm = weighted_tract_sm.sum(axis=1)
-        tract_score_ab = weighted_tract_ab.sum(axis=1)
-
-        tract_sm['tractability_score'] = tract_score_sm
-        tract_ab['tractability_score'] = tract_score_ab
-
-        return tract_sm, tract_ab
-
-    def __ground_truth_extractor(self):
-        """
-        DEPRECATED: This function is deprecated. Function was used to load OpenTargets tractability ground truth data.
-        """
-        keys = list(self.datasets.keys())
-        tract_data_raw = self.datasets[keys[3]]
-        sm_cols = tract_data_raw.filter(regex='(SM_B)').columns.tolist()[0]
-        ab_cols = tract_data_raw.filter(regex='(AB_B)').columns.tolist()[0]
-        pr_cols = tract_data_raw.filter(regex='(PR_B)').columns.tolist()[0]
-
-        ground_truth_sm = tract_data_raw.loc[:, sm_cols]
-        ground_truth_ab = tract_data_raw.loc[:, ab_cols]
-        ground_truth_pr = tract_data_raw.loc[:, pr_cols]
-
-        return ground_truth_sm, ground_truth_ab, ground_truth_pr
-
-    def __query_alphafold_api(self):
-        """
-        DEPRECATED: This function is deprecated. Function was used to query the AlphaFold API to get the pLDDT scores
-        for each protein in our dataset.
-        """
-        uniprot_data = self.gh_data[["SWISSPROT", "TREMBL", "varipred_id"]]
-        uniprot_data["uniprot_id"] = uniprot_data["SWISSPROT"].fillna(uniprot_data["TREMBL"])
-        uniprot_data = uniprot_data.drop(["SWISSPROT", "TREMBL"], axis=1).rename(columns={"uniprot_id": "UNIPROT"})
-        uniprot_ids = uniprot_data["UNIPROT"].unique().tolist()
-        extracted_values = {}
-        for qualifier in tqdm(uniprot_ids):
-            extracted_values[qualifier] = {}
-            cif_file_path = f"{self.config['paths']['AF_PATH']}AF-{qualifier}-F1-model_v4.cif"
-            target_format_mean = "_ma_qa_metric_global.metric_value"
-            target_format_max = "_ma_qa_metric_local.ordinal_id"
-            extract = False
-            values_list = []
-        base_url = "https://alphafold.ebi.ac.uk/api/uniprot"
-        api_key = "AIzaSyCeurAJz7ZGjPQUtEaerUkBZ3TaBkXrY94"
-
-        url = f"{base_url}/{qualifier}.json?key={api_key}"
-
-        response = requests.get(url)
-
-        if response.status_code == 200:
-            data = response.json()
-            mean_value = float(data["structures"][0]["summary"]["confidence_avg_local_score"])
-            extracted_values[qualifier]['mean'] = mean_value
-        else:
-            print(f"\nError: Unable to fetch data for {qualifier}. Status code: {response.status_code}. "
-                  f"Inserting 0.0.")
-            extracted_values[qualifier]['mean'] = 0.0
-        return extracted_values
-
-
-class __WildtypeLoader:
-    """
-    This class is deprecatated. Wildtype gets loaded in the VariantLoader class. This class is kept for reference and
-    archive purposes.
-    """
-
-    def __init__(self, uniparc_path, msa_output):
-        """
-        :param uniparc_path: path to the UNIPARC dataset.
-        :param msa_output: path to where the MSA .fasta file will be saved.
-        """
-        self.uniparc_path = uniparc_path
-        self.msa_output = msa_output
-        self.msa_file_name = msa_output.split(os.path.sep)[-1]
-        self.uniparc_col_name = "UNIPARC"
-        self.gene_col_name = "SYMBOL"
-        self._init_verification()
-
-    def _init_verification(self):
-        """
-        Check whether the path points to a valid .csv file. Also check whether the msa output ends in ".fasta".
-        """
-        if not self.uniparc_path.endswith(".csv"):
-            raise TypeError("The path to the UNIPARC dataset must point to a .csv file.")
-        if not self.msa_output.endswith(".fasta"):
-            raise TypeError("The output file must be of type .fasta.")
-
-    def data_reader(self):
-        """
-        Read in the raw .csv data and check whether the data contains the required columns.
-        :return: raw_data as a pandas dataframe.
-        """
-        _raw_data = pd.read_csv(self.uniparc_path, sep="\t")
-        if self.uniparc_col_name not in _raw_data.columns:
-            raise TypeError(f"Change the column name of the column containing the uniparc ids to "
-                            f"'{self.uniparc_col_name}'.")
-        if self.gene_col_name not in _raw_data.columns:
-            raise TypeError(f"Change the column name of the column containing the gene names to "
-                            f"'{self.gene_col_name}'.")
-        return _raw_data
-
-    def parse_data(self, data):
-        """
-        Get UNIPARC ids and gene symbols from the dataset and put them in a dictionary.
-        """
-        uniprot_ids = data[self.uniparc_col_name].tolist()
-        gene_names = data[self.gene_col_name].tolist()
-        uniprot_ids_dict = {}
-        for i in range(len(uniprot_ids)):
-            if gene_names[i] not in uniprot_ids_dict:
-                uniprot_ids_dict[gene_names[i]] = [uniprot_ids[i]]
-            else:
-                uniprot_ids_dict[gene_names[i]].append(uniprot_ids[i])
-        return self._get_msa(uniprot_ids_dict)
-
-    def _get_msa(self, uniprot_ids_dict):
-        """
-        Get the multiple sequence alignment from the UNIPROT database.
-        :param uniprot_ids_dict: dictionary of UNIPROT IDs and gene names.
-        :return: processed MSA data.
-        """
-        cont_idx, num_genes = self._file_tracker(uniprot_ids_dict)
-        if cont_idx == 0:
-            with open(self.msa_output, "w") as f:
-                f.write("")
-            f.close()
-        elif cont_idx == num_genes:
-            print("Data preprocessing completed!")
-            return list(SeqIO.parse(self.msa_output, "fasta"))
-        else:
-            print("Data preprocessing incomplete. Continuing from where it left off.")
-            with open("preprocessing_log.txt", "r") as f:
-                last_processed_gene, last_processed_gene = f.read().split("\t")
-            f.close()
-            new_uniprot_ids_dict = {}
-            found_gene = False
-            for gene_name in uniprot_ids_dict:
-                if found_gene:
-                    new_uniprot_ids_dict[gene_name] = uniprot_ids_dict[gene_name]
-                if gene_name == last_processed_gene:
-                    new_uniprot_ids_dict[gene_name] = uniprot_ids_dict[gene_name][uniprot_ids_dict[gene_name].index(
-                        last_processed_gene) + 1:]
-                    found_gene = True
-            uniprot_ids_dict = new_uniprot_ids_dict
-        print("Parsing the data...")
-        with open(self.msa_output, "a") as f:
-            for gene_name in tqdm(uniprot_ids_dict):
-                for uniprot_id in uniprot_ids_dict[gene_name]:
-                    url = f"https://www.uniprot.org/uniparc/{uniprot_id}.fasta"
-                    response = requests.get(url)
-                    if response.status_code == 200:
-                        fasta_msa = response.text
-                    elif str(uniprot_id) == "nan":
-                        continue
-                    else:
-                        raise ValueError(f"{response.status_code} Could not retrieve the MSA for gene {gene_name}.")
-                    fasta_msa = fasta_msa.replace("status=active", "")
-                    fasta_msa = fasta_msa.replace("status=inactive", "")
-                    fasta_msa = f"{fasta_msa[0:14]}|{gene_name}{fasta_msa[14:]}"
-                    f.write(fasta_msa)
-                    with open("preprocessing_log.txt", "w") as log:
-                        log.write(f"{gene_name}\t{uniprot_id}")
-                    log.close()
-        f.close()
-        print("Data preprocessing completed!")
-        return list(SeqIO.parse(self.msa_output, "fasta"))
-
-    def _file_tracker(self, uniprot_ids_dict):
-        """
-        Track whether there already exists output and if it is complete or not.
-        """
-        num_genes = 0
-        if self.msa_file_name in os.listdir():
-            with open(self.msa_file_name, "r") as f:
-                count = f.read().count(">")
-            f.close()
-            for gene_name in uniprot_ids_dict:
-                num_genes += len(uniprot_ids_dict[gene_name])
-            if count != num_genes:
-                cont_idx = count - 1
-            else:
-                cont_idx = num_genes
-        else:
-            cont_idx = 0
-        return cont_idx, num_genes
