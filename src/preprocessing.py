@@ -52,7 +52,7 @@ class GeneCharacterisationPreprocessor:
             'gnomad_features.pkl': self.gnomad_feature_extractor,
             'mouse_ko_features.pkl': self.mouse_knockout_feature_extractor,
             'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
-            'ppi_features.pkl': self.ppi_feature_extractor()
+            'ppi_features.pkl': self.ppi_feature_extractor
         }
 
         for feature_file, feature_extractor in feature_extractors.items():
@@ -395,19 +395,12 @@ class GeneCharacterisationPreprocessor:
         """
         Extract variant-level AlphaMissense pathogenicity score and average to gene-level using population statistics.
         """
-        # genome_path = self.config['paths']['GENOME_PATH']
-        # variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "Gene", "HGVSp", "AF_ELGH", "UNIPARC",
-        #                 "SWISSPROT", "TREMBL", "Protein_position", "Amino_acids", "SIFT", "PolyPhen",
-        #                 "varipred_id"]
-
-        # self.gh_data = self.gh_data.rename(columns={'Allele': 'ALT'})
         self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
         self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
 
         am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
 
         am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
-        self.gh_data[['#CHROM', 'POS', 'REF', 'ALT']].info()
         self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
         self.gh_data = self.gh_data.explode('ALT')
         self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
@@ -421,16 +414,25 @@ class GeneCharacterisationPreprocessor:
         variant_id_list = [chrom + '_' + pos + '_' + ref + '_' + alt for chrom, pos, ref, alt in
                            zip(chrom_list, pos_list, ref_list, alt_list)]
         self.gh_data['variant_id'] = variant_id_list
-        self.gh_data[['#CHROM', 'POS', 'REF', 'ALT']].info()
         am = am[['am_pathogenicity', 'variant_id']]
 
         self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
-        print(self.gh_data)
 
-        # map the variant-level pathogenicity scores to the gene-level and store in dictionary
+        variant_am_features = {}
+        for index, row in tqdm(self.gh_data.iterrows()):
+            gene = row['Gene']
+            gh_af = row['AF_ELGH']
+            am_score = row['am_pathogenicity']
+            if gene not in variant_am_features.keys():
+                variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
+            else:
+                variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
 
-        # save to self.pathogenicity_features
-        return 0
+        gene_am_features = {}
+        for ensg, probs in variant_am_features.items():
+            gene_am_features[ensg] = sum(probs) / len(probs)
+
+        self.pathogenicity_features = gene_am_features
 
     def combine_features(self):
         """
