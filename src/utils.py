@@ -9,6 +9,8 @@ import glob
 import biorosetta as br
 import warnings
 import requests
+import torch
+import random
 
 from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_score, confusion_matrix, roc_curve, auc
 from Bio import Seq, SeqIO, Entrez
@@ -494,3 +496,12 @@ def count_zeros(df):
     for col in df.columns:
         num_zeros = len(df[df[col] == 0])
         print(f"{col}: {round(num_zeros / len(df) * 100, 2)}%")
+
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    random.seed(seed)
