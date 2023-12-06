@@ -39,6 +39,7 @@ class GeneCharacterisationPreprocessor:
         self.chem_features = None
         self.gnomad_features = None
         self.mouse_ko_features = None
+        self.gene_essentiality_features = None
         self.ppi_features = None
         self.pathogenicity_features = None
         self.alphafold_features = None
@@ -47,11 +48,12 @@ class GeneCharacterisationPreprocessor:
         self.gh_data = self.load_gh_data()
 
         feature_extractors = {
-            'alphafold_features.pkl': self.alphafold_feature_extractor,
             'chem_features.pkl': self.chem_feature_extractor,
             'gnomad_features.pkl': self.gnomad_feature_extractor,
             'mouse_ko_features.pkl': self.mouse_knockout_feature_extractor,
+            'gene_essentiality_features.pkl': self.gene_essentiality_feature_extractor,
             'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
+            'alphafold_features.pkl': self.alphafold_feature_extractor,
             'ppi_features.pkl': self.ppi_feature_extractor
         }
 
@@ -434,6 +436,17 @@ class GeneCharacterisationPreprocessor:
 
         self.pathogenicity_features = gene_am_features
 
+    def gene_essentiality_feature_extractor(self):
+        raw_data = pd.read_csv(self.config['paths']['COMMON_ESSENTIALS_PATH'])
+        raw_data = raw_data.rename(columns={raw_data.columns[0]: 'gene_name'})
+        raw_data['gene_name'] = raw_data['gene_name'].str.split(' ').str[0]
+        gene_names = list(raw_data['gene_name'])
+        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
+        gene_list = list(mapped_names.values())
+        gene_essentiality = {gene: 1 for gene in gene_list}
+
+        self.gene_essentiality_features = gene_essentiality
+
     def combine_features(self):
         """
         Combine all the features into a single feature matrix. Use the ELGH variant data as a framework such
@@ -451,6 +464,7 @@ class GeneCharacterisationPreprocessor:
             "pli_lof_constraint": self.gnomad_features,
             "mouse_ko_effect": self.mouse_ko_features,
             "ppi_count": self.ppi_features,
+            "common_essentials": self.gene_essentiality_features,
             "am_missense_pathogenicity_score": self.pathogenicity_features
         }
         uniprot_features = {
@@ -471,12 +485,6 @@ class GeneCharacterisationPreprocessor:
         # plot.correlation_heatmap(feature_matrix)
 
         return feature_matrix
-
-    def add_ground_truth(self):
-        """
-        Add the ground truth labels to the feature matrix.
-        """
-        return 0
 
     ################################################ ARCHIVED FEATURES ################################################
 
