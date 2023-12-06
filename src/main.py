@@ -196,16 +196,21 @@ if __name__ == "__main__":
     #  MLP model
     #  [X] Set up checkpointing to save the model with the best validation auroc
     #  [X] Make sure to save hyperparameters per model in wandb or locally
+    #  [X] Hyperparameter tuning
+    #  [X] Find out how many epochs to train for (500)
+    #  [ ] Add gene essentiality feature
+    #  [ ] Check databases Mike for more features
     #  [ ] Hold-out test set (ACMG + randomly sampled negatives)
-    #  [ ] Hyperparameter tuning
-    #  [ ] Find out how many epochs to train for
-    #  [ ] Train final model
+    #  [ ] Frame problem as positive unlabeled learning problem OR
+    #  [ ] Find out a way to label negatives (e.g. intractable targets measured by target localization)
+    #  [ ] Introduce self-destillation
     #  [ ] Set up cross validation
-    #  [ ] Make training data with less class imbalance. Keep val data as is.
+    #  [ ] Make training data different degrees of class imbalance and evaluate. Keep val data as is
+    #  [ ] Train final model
     #  -
     #  XGBoost baseline:
     #  [ ] Set up training loop
     #  [ ] Hyperparameter tuning
-    #  [ ] Train final model
     #  [ ] Set up cross validation
-    #  [ ] Make training data with less class imbalance. Keep val data as is.
+    #  [ ] Make training data different degrees of class imbalance and evaluate. Keep val data as is
+    #  [ ] Train final model
