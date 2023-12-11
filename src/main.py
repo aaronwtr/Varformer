@@ -200,11 +200,13 @@ if __name__ == "__main__":
     #  [X] Find out how many epochs to train for (500)
     #  [X] Add gene essentiality feature
     #  [ ] Add biological process and molecular function features from HPA (think about implications)
-    #  [ ] Add target localization features from HPA
+    #  [ ] Add cellular target localization features from HPA
     #  [ ] Hold-out test set (ACMG + randomly sampled negatives)
     #  [ ] Introduce self-destillation / self-supervision
     #  [ ] Set up cross validation
-    #  [ ] Train final model
+    #  [ ] Train baseline neural network model
+    #  [ ] Add autoencoder (for the variant-level and categorical features)
+    #  [ ] Train model
     #  -
     #  XGBoost baseline:
     #  [ ] Set up training loops
