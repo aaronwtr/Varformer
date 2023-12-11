@@ -52,9 +52,9 @@ class GeneCharacterisationPreprocessor:
             'gnomad_features.pkl': self.gnomad_feature_extractor,
             'mouse_ko_features.pkl': self.mouse_knockout_feature_extractor,
             'gene_essentiality_features.pkl': self.gene_essentiality_feature_extractor,
+            'ppi_features.pkl': self.ppi_feature_extractor,
             'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
-            'alphafold_features.pkl': self.alphafold_feature_extractor,
-            'ppi_features.pkl': self.ppi_feature_extractor
+            'alphafold_features.pkl': self.alphafold_feature_extractor
         }
 
         for feature_file, feature_extractor in feature_extractors.items():
@@ -76,8 +76,6 @@ class GeneCharacterisationPreprocessor:
         # Combine features and target
         self.data = self.make_data()
         print("Data loaded!")
-
-        # TODO: add alphamissense pathogenicity features
 
         # Explore the data
         # plot.umap(self.data)
@@ -588,6 +586,15 @@ class GeneCharacterisationPreprocessor:
                   f"Inserting 0.0.")
             extracted_values[qualifier]['mean'] = 0.0
         return extracted_values
+
+    def __gene_drug_evidence_feature_extractor(self):
+        """
+        DEPRECATED: We can not use the clinical annotations because they explictly encode FDA labels, which forms our
+        positive class. This would lead to data leakage.
+        """
+        raw_data = pd.read_csv(self.config['paths']['GENE_DRUG_EVIDENCE_PATH'], sep='\t')
+        efficacy_data = raw_data[raw_data['type'].str.contains('Efficacy')]
+        toxicity_data = raw_data[raw_data['type'].str.contains('Toxicity')]
 
 
 class __WildtypeLoader:
