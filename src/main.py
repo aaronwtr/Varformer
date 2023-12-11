@@ -198,18 +198,16 @@ if __name__ == "__main__":
     #  [X] Make sure to save hyperparameters per model in wandb or locally
     #  [X] Hyperparameter tuning
     #  [X] Find out how many epochs to train for (500)
-    #  [ ] Add gene essentiality feature
-    #  [ ] Check databases Mike for more features
+    #  [X] Add gene essentiality feature
+    #  [ ] Add biological process and molecular function features from HPA (think about implications)
+    #  [ ] Add target localization features from HPA
     #  [ ] Hold-out test set (ACMG + randomly sampled negatives)
-    #  [ ] Frame problem as positive unlabeled learning problem OR
-    #  [ ] Find out a way to label negatives (e.g. intractable targets measured by target localization)
-    #  [ ] Introduce self-destillation
+    #  [ ] Introduce self-destillation / self-supervision
     #  [ ] Set up cross validation
-    #  [ ] Make training data different degrees of class imbalance and evaluate. Keep val data as is
     #  [ ] Train final model
     #  -
     #  XGBoost baseline:
-    #  [ ] Set up training loop
+    #  [ ] Set up training loops
     #  [ ] Hyperparameter tuning
     #  [ ] Set up cross validation
     #  [ ] Make training data different degrees of class imbalance and evaluate. Keep val data as is
