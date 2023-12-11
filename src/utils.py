@@ -505,3 +505,14 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False
     np.random.seed(seed)
     random.seed(seed)
+
+
+def chunk_open_file(file: str):
+    chunk_size = int(1e06)
+    with open(file, 'rb') as file:
+        while True:
+            chunk = file.read(chunk_size)
+            chunk = chunk.splitlines()
+            print(chunk)
+            if not chunk:
+                break
