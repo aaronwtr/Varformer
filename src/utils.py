@@ -1,6 +1,3 @@
-import numpy as np
-import pandas as pd
-import pickle as pkl
 import os
 import subprocess
 import re
@@ -9,8 +6,13 @@ import glob
 import biorosetta as br
 import warnings
 import requests
-import torch
 import random
+import torch
+
+import torch.nn.functional as F
+import numpy as np
+import pandas as pd
+import pickle as pkl
 
 from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_score, confusion_matrix, roc_curve, auc
 from Bio import Seq, SeqIO, Entrez
@@ -513,6 +515,13 @@ def chunk_open_file(file: str):
         while True:
             chunk = file.read(chunk_size)
             chunk = chunk.splitlines()
-            print(chunk)
             if not chunk:
                 break
+
+
+def one_hot_encode(cat_list: list):
+    vocab = {category: idx for idx, category in enumerate(cat_list)}
+    indices = [vocab[category] for category in cat_list]
+    num_classes = len(cat_list)
+    one_hot_tensor = F.one_hot(torch.tensor(indices), num_classes=num_classes).float()
+    return one_hot_tensor
