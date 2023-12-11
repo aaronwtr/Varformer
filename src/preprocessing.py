@@ -54,7 +54,8 @@ class GeneCharacterisationPreprocessor:
             'gene_essentiality_features.pkl': self.gene_essentiality_feature_extractor,
             'ppi_features.pkl': self.ppi_feature_extractor,
             'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
-            'alphafold_features.pkl': self.alphafold_feature_extractor
+            'alphafold_features.pkl': self.alphafold_feature_extractor,
+            'protein_atlas_features.pkl': self.protein_atlas_feature_extractor
         }
 
         for feature_file, feature_extractor in feature_extractors.items():
@@ -463,7 +464,10 @@ class GeneCharacterisationPreprocessor:
             "mouse_ko_effect": self.mouse_ko_features,
             "ppi_count": self.ppi_features,
             "common_essentials": self.gene_essentiality_features,
-            "am_missense_pathogenicity_score": self.pathogenicity_features
+            "am_missense_pathogenicity_score": self.pathogenicity_features,
+            "biological_processes": self.biological_process_features,
+            "molecular_processes": self.molecular_function_features,
+            "subcellular_locations": self.subcellular_location_features,
         }
         uniprot_features = {
             "af_protein_structure_score": self.alphafold_features["mean"]
@@ -483,6 +487,55 @@ class GeneCharacterisationPreprocessor:
         # plot.correlation_heatmap(feature_matrix)
 
         return feature_matrix
+
+    def protein_atlas_feature_extractor(self):
+        protein_atlas_features = pd.read_csv(self.config['paths']['PROTEIN_ATLAS_FEATURES'], sep='\t')
+        protein_atlas_features = protein_atlas_features[['Ensembl', 'Biological process', 'Molecular function',
+                                                         'Subcellular location']]
+
+        bio_proc = []
+        mol_func = []
+        sub_loc = []
+        for index, row in protein_atlas_features.iterrows():
+            if pd.isna(row['Biological process']):
+                continue
+            bio_proc += [x.strip() for x in row['Biological process'].split(',')]
+
+            if pd.isna(row['Molecular function']):
+                continue
+            mol_func += [x.strip() for x in row['Molecular function'].split(',')]
+
+            if pd.isna(row['Subcellular location']):
+                continue
+            sub_loc += [x.strip() for x in row['Subcellular location'].split(',')]
+
+        bio_proc = list(set(bio_proc))
+        mol_func = list(set(mol_func))
+        sub_loc = list(set(sub_loc))
+
+        one_hot_bio_proc = utils.one_hot_encode(bio_proc)
+        one_hot_mol_func = utils.one_hot_encode(mol_func)
+        one_hot_sub_loc = utils.one_hot_encode(sub_loc)
+
+        bio_proc_dict = {}
+        mol_func_dict = {}
+        sub_loc_dict = {}
+
+        for i, feature in enumerate(bio_proc):
+            bio_proc_dict[feature] = one_hot_bio_proc[i]
+        for i, feature in enumerate(mol_func):
+            mol_func_dict[feature] = one_hot_mol_func[i]
+        for i, feature in enumerate(sub_loc):
+            sub_loc_dict[feature] = one_hot_sub_loc[i]
+
+        protein_atlas_features['Biological process'] = protein_atlas_features['Biological process'].str.split(
+            ',').apply(lambda x: [i.strip() for i in x] if isinstance(x, list) else x)
+        protein_atlas_features['Molecular function'] = protein_atlas_features['Molecular function'].str.split(
+            ',').apply(lambda x: [i.strip() for i in x] if isinstance(x, list) else x)
+        protein_atlas_features['Subcellular location'] = protein_atlas_features['Subcellular location'].str.split(
+            ',').apply(lambda x: [i.strip() for i in x] if isinstance(x, list) else x)
+
+        # todo: wrangle the one hot encoding in format usable for training
 
     ################################################ ARCHIVED FEATURES ################################################
 
