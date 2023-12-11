@@ -6,6 +6,7 @@ paths:
   VP_OUTPUT_PATH: "../data/VariPred/finetuned_output_1/"
   AF_PATH: "../data/alphafold/alphafold_cifs/"
   COMMON_ESSENTIALS_PATH: "../data/depmap/CRISPRInferredCommonEssentials.csv" # 23Q2 release
+  GENE_DRUG_EVIDENCE_PATH: "../data/pharmgkb/clinicalAnnotations/clinical_annotations.tsv"
 
 varipred:
   num_batches: 1000
