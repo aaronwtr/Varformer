@@ -7,12 +7,14 @@ import gc
 import warnings
 import argparse
 import shutil
+import torch
 
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 from sklearn.model_selection import train_test_split
 from Bio import SeqIO
+from torch.nn.functional import one_hot
 
 import utils
 
@@ -43,6 +45,8 @@ class GeneCharacterisationPreprocessor:
         self.ppi_features = None
         self.pathogenicity_features = None
         self.alphafold_features = None
+        self.protein_atlas_features = None
+
 
         # Population genomics data
         self.gh_data = self.load_gh_data()
@@ -465,9 +469,9 @@ class GeneCharacterisationPreprocessor:
             "ppi_count": self.ppi_features,
             "common_essentials": self.gene_essentiality_features,
             "am_missense_pathogenicity_score": self.pathogenicity_features,
-            "biological_processes": self.biological_process_features,
-            "molecular_processes": self.molecular_function_features,
-            "subcellular_locations": self.subcellular_location_features,
+            "biological_processes": self.protein_atlas_features['biological_processes'],
+            "molecular_functions": self.protein_atlas_features['molecular_processes'],
+            "subcellular_locations": self.protein_atlas_features['subcellular_locations']
         }
         uniprot_features = {
             "af_protein_structure_score": self.alphafold_features["mean"]
@@ -482,7 +486,16 @@ class GeneCharacterisationPreprocessor:
 
         feature_matrix = feature_matrix.fillna(0.0)
 
-        utils.count_zeros(feature_matrix)
+        cols = list(feature_matrix.columns)
+        cols_to_move = ['biological_processes', 'molecular_functions', 'subcellular_locations']
+
+        cols = [col for col in cols if col not in cols_to_move]
+
+        cols += cols_to_move
+
+        feature_matrix = feature_matrix[cols]
+
+        # utils.count_zeros(feature_matrix)
 
         # plot.correlation_heatmap(feature_matrix)
 
@@ -496,19 +509,36 @@ class GeneCharacterisationPreprocessor:
         bio_proc = []
         mol_func = []
         sub_loc = []
+
+        bio_proc_lens = []
+        mol_func_lens = []
+        sub_loc_lens = []
         for index, row in protein_atlas_features.iterrows():
             if pd.isna(row['Biological process']):
                 continue
             bio_proc += [x.strip() for x in row['Biological process'].split(',')]
+            bio_proc_len = len(row['Biological process'].split(','))
+            bio_proc_lens.append(bio_proc_len)
 
+        for index, row in protein_atlas_features.iterrows():
             if pd.isna(row['Molecular function']):
                 continue
             mol_func += [x.strip() for x in row['Molecular function'].split(',')]
+            mol_func_len = len(row['Molecular function'].split(','))
+            mol_func_lens.append(mol_func_len)
 
+        for index, row in protein_atlas_features.iterrows():
             if pd.isna(row['Subcellular location']):
                 continue
             sub_loc += [x.strip() for x in row['Subcellular location'].split(',')]
+            sub_loc_len = len(row['Subcellular location'].split(','))
+            sub_loc_lens.append(sub_loc_len)
 
+        max_bio_proc_len = max(bio_proc_lens)
+        max_mol_func_len = max(mol_func_lens)
+        max_sub_loc_len = max(sub_loc_lens)
+
+        # make the entries unique
         bio_proc = list(set(bio_proc))
         mol_func = list(set(mol_func))
         sub_loc = list(set(sub_loc))
@@ -535,7 +565,39 @@ class GeneCharacterisationPreprocessor:
         protein_atlas_features['Subcellular location'] = protein_atlas_features['Subcellular location'].str.split(
             ',').apply(lambda x: [i.strip() for i in x] if isinstance(x, list) else x)
 
-        # todo: wrangle the one hot encoding in format usable for training
+        bio_proc_features = {}
+        mol_func_features = {}
+        sub_loc_features = {}
+
+        for index, row in protein_atlas_features.iterrows():
+            ensg = row['Ensembl']
+            bio_proc = row['Biological process']
+            mol_func = row['Molecular function']
+            sub_loc = row['Subcellular location']
+
+            bio_proc_matrix = np.zeros((max_bio_proc_len, len(one_hot_bio_proc[0])))
+            mol_func_matrix = np.zeros((max_mol_func_len, len(one_hot_mol_func[0])))
+            sub_loc_matrix = np.zeros((max_sub_loc_len, len(one_hot_sub_loc[0])))
+
+            if isinstance(bio_proc, list):
+                for i, feature in enumerate(bio_proc):
+                    bio_proc_matrix[i] = bio_proc_dict[feature]
+            if isinstance(mol_func, list):
+                for i, feature in enumerate(mol_func):
+                    mol_func_matrix[i] = mol_func_dict[feature]
+            if isinstance(sub_loc, list):
+                for i, feature in enumerate(sub_loc):
+                    sub_loc_matrix[i] = sub_loc_dict[feature]
+
+            bio_proc_features[ensg] = bio_proc_matrix
+            mol_func_features[ensg] = mol_func_matrix
+            sub_loc_features[ensg] = sub_loc_matrix
+
+        self.protein_atlas_features = {
+            'biological_processes': bio_proc_features,
+            'molecular_processes': mol_func_features,
+            'subcellular_locations': sub_loc_features
+        }
 
     ################################################ ARCHIVED FEATURES ################################################
 
