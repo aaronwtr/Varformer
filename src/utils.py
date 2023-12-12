@@ -525,3 +525,18 @@ def one_hot_encode(cat_list: list):
     num_classes = len(cat_list)
     one_hot_tensor = F.one_hot(torch.tensor(indices), num_classes=num_classes).float()
     return one_hot_tensor
+
+
+def _convert_to_dense(indices, shape):
+    dense_matrix = np.zeros(shape)
+
+    for index in indices:
+        dense_matrix[index] = 1
+
+    return dense_matrix
+
+
+def apply_convert_to_dense_on_dict(dict_obj, shape):
+    for key, value in dict_obj.items():
+        dict_obj[key] = _convert_to_dense(value, shape)
+    return dict_obj
