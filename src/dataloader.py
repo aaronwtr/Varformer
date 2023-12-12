@@ -11,6 +11,8 @@ class DrugTargetData(Dataset):
 
         x = self.data
         y = self.labels
+        # TODO: fix the bug: map everything to torch.bfloat16. Take care to map categorical features separately from
+        #  numerical features.
         self.features = torch.tensor(x, dtype=torch.float32)
         self.labels = torch.tensor(y, dtype=torch.int64)
 
