@@ -5,6 +5,9 @@ import optuna
 import utils
 
 import lightning as pl
+import pandas as pd
+import numpy as np
+
 
 from pytorch_lightning.loggers import WandbLogger
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
@@ -95,12 +98,18 @@ def training(tag="Training"):
     gene_names_train = train_raw.iloc[:, 0].values
     gene_names_test = test_raw.iloc[:, 0].values
 
-    train = train_raw.iloc[:, 1:-1].values
-    test = test_raw.iloc[:, 1:-1].values
+    train_norm = train_raw.iloc[:, 1:-4].values
+    test_norm = test_raw.iloc[:, 1:-4].values
+
+    train_categ = train_raw.iloc[:, -4:-1].values
+    test_categ = test_raw.iloc[:, -4:-1].values
 
     scaler = MinMaxScaler()
-    train = scaler.fit_transform(train)
-    test = scaler.transform(test)
+    train_norm = scaler.fit_transform(train_norm)
+    test_norm = scaler.transform(test_norm)
+
+    train = np.concatenate((train_norm, train_categ), axis=1)
+    test = np.concatenate((test_norm, test_categ), axis=1)
 
     train = DataLoader(
         DrugTargetData(data=train, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train,
@@ -199,8 +208,8 @@ if __name__ == "__main__":
     #  [X] Hyperparameter tuning
     #  [X] Find out how many epochs to train for (500)
     #  [X] Add gene essentiality feature
-    #  [ ] Add biological process and molecular function features from HPA (think about implications)
-    #  [ ] Add cellular target localization features from HPA
+    #  [X] Add biological process and molecular function features from HPA (think about implications)
+    #  [X] Add cellular target localization features from HPA
     #  [ ] Hold-out test set (ACMG + randomly sampled negatives)
     #  [ ] Introduce self-destillation / self-supervision
     #  [ ] Set up cross validation
