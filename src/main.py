@@ -210,6 +210,7 @@ if __name__ == "__main__":
     #  [X] Add gene essentiality feature
     #  [X] Add biological process and molecular function features from HPA (think about implications)
     #  [X] Add cellular target localization features from HPA
+    #  [ ] Check normalization after introduction of new features
     #  [ ] Hold-out test set (ACMG + randomly sampled negatives)
     #  [ ] Introduce self-destillation / self-supervision
     #  [ ] Set up cross validation
