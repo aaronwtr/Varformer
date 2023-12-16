@@ -48,6 +48,10 @@ class GeneCharacterisationPreprocessor:
         self.alphafold_features = None
         self.protein_atlas_features = None
         self.protein_atlas_feature_names = None
+        self.acmg_genes = None
+
+        # Get ACMG clinically actionable genes
+        self.get_actionable_genes()
 
         # Population genomics data
         self.gh_data = self.load_gh_data()
@@ -202,6 +206,25 @@ class GeneCharacterisationPreprocessor:
             response = requests.get(file_url)
             with open(os.path.join(folder, file_name), "wb") as f:
                 f.write(response.content)
+
+    def get_actionable_genes(self):
+        # ACMG actionable genes
+        columns = ['disease', 'dis_source', 'gene', 'gene_source']
+        acmg_raw = pd.read_csv(self.config['paths']['ACMG_PATH'], sep='\t', names=columns)
+        genes = acmg_raw['gene'].tolist()
+        genes = [gene.split(' ')[0] for gene in genes]
+        ensg_gene_map = utils.map_gene_names(genes, 'symb', 'ensg')
+        ensg_genes = list(ensg_gene_map.values())
+        ensg_genes = list(set(ensg_genes))
+        self.acmg_genes = ensg_genes
+
+        # ClinGen actionable genes
+        act_genes_adult = pd.read_csv(self.config['paths']['ADULT_ACTIONABLE_GENES_PATH'], sep='\t')
+        act_genes_pediatric = pd.read_csv(self.config['paths']['PREDIATRIC_ACTIONABLE_GENES_PATH'], sep='\t')
+        act_genes_adult = act_genes_adult[act_genes_adult['overall'].notna()]
+        act_genes_pediatric = act_genes_pediatric[act_genes_pediatric['overall'].notna()]
+        act_genes = pd.concat([act_genes_adult, act_genes_pediatric])
+
 
     def alphafold_feature_extractor(self):
         """
