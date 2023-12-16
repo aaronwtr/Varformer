@@ -91,25 +91,34 @@ def training(tag="Training"):
     config = config['hyperparameters']
 
     data = gcp.data
+
+    val_genes = gcp.acmg_genes
+
+    # Note: Validation samples are clinically actionable genes as defined by the ACMG (see:
+    # https://www.coriell.org/1/NIGMS/Collections/ACMG-73-Genes). We also have a broader set of clinically actionable
+    # genes - with scores - from ClinGen. These are currently loaded in `get_actionable_genes` in `preprocessing.py`.
+    # These need NOT yet have FDA-approved drugs.
+    val = data[data['ENSG'].isin(val_genes)]
+
     features = data.iloc[:, 1:-1].values
     num_features = features.shape[1]
 
-    train_raw, test_raw = train_test_split(data, test_size=0.2, random_state=42)
+    train_raw, val_raw = train_test_split(data, test_size=0.2, random_state=42)
     gene_names_train = train_raw.iloc[:, 0].values
-    gene_names_test = test_raw.iloc[:, 0].values
+    gene_names_test = val_raw.iloc[:, 0].values
 
-    train_norm = train_raw.iloc[:, 1:-4].values
-    test_norm = test_raw.iloc[:, 1:-4].values
+    train_norm = train_raw.iloc[:, 1:8].values
+    val_norm = val_raw.iloc[:, 1:8].values
 
-    train_categ = train_raw.iloc[:, -4:-1].values
-    test_categ = test_raw.iloc[:, -4:-1].values
+    train_bin = train_raw.iloc[:, 8:].values
+    val_bin = val_raw.iloc[:, 8:].values
 
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
-    test_norm = scaler.transform(test_norm)
+    val_norm = scaler.transform(val_norm)
 
-    train = np.concatenate((train_norm, train_categ), axis=1)
-    test = np.concatenate((test_norm, test_categ), axis=1)
+    train = np.concatenate((train_norm, train_bin), axis=1)
+    val = np.concatenate((val_norm, val_bin), axis=1)
 
     train = DataLoader(
         DrugTargetData(data=train, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train,
@@ -119,8 +128,8 @@ def training(tag="Training"):
         num_workers=int(config['mlp']['num_workers'])
     )
 
-    test = DataLoader(
-        DrugTargetData(data=test, labels=test_raw.iloc[:, -1].values, gene_names=gene_names_test,
+    val = DataLoader(
+        DrugTargetData(data=val, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_test,
                        features=list(features)),
         batch_size=int(config['mlp']['batch_size']),
         shuffle=False
@@ -184,7 +193,7 @@ def training(tag="Training"):
     else:
         raise ValueError("Invalid tag. Pick from 'Training' or 'Tuning'")
 
-    trainer.fit(mlp_lightning, train, test)
+    trainer.fit(mlp_lightning, train, val)
 
     return trainer
 
@@ -210,13 +219,16 @@ if __name__ == "__main__":
     #  [X] Add gene essentiality feature
     #  [X] Add biological process and molecular function features from HPA (think about implications)
     #  [X] Add cellular target localization features from HPA
-    #  [ ] Check normalization after introduction of new features
-    #  [ ] Hold-out test set (ACMG + randomly sampled negatives)
-    #  [ ] Introduce self-destillation / self-supervision
+    #  [X] Check normalization after introduction of new features
+    #  [X] Hold-out test set (ACMG + randomly sampled negatives)
+    #  [ ] Slot features into the feature types for spider plots
     #  [ ] Set up cross validation
     #  [ ] Train baseline neural network model
+    #  [ ] Introduce self-destillation / self-supervision (see SSL cookbook)
     #  [ ] Add autoencoder (for the variant-level and categorical features)
-    #  [ ] Train model
+    #  [ ] Train final models
+    #  [ ] Evaluate on held out test set
+    #  [ ] Add SHAP interpretability
     #  -
     #  XGBoost baseline:
     #  [ ] Set up training loops
@@ -224,3 +236,4 @@ if __name__ == "__main__":
     #  [ ] Set up cross validation
     #  [ ] Make training data different degrees of class imbalance and evaluate. Keep val data as is
     #  [ ] Train final model
+    #  [ ] Add SHAP interpretability
