@@ -224,3 +224,5 @@ plots/hyperparam_optimization/
 src/checkpoints/
 
 data/hpa/
+
+data/acmg/
