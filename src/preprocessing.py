@@ -225,7 +225,6 @@ class GeneCharacterisationPreprocessor:
         act_genes_pediatric = act_genes_pediatric[act_genes_pediatric['overall'].notna()]
         act_genes = pd.concat([act_genes_adult, act_genes_pediatric])
 
-
     def alphafold_feature_extractor(self):
         """
         Extract AlphaFold features from the AlphaFold API. Specifically, we get the average pLDDT score for the proteins
@@ -560,7 +559,7 @@ class GeneCharacterisationPreprocessor:
                                   columns=sub_loc_feature_names)
 
         feature_matrix = feature_matrix.drop(['biological_processes', 'molecular_functions', 'subcellular_locations'],
-                                            axis=1)
+                                             axis=1)
 
         feature_matrix.reset_index(drop=True, inplace=True)
         bio_proc_df.reset_index(drop=True, inplace=True)
