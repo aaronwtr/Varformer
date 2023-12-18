@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 
 from pytorch_lightning.loggers import WandbLogger
+import wandb
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from preprocessing import GeneCharacterisationPreprocessor
 from dataloader import DrugTargetData
@@ -58,30 +59,27 @@ def objective(trial: optuna.trial.Trial) -> float:
 
     config = config['hyperparameters']
 
-    config['mlp']['depth'] = trial.suggest_int('depth', 1, 8, step=1)
+    config['mlp']['depth'] = trial.suggest_int('depth', 2, 52, step=4)
+    config['mlp']['width'] = trial.suggest_int('width', 4, 256, step=16)
     config['mlp']['dropout'] = trial.suggest_float('dropout', 0.0, 0.5, step=0.1)
     config['mlp']['threshold'] = trial.suggest_float('threshold', 0.2, 0.8, step=0.05)
+    config['mlp']['weight_decay'] = trial.suggest_categorical('weight_decay', [0.0, 0.001, 0.01, 0.1])
 
     trainer = training(tag="Tuning")
-
-    # hyperparameters = dict(
-    #     depth=config['mlp']['depth'],
-    #     lr=config['mlp']['lr_start'],
-    #     batch_size=config['mlp']['batch_size'],
-    #     optimizer=config['mlp']['optimizer'],
-    #     epochs=config['mlp']['epochs'],
-    #     dropout=config['mlp']['dropout'],
-    #     width=config['mlp']['width'],
-    #     threshold=config['mlp']['threshold']
-    # )
-    #
-    # trainer.logger.log_hyperparams(hyperparameters)
 
     return trainer.callback_metrics["val_auroc"].item()
 
 
-def initialise_model(train_norm, val_norm, train_bin, val_bin, train_raw, val_raw, gene_names_train, gene_names_test,
-                     features, num_features, config):
+def initialise_model(train_raw, val_raw, features, num_features, config):
+    gene_names_train = train_raw.iloc[:, 0].values
+    gene_names_test = val_raw.iloc[:, 0].values
+
+    train_norm = train_raw.iloc[:, 1:8].values
+    val_norm = val_raw.iloc[:, 1:8].values
+
+    train_bin = train_raw.iloc[:, 8:-1].values
+    val_bin = val_raw.iloc[:, 8:-1].values
+
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
     val_norm = scaler.transform(val_norm)
@@ -123,7 +121,8 @@ def initialise_model(train_norm, val_norm, train_bin, val_bin, train_raw, val_ra
         optimizer=config['mlp']['optimizer'],
         epochs=config['mlp']['epochs'],
         dropout=config['mlp']['dropout'],
-        width=config['mlp']['width']
+        width=config['mlp']['width'],
+        weight_decay=config['mlp']['weight_decay'],
     )
 
     return mlp_lightning, train, val, hyperparameters, accelerator
@@ -152,19 +151,9 @@ def training(tag="Training"):
     num_features = features.shape[1]
 
     train_raw, val_raw = train_test_split(data, test_size=0.2, random_state=42)
-    gene_names_train = train_raw.iloc[:, 0].values
-    gene_names_test = val_raw.iloc[:, 0].values
 
-    train_norm = train_raw.iloc[:, 1:8].values
-    val_norm = val_raw.iloc[:, 1:8].values
-
-    train_bin = train_raw.iloc[:, 8:-1].values
-    val_bin = val_raw.iloc[:, 8:-1].values
-
-    mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_norm, val_norm, train_bin, val_bin,
-                                                                               train_raw, val_raw, gene_names_train,
-                                                                               gene_names_test, features, num_features,
-                                                                               config)
+    mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, features,
+                                                                               num_features, config)
 
     if tag == "Training":
         wandb_logger = WandbLogger(
@@ -207,7 +196,7 @@ def training(tag="Training"):
     return trainer
 
 
-def kfold_training(tag="Training"):
+def kfold_training():
     with open("config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
 
@@ -232,57 +221,36 @@ def kfold_training(tag="Training"):
         train_raw = data.iloc[train_indices, :]
         val_raw = data.iloc[val_indices, :]
 
-        gene_names_train = train_raw.iloc[:, 0].values
-        gene_names_test = val_raw.iloc[:, 0].values
+        mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, features,
+                                                                                   num_features, config)
 
-        train_norm = train_raw.iloc[:, 1:8].values
-        val_norm = val_raw.iloc[:, 1:8].values
+        wandb.init(
+            project="drug-target-prediction",
+            tags=[f"experiment2-fold{fold + 1}"],
+            config=hyperparameters,
+            group="experiment2"
+        )
 
-        train_bin = train_raw.iloc[:, 8:].values
-        val_bin = val_raw.iloc[:, 8:].values
+        run_name = wandb.run.name
+        checkpoint_callback = ModelCheckpoint(
+            monitor='epoch',
+            dirpath='checkpoints',
+            filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}-' + f'fold{fold}',
+            save_top_k=1,
+            mode='max',
+        )
 
-        mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_norm, val_norm, train_bin,
-                                                                                   val_bin, train_raw, val_raw,
-                                                                                   gene_names_train, gene_names_test,
-                                                                                   features, num_features, config)
-
-        if tag == "Training":
-            wandb_logger = WandbLogger(
-                project="drug-target-prediction",
-                tags=[f"depth{config['mlp']['depth']}-nn"],
-                log_model="all",
-                group="experiment-1"
-            )
-            wandb_logger.log_hyperparams(hyperparameters)
-            run_name = wandb_logger.experiment.name
-            checkpoint_callback = ModelCheckpoint(
-                monitor='epoch',
-                dirpath='checkpoints',
-                filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}',
-                save_top_k=1,
-                mode='max',
-            )
-
-            utils.set_seed(42)
-            trainer = pl.Trainer(
-                max_epochs=int(config['mlp']['epochs']),
-                accelerator=accelerator,
-                enable_progress_bar=True,
-                log_every_n_steps=1,
-                logger=wandb_logger,
-                callbacks=[checkpoint_callback]
-            )
-        elif tag == "Tuning":
-            trainer = pl.Trainer(
-                max_epochs=int(config['mlp']['epochs']),
-                accelerator=accelerator,
-                enable_progress_bar=False,
-                logger=False,
-                enable_checkpointing=False
-            )
-        else:
-            raise ValueError("Invalid tag. Pick from 'Training' or 'Tuning'")
+        utils.set_seed(42)
+        trainer = pl.Trainer(
+            max_epochs=int(config['mlp']['epochs']),
+            accelerator=accelerator,
+            enable_progress_bar=True,
+            log_every_n_steps=1,
+            logger=WandbLogger(wandb.run),
+            callbacks=[checkpoint_callback]
+        )
 
         trainer.fit(mlp_lightning, train, val)
 
-        return trainer
+        # Close the W&B run for the current fold
+        wandb.finish()
