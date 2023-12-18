@@ -20,10 +20,11 @@ hyperparameters:
     optimizer: Adam
     lr_start: 1e-3
     lr_end: 1e-3
-    epochs: 500
+    epochs: 100
     width: 3
     batch_size: 512
     depth: 2
     threshold: 0.5
     dropout: 0.0
     num_workers: 0
+    weight_decay: 0.1
