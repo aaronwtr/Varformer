@@ -83,14 +83,18 @@ class LightningMLP(pl.LightningModule):
         self.log('val_spearman', self.model.train_spearman(probas, labels.float()))
 
     def configure_optimizers(self):
+        weight_decay = float(self.config.get('weight_decay', 0))
         if self.config['optimizer'] == "Adam":
-            optimizer = torch.optim.Adam(self.parameters(), lr=float(self.config['lr_start']))
+            optimizer = torch.optim.Adam(self.parameters(), lr=float(self.config['lr_start']),
+                                         weight_decay=weight_decay)
         elif self.config['optimizer'] == "SGD":
-            optimizer = torch.optim.SGD(self.parameters(), lr=float(self.config['lr_start']))
+            optimizer = torch.optim.SGD(self.parameters(), lr=float(self.config['lr_start']), weight_decay=weight_decay)
         elif self.config['optimizer'] == "RMSprop":
-            optimizer = torch.optim.RMSprop(self.parameters(), lr=float(self.config['lr_start']))
+            optimizer = torch.optim.RMSprop(self.parameters(), lr=float(self.config['lr_start']),
+                                            weight_decay=weight_decay)
         elif self.config['optimizer'] == "AdamW":
-            optimizer = torch.optim.AdamW(self.parameters(), lr=float(self.config['lr_start']))
+            optimizer = torch.optim.AdamW(self.parameters(), lr=float(self.config['lr_start']),
+                                          weight_decay=weight_decay)
         else:
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
 
