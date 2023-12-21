@@ -11,6 +11,7 @@ paths:
   ACMG_PATH: "../data/acmg/clinact_genes.txt"
   ADULT_ACTIONABLE_GENES_PATH: "../data/acmg/ACI-overview-adult.tsv"
   PREDIATRIC_ACTIONABLE_GENES_PATH: "../data/acmg/ACI-overview-pediatric.tsv"
+  BINDING_AFFINITY_PATH: "../data/bindingdb/BindingDB_All_202312.tsv"
 
 varipred:
   num_batches: 1000
@@ -21,10 +22,10 @@ hyperparameters:
     lr_start: 1e-3
     lr_end: 1e-3
     epochs: 100
-    width: 3
+    width: 64
     batch_size: 512
-    depth: 2
-    threshold: 0.5
-    dropout: 0.0
+    depth: 16
+    threshold: 0.6
+    dropout: 0.5
     num_workers: 0
-    weight_decay: 0.1
+    weight_decay: 0.01
