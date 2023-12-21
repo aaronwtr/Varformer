@@ -46,8 +46,10 @@ class GeneCharacterisationPreprocessor:
         self.ppi_features = None
         self.pathogenicity_features = None
         self.alphafold_features = None
+        self.binding_affinity_features = None
         self.protein_atlas_features = None
         self.protein_atlas_feature_names = None
+
         self.acmg_genes = None
 
         # Get ACMG clinically actionable genes
@@ -67,6 +69,7 @@ class GeneCharacterisationPreprocessor:
             'gene_essentiality_features.pkl': self.gene_essentiality_feature_extractor,
             'ppi_features.pkl': self.ppi_feature_extractor,
             'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
+            'binding_affinity_features.pkl': self.binding_affinity_feature_extractor,
             'alphafold_features.pkl': self.alphafold_feature_extractor,
             'protein_atlas_features.pkl': self.protein_atlas_feature_extractor
         }
@@ -856,6 +859,17 @@ class GeneCharacterisationPreprocessor:
         raw_data = pd.read_csv(self.config['paths']['GENE_DRUG_EVIDENCE_PATH'], sep='\t')
         efficacy_data = raw_data[raw_data['type'].str.contains('Efficacy')]
         toxicity_data = raw_data[raw_data['type'].str.contains('Toxicity')]
+
+    def __binding_affinity_feature_extractor(self):
+        """
+        DEPRECATED: Data is too sparse. Either K_i or IC50 is present, not both and either is to sparse to use on its
+        own.
+        """
+        binding_affinity_data = pd.read_csv(self.config['paths']['BINDING_AFFINITY_PATH'], on_bad_lines='warn',
+                                            sep='\t')
+        binding_affinity_human = binding_affinity_data[binding_affinity_data[('Target Source Organism According to '
+                                                                              'Curator or DataSource')] == ('Homo '
+                                                                                                            'sapiens')]
 
 
 class __WildtypeLoader:
