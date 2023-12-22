@@ -226,3 +226,5 @@ src/checkpoints/
 data/hpa/
 
 data/acmg/
+
+data/bindingdb/
