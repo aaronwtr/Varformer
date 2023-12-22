@@ -51,9 +51,10 @@ class GeneCharacterisationPreprocessor:
         self.protein_atlas_feature_names = None
 
         self.acmg_genes = None
+        self.pfam_genes = None
 
-        # Get ACMG clinically actionable genes
-        self.get_actionable_genes()
+        # Get ACMG clinically actionable genes and PFAM genes
+        self.get_holdout_genes()
 
         # Population genomics data
         self.gh_data = self.load_gh_data()
@@ -210,16 +211,30 @@ class GeneCharacterisationPreprocessor:
             with open(os.path.join(folder, file_name), "wb") as f:
                 f.write(response.content)
 
-    def get_actionable_genes(self):
+    def get_holdout_genes(self):
         # ACMG actionable genes
-        columns = ['disease', 'dis_source', 'gene', 'gene_source']
-        acmg_raw = pd.read_csv(self.config['paths']['ACMG_PATH'], sep='\t', names=columns)
+        columns = ['disease', 'gene']
+        acmg_raw = pd.read_excel(self.config['paths']['ACMG_CLINACT_PATH'], sheet_name=0)
+        acmg_raw.columns = columns
+        acmg_raw['gene'] = acmg_raw['gene'].apply(lambda x: x.replace(u'\xa0', u' '))
         genes = acmg_raw['gene'].tolist()
         genes = [gene.split(' ')[0] for gene in genes]
         ensg_gene_map = utils.map_gene_names(genes, 'symb', 'ensg')
         ensg_genes = list(ensg_gene_map.values())
         ensg_genes = list(set(ensg_genes))
         self.acmg_genes = ensg_genes
+
+        # Pfam genes
+        pfam_raw = pd.read_excel(self.config['paths']['ACMG_CLINACT_PATH'], sheet_name=1)
+        ensg_pfam = pfam_raw['ENSG'].tolist()
+        self.pfam_genes = ensg_pfam
+
+        # Check held out test set for common essential genes
+        common_essentials = pd.read_csv(self.config['paths']['COMMON_ESSENTIALS_PATH'])
+        common_essentials = common_essentials.rename(columns={common_essentials.columns[0]: 'gene_name'})
+        common_essentials['gene_name'] = common_essentials['gene_name'].str.split(' ').str[0]
+        common_essentials_acmg = common_essentials[common_essentials['gene_name'].isin(ensg_genes)]
+        common_essentials_pfam = common_essentials[common_essentials['gene_name'].isin(ensg_pfam)]
 
         # ClinGen actionable genes
         act_genes_adult = pd.read_csv(self.config['paths']['ADULT_ACTIONABLE_GENES_PATH'], sep='\t')
