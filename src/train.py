@@ -14,6 +14,7 @@ from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from preprocessing import GeneCharacterisationPreprocessor
 from dataloader import DrugTargetData
 from model import PyTorchMLP, LightningMLP
+from puupl import training as puupl_training
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import MinMaxScaler
@@ -155,7 +156,7 @@ def training(tag="Training"):
     mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, features,
                                                                                num_features, config)
 
-    if tag == "Training":
+    if tag == "Standard Training":
         wandb_logger = WandbLogger(
             project="drug-target-prediction",
             tags=[f"depth{config['mlp']['depth']}-nn"],
@@ -180,6 +181,8 @@ def training(tag="Training"):
             logger=wandb_logger,
             callbacks=[checkpoint_callback]
         )
+    elif tag == "PUUPL Training":
+        puupl_training(train=train, val=val, config=config)
     elif tag == "Tuning":
         trainer = pl.Trainer(
             max_epochs=int(config['mlp']['epochs']),
@@ -189,7 +192,7 @@ def training(tag="Training"):
             enable_checkpointing=False
         )
     else:
-        raise ValueError("Invalid tag. Pick from 'Training' or 'Tuning'")
+        raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
 
     trainer.fit(mlp_lightning, train, val)
 
