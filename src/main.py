@@ -3,7 +3,9 @@ import train
 
 def main(mode="training"):
     if mode == "training":
-        train.training()
+        train.training(tag="Standard Training")
+    elif mode == "puupl":
+        train.training(tag="PUUPL Training")
     elif mode == "tuning":
         train.tuning()
     elif mode == "kfold_training":
@@ -13,7 +15,7 @@ def main(mode="training"):
 
 
 if __name__ == "__main__":
-    main(mode="training")
+    main(mode="puupl")
 
     # TODO:
     #  MLP model
@@ -29,9 +31,9 @@ if __name__ == "__main__":
     #  [X] Set up cross validation
     #  [X] Hold out golden standard 32 drug targets
     #  [X] Check overlap between golden standard and ACMG genes
-    #  [ ] Check hold out drug targets for common essential genes
-    #  [ ] Train baseline neural network model
+    #  [X] Check hold out drug targets for common essential genes
     #  [ ] Setup PUL (https://arxiv.org/abs/2201.13192)
+    #  [ ] Train baseline neural network model
     #  [ ] Train final models
     #  [ ] Evaluate on held out test set
     #  [ ] Add SHAP interpretability
