@@ -70,7 +70,6 @@ class GeneCharacterisationPreprocessor:
             'gene_essentiality_features.pkl': self.gene_essentiality_feature_extractor,
             'ppi_features.pkl': self.ppi_feature_extractor,
             'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
-            'binding_affinity_features.pkl': self.binding_affinity_feature_extractor,
             'alphafold_features.pkl': self.alphafold_feature_extractor,
             'protein_atlas_features.pkl': self.protein_atlas_feature_extractor
         }
