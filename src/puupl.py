@@ -1,9 +1,11 @@
 import torch
+import random
 
 import torch.nn.functional as F
 
 import model as m
 import loss as l
+from utils import random_seed_context
 
 
 def training(train, val, config):
@@ -11,16 +13,19 @@ def training(train, val, config):
     U = torch.tensor([i for i, labels in enumerate(train.dataset.labels) if labels == 0])
     L = torch.tensor([])
 
-    model = m.PyTorchMLP(config=config, num_features=train.dataset.data.shape[1])
-    # TODO: Fix random weight initialization (theta_0 - see how they handle this in paper)
-    model_weights = model.state_dict()
-
     K = 2
     T = 1000
     t_l = 0.05
     t_u = 0.35
 
     models = [m.PyTorchMLP(config=config, num_features=train.dataset.data.shape[1]) for _ in range(K)]
+
+    seeds = generate_seeds(K)
+    weights = []
+    for i, model in enumerate(models):
+        weight = model.initialise_weights(seed=seeds[i])
+        weights.append(weight)
+
     optimizers = [torch.optim.Adam(model.parameters()) for model in models]
     criterion = l.PseudoLabelLoss()
 
@@ -29,10 +34,9 @@ def training(train, val, config):
     pseudo_labels = []
 
     while not converged:
-        for model in models:
-            model.load_state_dict(model_weights)
-
-        for i in range(K):
+        for i, model in enumerate(models):
+            model.load_state_dict(weights[i])
+            # TODO: Debug this. We will need separate functions to set up training
             train_model(models[i], optimizers[i], train, criterion, P, U, L, pseudo_labels)
 
         val_losses = update_ensemble_weights(models, val, criterion, val_losses)
@@ -60,6 +64,14 @@ def train_model(model, optimizer, train, criterion, P, U, L, pseudo_labels):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+
+def generate_seeds(num_seeds):
+    seed_value = 42
+    with random_seed_context(seed_value):
+        # do this to make sure the seed is only set locally
+        seed_list = [random.randint(1, 1000) for _ in range(num_seeds)]
+    return seed_list
 
 
 def has_converged(val_losses, threshold=0.001):
