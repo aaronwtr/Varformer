@@ -12,7 +12,7 @@ from sklearn.model_selection import train_test_split
 
 class PyTorchMLP(torch.nn.Module):
     def __init__(self, config, num_features):
-        super().__init__()
+        super(PyTorchMLP, self).__init__()
         self.config = config['mlp']
         self.layers = []
         layer_sizes = [num_features] + [num_features // 2] * int(self.config['depth'])
@@ -29,12 +29,7 @@ class PyTorchMLP(torch.nn.Module):
 
         self.layers = torch.nn.Sequential(*self.layers)
 
-        # Xavier initialization
-        for m in self.modules():
-            if isinstance(m, torch.nn.Linear):
-                torch.nn.init.xavier_uniform_(m.weight)
-                if m.bias is not None:
-                    torch.nn.init.zeros_(m.bias)
+        self.init_weights = self.initialise_weights()
 
         self.train_acc = Accuracy(task="binary")
         self.val_acc = Accuracy(task="binary")
@@ -42,6 +37,24 @@ class PyTorchMLP(torch.nn.Module):
         self.val_auroc = AUROC(task="binary")
         self.train_spearman = SpearmanCorrCoef()
         self.val_spearman = SpearmanCorrCoef()
+
+    def initialise_weights(self, seed=None):
+        if seed is not None:
+            torch.manual_seed(seed)
+        initial_weights = {}
+        for name, module in self.named_modules():
+            if isinstance(module, torch.nn.Linear) or isinstance(module, torch.nn.BatchNorm1d):
+                torch.nn.init.xavier_uniform_(module.weight)
+                initial_weights[name + ".weight"] = module.weight.detach().clone()
+                if module.bias is not None:
+                    torch.nn.init.zeros_(module.bias)
+                    initial_weights[name + ".bias"] = module.bias.detach().clone()
+                if isinstance(module, torch.nn.BatchNorm1d):
+                    module.running_mean.fill_(0)
+                    module.running_var.fill_(1)
+                    initial_weights[name + ".running_mean"] = module.running_mean.detach().clone()
+                    initial_weights[name + ".running_var"] = module.running_var.detach().clone()
+        return initial_weights
 
     def forward(self, x):
         logits = self.layers(x).squeeze()
