@@ -18,6 +18,19 @@ from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_sc
 from Bio import Seq, SeqIO, Entrez
 
 
+class random_seed_context:
+    def __init__(self, seed):
+        self.seed = seed
+        self.state = None
+
+    def __enter__(self):
+        self.state = random.getstate()
+        random.seed(self.seed)
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        random.setstate(self.state)
+
+
 def count_scaling(counts):
     """
     Implements \(x' = \frac{x - x_{min}}{x_{max} - x_{min}}\).
