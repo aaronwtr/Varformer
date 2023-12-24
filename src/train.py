@@ -153,8 +153,14 @@ def training(tag="Training"):
 
     train_raw, val_raw = train_test_split(data, test_size=0.2, random_state=42)
 
-    mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, features,
-                                                                               num_features, config)
+    if tag == "Standard Training" or tag == "Tuning":
+        mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, features,
+                                                                                   num_features, config)
+    elif tag == "PUUPL Training":
+        # TODO: Only load train and val data, hyperparams and accelerator here
+        pass
+    else:
+        raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
 
     if tag == "Standard Training":
         wandb_logger = WandbLogger(
