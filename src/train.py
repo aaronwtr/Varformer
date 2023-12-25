@@ -71,7 +71,7 @@ def objective(trial: optuna.trial.Trial) -> float:
     return trainer.callback_metrics["val_auroc"].item()
 
 
-def initialise_model(train_raw, val_raw, features, num_features, config):
+def normalise_data(train_raw, val_raw, features, config):
     gene_names_train = train_raw.iloc[:, 0].values
     gene_names_test = val_raw.iloc[:, 0].values
 
@@ -103,6 +103,12 @@ def initialise_model(train_raw, val_raw, features, num_features, config):
         shuffle=False
     )
 
+    return train, val
+
+
+def initialise_model(train_raw, val_raw, features, num_features, config):
+    train, val = normalise_data(train_raw, val_raw, features, config)
+
     train_imbalance = 1 / float(train.dataset.label_imbalance().item())  # calculate inverse class frequency
 
     mlp_pytorch = PyTorchMLP(config=config, num_features=num_features)
@@ -129,6 +135,7 @@ def initialise_model(train_raw, val_raw, features, num_features, config):
     return mlp_lightning, train, val, hyperparameters, accelerator
 
 
+# noinspection PyUnboundLocalVariable
 def training(tag="Training"):
     with open("config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
@@ -157,8 +164,7 @@ def training(tag="Training"):
         mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, features,
                                                                                    num_features, config)
     elif tag == "PUUPL Training":
-        # TODO: Only load train and val data, hyperparams and accelerator here
-        pass
+        train, val = normalise_data(train_raw, val_raw, features, config)
     else:
         raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
 
@@ -187,6 +193,9 @@ def training(tag="Training"):
             logger=wandb_logger,
             callbacks=[checkpoint_callback]
         )
+        trainer.fit(mlp_lightning, train, val)
+
+        return trainer
     elif tag == "PUUPL Training":
         puupl_training(train=train, val=val, config=config)
     elif tag == "Tuning":
@@ -197,12 +206,12 @@ def training(tag="Training"):
             logger=False,
             enable_checkpointing=False
         )
+
+        trainer.fit(mlp_lightning, train, val)
+
+        return trainer
     else:
         raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
-
-    trainer.fit(mlp_lightning, train, val)
-
-    return trainer
 
 
 def kfold_training():
