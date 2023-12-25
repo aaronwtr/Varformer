@@ -26,18 +26,19 @@ class PseudoLabelLoss(nn.Module):
         """
         return 1 / len(S) * torch.sum(1 / (1 + torch.exp(y * S)))
 
-    def forward(self):
-        """
-        :param preds: the predicted probabilities from the model
-        :param P: the positive example indices
-        :param U: the unlabeled example indices
-        :param pseudo_labels: the pseudo labels in L
-        :param lambd: loss mixing parameter
-        :param pi: prior probability of positive samples (treated as hyperparam)
-        """
-        pseudo_preds = self.preds[self.L]
+    def forward(self, outputs, P, U, L, pseudo_labels):
+        self.output = outputs
+        self.P = P
+        self.U = U
+        self.L = L
+        self.pseudo_labels = pseudo_labels
 
-        L_L = self.bce_loss(pseudo_preds, self.pseudo_labels)
+        # check if self.L is empty
+        if len(self.L) == 0:
+            L_L = 0
+        else:
+            pseudo_preds = self.output[self.L]
+            L_L = self.bce_loss(pseudo_preds, self.pseudo_labels)
 
         L_P = self.exp_sigmoid_loss(self.preds[self.P], 1)
         L_U = self.exp_sigmoid_loss(self.preds[self.U], -1)
