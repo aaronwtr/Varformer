@@ -36,7 +36,6 @@ def training(train, val, config):
     while not converged:
         for i, model in enumerate(models):
             model.load_state_dict(weights[i])
-            # TODO: Debug this. We will need separate functions to set up training
             train_model(models[i], optimizers[i], train, criterion, P, U, L, pseudo_labels)
 
         val_losses = update_ensemble_weights(models, val, criterion, val_losses)
