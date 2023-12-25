@@ -43,17 +43,22 @@ class PyTorchMLP(torch.nn.Module):
             torch.manual_seed(seed)
         initial_weights = {}
         for name, module in self.named_modules():
-            if isinstance(module, torch.nn.Linear) or isinstance(module, torch.nn.BatchNorm1d):
+            if isinstance(module, torch.nn.Linear):
                 torch.nn.init.xavier_uniform_(module.weight)
                 initial_weights[name + ".weight"] = module.weight.detach().clone()
                 if module.bias is not None:
                     torch.nn.init.zeros_(module.bias)
                     initial_weights[name + ".bias"] = module.bias.detach().clone()
-                if isinstance(module, torch.nn.BatchNorm1d):
-                    module.running_mean.fill_(0)
-                    module.running_var.fill_(1)
-                    initial_weights[name + ".running_mean"] = module.running_mean.detach().clone()
-                    initial_weights[name + ".running_var"] = module.running_var.detach().clone()
+            elif isinstance(module, torch.nn.BatchNorm1d):
+                torch.nn.init.constant_(module.weight, 1)
+                initial_weights[name + ".weight"] = module.weight.detach().clone()
+                if module.bias is not None:
+                    torch.nn.init.constant_(module.bias, 0)
+                    initial_weights[name + ".bias"] = module.bias.detach().clone()
+                module.running_mean.fill_(0)
+                module.running_var.fill_(1)
+                initial_weights[name + ".running_mean"] = module.running_mean.detach().clone()
+                initial_weights[name + ".running_var"] = module.running_var.detach().clone()
         return initial_weights
 
     def forward(self, x):
