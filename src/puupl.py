@@ -9,6 +9,9 @@ from utils import random_seed_context
 
 
 def training(train, val, config):
+    # TODO:
+    #  - 1: Define P, U, L on batch level. Then we need a way to point batch level to the global level.
+    #  - 2: Try to run training without batches.
     P = torch.tensor([i for i, labels in enumerate(train.dataset.labels) if labels == 1])
     U = torch.tensor([i for i, labels in enumerate(train.dataset.labels) if labels == 0])
     L = torch.tensor([])
@@ -38,9 +41,10 @@ def training(train, val, config):
             model.load_state_dict(weights[i])
             train_model(models[i], optimizers[i], train, criterion, P, U, L, pseudo_labels)
 
-        val_losses = update_ensemble_weights(models, val, criterion, val_losses)
+        val_losses = update_ensemble_weights(models, val, criterion, val_losses, P, U, L)
 
-        new_labeled_examples, new_unlabeled_examples, pseudo_labels = pseudo_label(models, train[U], t_l, t_u, T)
+        unlabelled_data = train.dataset.features[U]
+        new_labeled_examples, new_unlabeled_examples, pseudo_labels = pseudo_label(models, unlabelled_data, t_l, t_u, T)
 
         L = torch.cat((L, new_labeled_examples), dim=0)
         U = new_unlabeled_examples
@@ -52,17 +56,54 @@ def training(train, val, config):
     return models
 
 
+def batching_labels(data, batch_idx, P, U, L):
+    P_batch = []
+    U_batch = []
+    L_batch = []
+    for i in range(len(data)):
+        if i * (batch_idx + 1) in P:
+            P_batch.append(i)
+        elif i * (batch_idx + 1) in U:
+            U_batch.append(i)
+        elif i * (batch_idx + 1) in L:
+            L_batch.append(i)
+    P_batch = torch.tensor(P_batch)
+    U_batch = torch.tensor(U_batch)
+    L_batch = torch.tensor(L_batch)
+    return P_batch, U_batch, L_batch
+
+
 def train_model(model, optimizer, train, criterion, P, U, L, pseudo_labels):
     model.train()
+    total_loss = 0.0
+    total_acc = 0.0
+    total_auroc = 0.0
+    total_spearman = 0.0
+    num_batches = 0
 
     for batch_idx, (data, labels) in enumerate(train):
-        outputs = model(data)
-        loss = criterion(outputs, P=P, U=U, L=L, pseudo_labels=pseudo_labels)
+        P_batch, U_batch, L_batch = batching_labels(data, batch_idx, P, U, L)
+
+        logits, probas, bin_preds = model(data)
+        loss = criterion(logits, P=P_batch, U=U_batch, L=L_batch, pseudo_labels=pseudo_labels)
 
         # Backward pass
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+        total_loss += loss.item()
+        total_acc += model.acc(bin_preds, labels)
+        total_auroc += model.auroc(bin_preds, labels)
+        total_spearman += model.spearman(probas, labels.float())
+        num_batches += 1
+
+    loss = total_loss / num_batches
+    acc = total_acc / num_batches
+    auroc = total_auroc / num_batches
+    spearman = total_spearman / num_batches
+
+    return loss, acc, auroc, spearman
 
 
 def generate_seeds(num_seeds):
@@ -86,7 +127,6 @@ def has_converged(val_losses, threshold=0.001):
 
 
 def pseudo_label(models, X_U, t_l, t_u, T):
-    # Get predictions
     logits = [model(X_U) for model in models]
     probs = [F.softmax(logit, dim=1)[:, 1] for logit in logits]
 
@@ -115,15 +155,15 @@ def pseudo_label(models, X_U, t_l, t_u, T):
 
     soft_labels = probs_avg[L_new]
 
-    unreliable_indices = [i for i in L if epistemic[i] >= t_u]
+    unreliable_indices = [i for i in L_new if epistemic[i] >= t_u]
     U_new = torch.tensor(unreliable_indices)
 
     return L_new, U_new, soft_labels
 
 
-def update_ensemble_weights(models, val, criterion, val_losses):
+def update_ensemble_weights(models, val, criterion, val_losses, P, U, L):
     for model in models:
-        val_loss = evaluate(model, val, criterion)
+        val_loss = evaluate(model, val, criterion, P, U, L)
         val_losses.append(val_loss)
 
     best_model_idx = val_losses.index(min(val_losses))
@@ -136,32 +176,32 @@ def update_ensemble_weights(models, val, criterion, val_losses):
         return val_losses
 
 
-def evaluate(model, val, criterion):
+def evaluate(model, val, criterion, P, U, L):
     model.eval()
 
     with torch.no_grad():
         total_loss = 0.0
-        correct = 0
-        total = 0
+        total_acc = 0.0
+        total_auroc = 0.0
+        total_spearman = 0.0
+        num_batches = 0
 
         for batch_idx, (data, labels) in enumerate(val):
-            # Forward pass
-            outputs = model(data)
+            P_batch, U_batch, L_batch = batching_labels(data, batch_idx, P, U, L)
+            logits, probas, bin_preds = model(data)
 
-            # Calculate the loss
-            loss = criterion(outputs, labels)
+            loss = criterion(logits, P=P_batch, U=U_batch, L=L_batch, pseudo_labels=labels)
 
-            # Calculate the accuracy
-            predicted = outputs.argmax(dim=1)
-            correct += (predicted == labels).sum().item()
-            total += labels.size(0)
-
-            # TODO: Add all the other metrics here as well
-
-            # Update the total loss and accuracy
             total_loss += loss.item()
+            total_loss += loss.item()
+            total_acc += model.acc(bin_preds, labels)
+            total_auroc += model.auroc(bin_preds, labels)
+            total_spearman += model.spearman(probas, labels.float())
+            num_batches += 1
 
-    loss = total_loss / len(val)
-    accuracy = correct / total
+    loss = total_loss / num_batches
+    acc = total_acc / num_batches
+    auroc = total_auroc / num_batches
+    spearman = total_spearman / num_batches
 
-    return loss, accuracy
+    return loss, acc, auroc, spearman
