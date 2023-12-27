@@ -31,12 +31,9 @@ class PyTorchMLP(torch.nn.Module):
 
         self.init_weights = self.initialise_weights()
 
-        self.train_acc = Accuracy(task="binary")
-        self.val_acc = Accuracy(task="binary")
-        self.train_auroc = AUROC(task="binary")
-        self.val_auroc = AUROC(task="binary")
-        self.train_spearman = SpearmanCorrCoef()
-        self.val_spearman = SpearmanCorrCoef()
+        self.acc= Accuracy(task="binary")
+        self.auroc = AUROC(task="binary")
+        self.spearman = SpearmanCorrCoef()
 
     def initialise_weights(self, seed=None):
         if seed is not None:
@@ -86,9 +83,9 @@ class LightningMLP(pl.LightningModule):
                                     device=self.device)
         loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
         self.log('train_loss', loss)
-        self.log('train_acc', self.model.train_acc(bin_preds, labels))
-        self.log('train_auroc', self.model.train_auroc(bin_preds, labels))
-        self.log('train_spearman', self.model.train_spearman(probas, labels.float()))
+        self.log('train_acc', self.model.acc(bin_preds, labels))
+        self.log('train_auroc', self.model.auroc(bin_preds, labels))
+        self.log('train_spearman', self.model.spearman(probas, labels.float()))
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -96,9 +93,9 @@ class LightningMLP(pl.LightningModule):
         logits, probas, bin_preds = self(features)
         loss = F.binary_cross_entropy_with_logits(logits, labels.float())
         self.log('val_loss', loss)
-        self.log('val_acc', self.model.train_acc(bin_preds, labels))
-        self.log('val_auroc', self.model.train_auroc(bin_preds, labels))
-        self.log('val_spearman', self.model.train_spearman(probas, labels.float()))
+        self.log('val_acc', self.model.acc(bin_preds, labels))
+        self.log('val_auroc', self.model.auroc(bin_preds, labels))
+        self.log('val_spearman', self.model.spearmann(probas, labels.float()))
 
     def configure_optimizers(self):
         weight_decay = float(self.config.get('weight_decay', 0))
