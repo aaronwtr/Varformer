@@ -127,15 +127,14 @@ def has_converged(val_losses, threshold=0.001):
 
 
 def pseudo_label(models, X_U, t_l, t_u, T):
-    logits = [model(X_U) for model in models]
-    probs = [F.softmax(logit, dim=1)[:, 1] for logit in logits]
+    logits = [model(X_U)[0] for model in models]
+    probs = [F.softmax(logit, dim=0) for logit in logits]
 
     stacked = torch.stack(probs)
     probs_avg = torch.mean(stacked, dim=0)
 
-    # Compute uncertainties. This is a tensor with an uncertainty across models for every entry in the output
-    aleatoric = -1 / len(probs) * torch.sum(torch.sum(stacked * torch.log(stacked), dim=0) +
-                                            torch.sum((1 - stacked) * torch.log(1 - stacked), dim=0))
+    aleatoric = -1 / len(probs) * (torch.sum(stacked * torch.log(stacked), dim=0) +
+                                   torch.sum((1 - stacked) * torch.log(1 - stacked), dim=0))
     total = -probs_avg * torch.log(probs_avg) - (1 - probs_avg) * torch.log(1 - probs_avg)
     epistemic = total - aleatoric
 
