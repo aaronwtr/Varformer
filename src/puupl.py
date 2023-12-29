@@ -2,26 +2,30 @@ import torch
 import random
 
 import torch.nn.functional as F
+import numpy as np
 
 import model as m
 import loss as l
 from utils import random_seed_context
 
+from matplotlib import pyplot as plt
+
 
 def training(train, val, config):
-    # TODO:
-    #  - 1: Define P, U, L on batch level. Then we need a way to point batch level to the global level.
-    #  - 2: Try to run training without batches.
-    P = torch.tensor([i for i, labels in enumerate(train.dataset.labels) if labels == 1])
-    U = torch.tensor([i for i, labels in enumerate(train.dataset.labels) if labels == 0])
-    L = torch.tensor([])
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    P = torch.tensor([i for i, labels in enumerate(train.dataset.labels) if labels == 1]).to(device)
+    U = torch.tensor([i for i, labels in enumerate(train.dataset.labels) if labels == 0]).to(device)
+    L = torch.tensor([]).to(device)
 
     K = 2
     T = 1000
     t_l = 0.05
     t_u = 0.35
 
-    models = [m.PyTorchMLP(config=config, num_features=train.dataset.data.shape[1]) for _ in range(K)]
+    models = [m.PyTorchMLP(config=config, num_features=train.dataset.data.shape[1], model_type="puupl").to(device) for _
+              in
+              range(K)]
 
     seeds = generate_seeds(K)
     weights = []
