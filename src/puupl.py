@@ -41,25 +41,68 @@ def training(train, val, config):
     converged = False
     val_losses = []
     pseudo_labels = []
-
+    metrics_data = {
+        'train_loss_model1': [],
+        'val_loss_model1': [],
+        'train_auroc_model1': [],
+        'val_auroc_model1': [],
+        'train_precision_model1': [],
+        'val_precision_model1': [],
+    }
+    epoch = 1
     while not converged:
+        print("Epoch: ", epoch)
         for i, model in enumerate(models):
             model.load_state_dict(weights[i])
-            train_model(models[i], optimizers[i], train, criterion, P, U, L, pseudo_labels)
+            train_loss, _, auroc, precision, _ = train_model(models[i], device, optimizers[i], train, criterion, P, U,
+                                                             L, pseudo_labels)
+            print(f"Train loss model {i}: ", train_loss)
+            print(f"Train auroc model {i}: ", float(auroc))
+            print(f"Train precision model {i}: ", float(precision))
 
-        val_losses = update_ensemble_weights(models, val, criterion, val_losses, P, U, L)
+            if i == 0:
+                metrics_data['train_loss_model1'].append(float(train_loss))
+                metrics_data['train_auroc_model1'].append(float(auroc))
+                metrics_data['train_precision_model1'].append(float(precision))
+
+        val_losses = update_ensemble_weights(models, val, criterion, val_losses, P, U, L, pseudo_labels)
+        metrics_data['val_loss_model1'].append(val_losses[-2])
+        metrics_data['val_auroc_model1'].append(val_losses[-2])
+        metrics_data['val_precision_model1'].append(val_losses[-2])
+
+        # if epoch % 10 == 0:
+        #     for metric_name, metric_values in metrics_data.items():
+        #         plt.figure(figsize=(10, 6))
+        #         moving_averages = moving_average(metric_values, window=10)
+        #         plt.plot(moving_averages)
+        #         plt.title(f'{metric_name} Moving Average')
+        #         plt.xlabel('Epoch')
+        #         plt.ylabel(metric_name)
+        #         plt.show()
 
         unlabelled_data = train.dataset.features[U]
-        new_labeled_examples, new_unlabeled_examples, pseudo_labels = pseudo_label(models, unlabelled_data, t_l, t_u, T)
+        new_labeled_examples, new_unlabeled_examples, pseudo_labels = pseudo_label(models, epoch, device,
+                                                                                   unlabelled_data, t_l, t_u, T)
 
         L = torch.cat((L, new_labeled_examples), dim=0)
-        U = new_unlabeled_examples
+        L = L.to(torch.int64)
+        U = torch.cat((U, new_unlabeled_examples), dim=0)
+        U = torch.tensor([i for i in U if i not in L])
+        U = U.to(torch.int64)
 
         if has_converged(val_losses, threshold=0.001):
             # TODO: Check how this progresses
             break
 
+        epoch += 1
+
     return models
+
+
+def moving_average(values, window):
+    weights = np.repeat(1.0, window) / window
+    smas = np.convolve(values, weights, 'valid')
+    return smas
 
 
 def batching_labels(data, batch_idx, P, U, L):
@@ -79,18 +122,21 @@ def batching_labels(data, batch_idx, P, U, L):
     return P_batch, U_batch, L_batch
 
 
-def train_model(model, optimizer, train, criterion, P, U, L, pseudo_labels):
+def train_model(model, device, optimizer, train, criterion, P, U, L, pseudo_labels):
     model.train()
     total_loss = 0.0
     total_acc = 0.0
     total_auroc = 0.0
+    total_precision = 0.0
     total_spearman = 0.0
     num_batches = 0
 
     for batch_idx, (data, labels) in enumerate(train):
+        data, labels = data.to(device), labels.to(device)
         P_batch, U_batch, L_batch = batching_labels(data, batch_idx, P, U, L)
 
         logits, probas, bin_preds = model(data)
+
         loss = criterion(logits, P=P_batch, U=U_batch, L=L_batch, pseudo_labels=pseudo_labels)
 
         # Backward pass
@@ -101,15 +147,29 @@ def train_model(model, optimizer, train, criterion, P, U, L, pseudo_labels):
         total_loss += loss.item()
         total_acc += model.acc(bin_preds, labels)
         total_auroc += model.auroc(bin_preds, labels)
+        total_precision += model.precision(bin_preds, labels)
         total_spearman += model.spearman(probas, labels.float())
         num_batches += 1
+
+    # model.eval()
+    # with torch.no_grad():
+    #     X_train = train.dataset.features
+    #     y_train = train.dataset.labels
+    #     logits, probas, _ = model(X_train)
+    #
+    # plt.figure(figsize=(10, 6))
+    # plt.scatter(range(len(X_train[:, 0])), X_train[:, 0], c=y_train, cmap='viridis')
+    # plt.colorbar(label='Predicted Probability')
+    # plt.title(f'Epoch {num_batches + 1}')
+    # plt.show()
 
     loss = total_loss / num_batches
     acc = total_acc / num_batches
     auroc = total_auroc / num_batches
+    precision = total_precision / num_batches
     spearman = total_spearman / num_batches
 
-    return loss, acc, auroc, spearman
+    return loss, acc, auroc, precision, spearman
 
 
 def generate_seeds(num_seeds):
@@ -132,12 +192,24 @@ def has_converged(val_losses, threshold=0.001):
         return False
 
 
-def pseudo_label(models, X_U, t_l, t_u, T):
+def pseudo_label(models, epoch, device, X_U, t_l, t_u, T):
+    X_U = X_U.to(device)
     logits = [model(X_U)[0] for model in models]
-    probs = [F.softmax(logit, dim=0) for logit in logits]
+    probs = [F.sigmoid(logit) for logit in logits]
 
     stacked = torch.stack(probs)
     probs_avg = torch.mean(stacked, dim=0)
+    # plot the distribution of probs_avg
+
+    probs_avg_np = probs_avg.detach().numpy()  # Convert tensor to numpy array
+    fig, ax = plt.subplots(dpi=300)
+    ax.hist(probs_avg_np, bins=50, edgecolor='black')
+    ax.set_title(f'Distribution of average probabilities across models after epoch {epoch}')
+    ax.set_xlabel('Value')
+    ax.set_ylabel('Frequency')
+    plt.show()
+
+    max_avg = torch.max(probs_avg[0])     # Convert tensor to numpy array
 
     aleatoric = -1 / len(probs) * (torch.sum(stacked * torch.log(stacked), dim=0) +
                                    torch.sum((1 - stacked) * torch.log(1 - stacked), dim=0))
@@ -152,23 +224,31 @@ def pseudo_label(models, X_U, t_l, t_u, T):
     L_new = [i for i in confident_indices if epistemic[i] <= t_l]
 
     # Balance positive/negative
-    L_new_pos = [i for i in L_new if probs_avg[i] > 0.5]
-    L_new_neg = [i for i in L_new if probs_avg[i] <= 0.5]
-
+    L_new_pos = [i for i in L_new if probs_avg[i] > 0.17]
+    # L_new_neg = [i for i in L_new if probs_avg[i] <= 0.5]
+    L_new_neg = []
     L_new = L_new_pos + L_new_neg
     L_new = torch.tensor(L_new)
 
-    soft_labels = probs_avg[L_new]
+    if len(L_new) == 0:
+        soft_labels = torch.tensor([])
+    else:
+        soft_labels = probs_avg[L_new]
 
     unreliable_indices = [i for i in L_new if epistemic[i] >= t_u]
     U_new = torch.tensor(unreliable_indices)
 
+    L_new = torch.tensor(L_new).to(device)
+    U_new = torch.tensor(U_new).to(device)
+    soft_labels = soft_labels.to(device)
+
     return L_new, U_new, soft_labels
 
 
-def update_ensemble_weights(models, val, criterion, val_losses, P, U, L):
-    for model in models:
-        val_loss = evaluate(model, val, criterion, P, U, L)
+def update_ensemble_weights(models, val, criterion, val_losses, P, U, L, pseudo_labels):
+    for i, model in enumerate(models):
+        val_loss, _, _, _ = evaluate(model, val, criterion, P, U, L, pseudo_labels)
+        print(f'Val loss model {i}: ', val_loss)
         val_losses.append(val_loss)
 
     best_model_idx = val_losses.index(min(val_losses))
@@ -181,7 +261,7 @@ def update_ensemble_weights(models, val, criterion, val_losses, P, U, L):
         return val_losses
 
 
-def evaluate(model, val, criterion, P, U, L):
+def evaluate(model, val, criterion, P, U, L, pseudo_labels):
     model.eval()
 
     with torch.no_grad():
