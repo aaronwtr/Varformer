@@ -32,7 +32,8 @@ if __name__ == "__main__":
     #  [X] Hold out golden standard 32 drug targets
     #  [X] Check overlap between golden standard and ACMG genes
     #  [X] Check hold out drug targets for common essential genes
-    #  [ ] Setup PUL (https://arxiv.org/abs/2201.13192)
+    #  [X] Setup PUL (https://arxiv.org/abs/2201.13192)
+    #  [ ] Hyperparameter tuning with PUL
     #  [ ] Train baseline neural network model
     #  [ ] Train final models
     #  [ ] Evaluate on held out test set
