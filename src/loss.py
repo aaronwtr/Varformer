@@ -40,7 +40,10 @@ class PseudoLabelLoss(nn.Module):
             pseudo_preds = torch.gather(self.output, 0, self.L)
             L_L = self.bce_loss(pseudo_preds, self.pseudo_labels)
 
-        L_P = self.exp_sigmoid_loss(torch.gather(self.output, 0, self.P), 1)
+        if len(self.P) == 0:
+            L_P = 0
+        else:
+            L_P = self.exp_sigmoid_loss(torch.gather(self.output, 0, self.P), 1)
         L_U = self.exp_sigmoid_loss(torch.gather(self.output, 0, self.U), -1)
 
         L_PU = self.pi * L_P + torch.clamp(L_U - self.pi * L_P, min=0)
