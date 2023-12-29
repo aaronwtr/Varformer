@@ -29,3 +29,15 @@ hyperparameters:
     dropout: 0.5
     num_workers: 0
     weight_decay: 0.01
+  puupl:
+    optimizer: Adam
+    lr_start: 1e-3
+    lr_end: 1e-3
+    epochs: 100
+    width: 64
+    batch_size: 128
+    depth: 4
+    threshold: 0.5
+    dropout: 0.5
+    num_workers: 0
+    weight_decay: 0.01
