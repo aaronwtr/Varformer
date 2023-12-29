@@ -4,16 +4,16 @@ import lightning as pl
 import torch.nn.functional as F
 import xgboost as xgb
 
-from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef
+from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef, Precision
 from sklearn.metrics import accuracy_score, roc_auc_score
 from scipy.stats import spearmanr
 from sklearn.model_selection import train_test_split
 
 
 class PyTorchMLP(torch.nn.Module):
-    def __init__(self, config, num_features):
+    def __init__(self, config, num_features, model_type="mlp"):
         super(PyTorchMLP, self).__init__()
-        self.config = config['mlp']
+        self.config = config[model_type]
         self.layers = []
         layer_sizes = [num_features] + [num_features // 2] * int(self.config['depth'])
         layer_size_prev = layer_sizes[0]
@@ -31,8 +31,9 @@ class PyTorchMLP(torch.nn.Module):
 
         self.init_weights = self.initialise_weights()
 
-        self.acc= Accuracy(task="binary")
+        self.acc = Accuracy(task="binary")
         self.auroc = AUROC(task="binary")
+        self.precision = Precision(task="binary")
         self.spearman = SpearmanCorrCoef()
 
     def initialise_weights(self, seed=None):
@@ -67,11 +68,11 @@ class PyTorchMLP(torch.nn.Module):
 
 
 class LightningMLP(pl.LightningModule):
-    def __init__(self, model, config, imbalance):
+    def __init__(self, model, config, imbalance, model_type="mlp"):
         super().__init__()
         self.model = model
         self.imbalance = imbalance
-        self.config = config['mlp']
+        self.config = config[model_type]
 
     def forward(self, x):
         return self.model(x)
