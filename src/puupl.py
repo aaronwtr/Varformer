@@ -33,7 +33,9 @@ def training(train, val, config):
         weight = model.initialise_weights(seed=seeds[i])
         weights.append(weight)
 
-    optimizers = [torch.optim.Adam(model.parameters()) for model in models]
+    weight_decay = float(config['puupl'].get('weight_decay', 0))
+    optimizers = [torch.optim.Adam(model.parameters(), lr=float(config['puupl']['lr_start']),
+                                   weight_decay=weight_decay) for model in models]
     criterion = l.PseudoLabelLoss()
 
     converged = False
