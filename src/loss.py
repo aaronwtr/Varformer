@@ -16,21 +16,22 @@ class PseudoLabelLoss(nn.Module):
 
     @staticmethod
     def exp_sigmoid_loss(S, y):
+        # TODO: Fix labels. Should be the labels from the batch in here. The pseudo labels go in forward method.
         """
         Implement
         \$
             1 / |S| * \sum_{i \in S} 1 / (1 + e^{y_i * sigmoid(logits_i)})
         $\
-        Note that S is the set with label y. and y is an integer in {-1, 1} corresponding to unlabeled and labeled
+        Note that S is the set with label y. and y is an integer in {0, 1} corresponding to unlabeled and labeled
         respectively.
         """
         return 1 / len(S) * torch.sum(1 / (1 + torch.exp(y * S)))
 
     def forward(self, outputs, P, U, L, pseudo_labels):
         self.output = outputs
-        self.P = P
-        self.U = U
-        self.L = L
+        self.P = P.to(self.output.device)
+        self.U = U.to(self.output.device)
+        self.L = L.to(self.output.device)
         self.pseudo_labels = pseudo_labels
 
         if len(self.L) == 0:
