@@ -15,7 +15,7 @@ class PyTorchMLP(torch.nn.Module):
         super(PyTorchMLP, self).__init__()
         self.config = config[model_type]
         self.layers = []
-        layer_sizes = [num_features] + [num_features // 2] * int(self.config['depth'])
+        layer_sizes = [num_features] + [int(self.config['width'])] * int(self.config['depth'])
         layer_size_prev = layer_sizes[0]
         for layer_size in layer_sizes[1:]:
             self.layers += [
@@ -96,7 +96,7 @@ class LightningMLP(pl.LightningModule):
         self.log('val_loss', loss)
         self.log('val_acc', self.model.acc(bin_preds, labels))
         self.log('val_auroc', self.model.auroc(bin_preds, labels))
-        self.log('val_spearman', self.model.spearmann(probas, labels.float()))
+        self.log('val_spearman', self.model.spearman(probas, labels.float()))
 
     def configure_optimizers(self):
         weight_decay = float(self.config.get('weight_decay', 0))
