@@ -3,13 +3,13 @@ import os
 import torch
 import optuna
 import utils
+import wandb
 
 import lightning as pl
 import pandas as pd
 import numpy as np
 
 from pytorch_lightning.loggers import WandbLogger
-import wandb
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from preprocessing import GeneCharacterisationPreprocessor
 from dataloader import DrugTargetData
@@ -18,6 +18,7 @@ from puupl import training as puupl_training
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import MinMaxScaler
+from matplotlib import pyplot as plt
 
 
 def tuning():
@@ -42,7 +43,7 @@ def tuning():
 
     if not os.path.isfile("best_hyperparameters.txt"):
         with open("best_hyperparameters.txt", "w") as f:
-            f.write("Run ID\tauROC\tHyperparameters\n")
+            f.write("Run ID\tauROC\tHyperparameters\tWidth/Depth\t#Params\n")
         run_id = 0
     else:
         with open("best_hyperparameters.txt", "r") as f:
@@ -51,7 +52,8 @@ def tuning():
             run_id = int(last_line.split("\t")[0]) + 1
 
     with open("best_hyperparameters.txt", "a") as f:
-        f.write(f"{run_id}\t{best_trial.value}\t{best_trial.params}\n")
+        f.write(f"{run_id}\t{best_trial.value}\t{best_trial.params}\t{best_trial.params}\t"
+                f"{best_trial.user_attrs['width_depth_ratio']}\t{best_trial.user_attrs['total_params']}\n")
 
 
 def objective(trial: optuna.trial.Trial) -> float:
@@ -60,18 +62,24 @@ def objective(trial: optuna.trial.Trial) -> float:
 
     config = config['hyperparameters']
 
-    config['mlp']['depth'] = trial.suggest_int('depth', 2, 52, step=4)
-    config['mlp']['width'] = trial.suggest_int('width', 4, 256, step=16)
+    config['mlp']['depth'] = trial.suggest_int('depth', 2, 54, step=4)
+    config['mlp']['width'] = trial.suggest_int('width', 4, 260, step=16)
     config['mlp']['dropout'] = trial.suggest_float('dropout', 0.0, 0.5, step=0.1)
     config['mlp']['threshold'] = trial.suggest_float('threshold', 0.2, 0.8, step=0.05)
     config['mlp']['weight_decay'] = trial.suggest_categorical('weight_decay', [0.0, 0.001, 0.01, 0.1])
 
     trainer = training(tag="Tuning")
 
+    width_depth_ratio = config['mlp']['width'] / config['mlp']['depth']
+    total_params = sum(p.numel() for p in trainer.model.parameters())
+
+    trial.set_user_attr('width_depth_ratio', width_depth_ratio)
+    trial.set_user_attr('total_params', total_params)
+
     return trainer.callback_metrics["val_auroc"].item()
 
 
-def normalise_data(train_raw, val_raw, features, config):
+def normalise_data(train_raw, val_raw, features, config, model_type="mlp"):
     gene_names_train = train_raw.iloc[:, 0].values
     gene_names_test = val_raw.iloc[:, 0].values
 
@@ -91,15 +99,15 @@ def normalise_data(train_raw, val_raw, features, config):
     train = DataLoader(
         DrugTargetData(data=train, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train,
                        features=list(features)),
-        batch_size=int(config['mlp']['batch_size']),
+        batch_size=int(config[model_type]['batch_size']),
         shuffle=True,
-        num_workers=int(config['mlp']['num_workers'])
+        num_workers=int(config[model_type]['num_workers'])
     )
 
     val = DataLoader(
         DrugTargetData(data=val, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_test,
                        features=list(features)),
-        batch_size=int(config['mlp']['batch_size']),
+        batch_size=int(config['puupl']['batch_size']),
         shuffle=False
     )
 
@@ -164,7 +172,7 @@ def training(tag="Training"):
         mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, features,
                                                                                    num_features, config)
     elif tag == "PUUPL Training":
-        train, val = normalise_data(train_raw, val_raw, features, config)
+        train, val = normalise_data(train_raw, val_raw, features, config, model_type="puupl")
     else:
         raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
 
@@ -242,11 +250,11 @@ def kfold_training():
         mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, features,
                                                                                    num_features, config)
 
-        wandb.init(
+        run = wandb.init(
             project="drug-target-prediction",
-            tags=[f"experiment2-fold{fold + 1}"],
+            tags=[f"experiment4-fold{fold + 1}"],
             config=hyperparameters,
-            group="experiment2"
+            group="experiment4"
         )
 
         run_name = wandb.run.name
