@@ -270,5 +270,69 @@ def kfold_training():
 
         trainer.fit(mlp_lightning, train, val)
 
-        # Close the W&B run for the current fold
-        wandb.finish()
+        run.finish()
+
+
+def distillation():
+    """
+    Training a student model by distilling from a teacher model where the teacher model is used to provide pseudo-labels
+    for the unlabeled data used by the student model.
+
+    Firstly, we will run inference over the unlabelled data using the teacher model to define the pseudolabels. Then,
+    we add the pseudolabels to the training data and train the student model on the combined dataset.
+    """
+    with open("config.yml", 'r') as stream:
+        config = yaml.safe_load(stream)
+
+    gcp = GeneCharacterisationPreprocessor(config=config)
+    print("Gene characterisation features preprocessed!\n")
+
+    hyperparams = config['hyperparameters']
+
+    data = gcp.data
+
+    features = data.iloc[:, 1:-1].values
+    num_features = features.shape[1]
+
+    train_raw, val_raw = train_test_split(data, test_size=0.2, random_state=42)
+
+    train, val = normalise_data(train_raw, val_raw, features, hyperparams)
+    train_labels = train.dataset.labels
+
+    unlabelled_data = torch.tensor(train.dataset.data[train_labels == 0], dtype=torch.float32)
+    U = torch.where(train_labels == 0)[0]
+
+    teacher_model = PyTorchMLP(config=hyperparams, num_features=num_features)
+    raw_state_dict = torch.load("checkpoints/frosty-salad-126-epoch=99-val_auroc=0.87-fold3.ckpt")['state_dict']
+    state_dict = {k.replace("model.", ""): v for k, v in raw_state_dict.items()}
+    teacher_model.load_state_dict(state_dict)
+    teacher_model.eval()
+
+    logits, probas, bin_preds = teacher_model(unlabelled_data)
+
+    if not torch.any(train_labels == -1):
+        train_labels[train_labels == 0] = -1
+
+    assert torch.sum(train_labels == -1) > 0
+
+    delta = 0.15     # threshold for pseudo-labeling
+
+    pseudo_labels = torch.full_like(probas, -1)
+
+    pos_count = 0
+    neg_count = 0
+    for i, proba in enumerate(probas):
+        if proba >= hyperparams['mlp']['threshold'] + delta:
+            pseudo_labels[i] = proba
+            pos_count += 1
+        elif proba <= hyperparams['mlp']['threshold'] - delta:
+            pseudo_labels[i] = proba
+            neg_count += 1
+
+    train.dataset.labels[U] = pseudo_labels
+
+    # plot the distribution of the pseudo-labels without the -1s
+    plt.hist(pseudo_labels.detach().numpy()[pseudo_labels.detach().numpy() != -1], bins=100)
+    plt.show()
+
+    # use the new train object to train a new model
