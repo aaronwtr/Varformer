@@ -3,7 +3,8 @@ import torch.nn as nn
 
 
 class PseudoLabelLoss(nn.Module):
-    def __init__(self, output=None, lambd=0.1, pi=0.1, P=None, U=None, L=None, pseudo_labels=None):
+    def __init__(self, output=None, lambd=0.1, pi=0.1, P=None, U=None, L=None, L_reset=None, labels=None,
+                 pseudo_labels=None):
         super().__init__()
         self.bce_loss = nn.BCEWithLogitsLoss()
         self.output = output
@@ -12,11 +13,12 @@ class PseudoLabelLoss(nn.Module):
         self.P = P
         self.U = U
         self.L = L
+        self.L_reset = L_reset
+        self.labels = labels
         self.pseudo_labels = pseudo_labels
 
     @staticmethod
     def exp_sigmoid_loss(S, y):
-        # TODO: Fix labels. Should be the labels from the batch in here. The pseudo labels go in forward method.
         """
         Implement
         \$
@@ -27,24 +29,26 @@ class PseudoLabelLoss(nn.Module):
         """
         return 1 / len(S) * torch.sum(1 / (1 + torch.exp(y * S)))
 
-    def forward(self, outputs, P, U, L, pseudo_labels):
+    def forward(self, outputs, P, U, L, L_reset, labels, pseudo_labels):
         self.output = outputs
-        self.P = P.to(self.output.device)
-        self.U = U.to(self.output.device)
-        self.L = L.to(self.output.device)
+        self.P = P
+        self.U = U
+        self.L = L
+        self.L_reset = L_reset
+        self.labels = labels
         self.pseudo_labels = pseudo_labels
 
         if len(self.L) == 0:
             L_L = 0
         else:
-            pseudo_preds = torch.gather(self.output, 0, self.L)
-            L_L = self.bce_loss(pseudo_preds, self.pseudo_labels)
+            pseudo_preds = torch.gather(self.output, 0, self.L_reset)
+            L_L = self.bce_loss(pseudo_preds, pseudo_labels)
 
         if len(self.P) == 0:
             L_P = 0
         else:
-            L_P = self.exp_sigmoid_loss(torch.gather(self.output, 0, self.P), 1)
-        L_U = self.exp_sigmoid_loss(torch.gather(self.output, 0, self.U), -1)
+            L_P = self.exp_sigmoid_loss(torch.gather(self.output, 0, self.P), self.labels[self.P])
+        L_U = self.exp_sigmoid_loss(torch.gather(self.output, 0, self.U), self.labels[self.U])
 
         L_PU = self.pi * L_P + torch.clamp(L_U - self.pi * L_P, min=0)
 
