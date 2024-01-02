@@ -315,3 +315,11 @@ def umap(df):
     plt.xlabel('UMAP1')
     plt.ylabel('UMAP2')
     plt.show()
+
+
+def plot_kde(pseudo_labels):
+    plt.figure(dpi=300)
+    sns.kdeplot(pseudo_labels.detach().numpy()[pseudo_labels.detach().numpy() != -1], fill=True)
+    plt.xlabel("Pseudo-label value")
+    plt.ylabel("Density")
+    # plt.savefig("../plots/pseudolabel_distribution.pdf")
