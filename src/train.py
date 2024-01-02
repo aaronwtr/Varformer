@@ -2,8 +2,10 @@ import yaml
 import os
 import torch
 import optuna
-import utils
 import wandb
+
+import utils
+import plot
 
 import lightning as pl
 import pandas as pd
@@ -18,7 +20,7 @@ from puupl import training as puupl_training
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import MinMaxScaler
-from matplotlib import pyplot as plt
+
 
 
 def tuning():
@@ -79,43 +81,42 @@ def objective(trial: optuna.trial.Trial) -> float:
     return trainer.callback_metrics["val_auroc"].item()
 
 
-def normalise_data(train_raw, val_raw, features, config, model_type="mlp"):
-    gene_names_train = train_raw.iloc[:, 0].values
-    gene_names_test = val_raw.iloc[:, 0].values
+def normalise_data(train_raw, val_raw, config, model_type="mlp"):
+    if val_raw is not None:
+        gene_names_test = val_raw.iloc[:, 0].values
+        val_norm = val_raw.iloc[:, 1:8].values
+        val_bin = val_raw.iloc[:, 8:-1].values
 
+    gene_names_train = train_raw.iloc[:, 0].values
     train_norm = train_raw.iloc[:, 1:8].values
-    val_norm = val_raw.iloc[:, 1:8].values
 
     train_bin = train_raw.iloc[:, 8:-1].values
-    val_bin = val_raw.iloc[:, 8:-1].values
 
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
-    val_norm = scaler.transform(val_norm)
-
     train = np.concatenate((train_norm, train_bin), axis=1)
-    val = np.concatenate((val_norm, val_bin), axis=1)
 
     train = DataLoader(
-        DrugTargetData(data=train, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train,
-                       features=list(features)),
+        DrugTargetData(data=train, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train),
         batch_size=int(config[model_type]['batch_size']),
         shuffle=True,
         num_workers=int(config[model_type]['num_workers'])
     )
 
-    val = DataLoader(
-        DrugTargetData(data=val, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_test,
-                       features=list(features)),
-        batch_size=int(config['puupl']['batch_size']),
-        shuffle=False
-    )
+    if val_raw is not None:
+        val_norm = scaler.transform(val_norm)
+        val = np.concatenate((val_norm, val_bin), axis=1)
+        val = DataLoader(
+            DrugTargetData(data=val, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_test),
+            batch_size=int(config['puupl']['batch_size']),
+            shuffle=False
+        )
+        return train, val
+    return train
 
-    return train, val
 
-
-def initialise_model(train_raw, val_raw, features, num_features, config):
-    train, val = normalise_data(train_raw, val_raw, features, config)
+def initialise_model(train_raw, val_raw, num_features, config):
+    train, val = normalise_data(train_raw, val_raw, config)
 
     train_imbalance = 1 / float(train.dataset.label_imbalance().item())  # calculate inverse class frequency
 
@@ -145,15 +146,7 @@ def initialise_model(train_raw, val_raw, features, num_features, config):
 
 # noinspection PyUnboundLocalVariable
 def training(tag="Training"):
-    with open("config.yml", 'r') as stream:
-        config = yaml.safe_load(stream)
-
-    gcp = GeneCharacterisationPreprocessor(config=config)
-    print("Gene characterisation features preprocessed!\n")
-
-    config = config['hyperparameters']
-
-    data = gcp.data
+    data, num_features, gcp, config = open_data()
 
     test_genes = gcp.acmg_genes
 
@@ -163,16 +156,13 @@ def training(tag="Training"):
     # These need NOT yet have FDA-approved drugs.
     test = data[data['ENSG'].isin(test_genes)]
 
-    features = data.iloc[:, 1:-1].values
-    num_features = features.shape[1]
-
     train_raw, val_raw = train_test_split(data, test_size=0.2, random_state=42)
 
     if tag == "Standard Training" or tag == "Tuning":
-        mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, features,
-                                                                                   num_features, config)
+        mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, num_features,
+                                                                                   config)
     elif tag == "PUUPL Training":
-        train, val = normalise_data(train_raw, val_raw, features, config, model_type="puupl")
+        train, val = normalise_data(train_raw, val_raw, config, model_type="puupl")
     else:
         raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
 
@@ -222,24 +212,16 @@ def training(tag="Training"):
         raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
 
 
-def kfold_training():
-    with open("config.yml", 'r') as stream:
-        config = yaml.safe_load(stream)
+def kfold():
+    data, num_features, _, config = open_data()
+    kfold_training(data, num_features, config)
 
-    gcp = GeneCharacterisationPreprocessor(config=config)
-    print("Gene characterisation features preprocessed!\n")
 
-    config = config['hyperparameters']
-
-    data = gcp.data
-
-    features = data.iloc[:, 1:-1].values
-    num_features = features.shape[1]
-
-    # Initialize KFold
+def kfold_training(data, num_features, config):
     num_splits = 5
     kfold = KFold(n_splits=num_splits, shuffle=True, random_state=42)
 
+    # use the new train object to train a new model
     for fold, (train_indices, val_indices) in enumerate(kfold.split(data)):
         print(f"Training fold {fold + 1}/{num_splits}")
 
@@ -247,14 +229,14 @@ def kfold_training():
         train_raw = data.iloc[train_indices, :]
         val_raw = data.iloc[val_indices, :]
 
-        mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, features,
-                                                                                   num_features, config)
+        mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, num_features,
+                                                                                   config)
 
         run = wandb.init(
             project="drug-target-prediction",
-            tags=[f"experiment4-fold{fold + 1}"],
+            tags=[f"distillation-fold{fold + 1}"],
             config=hyperparameters,
-            group="experiment4"
+            group="distillation1"
         )
 
         run_name = wandb.run.name
@@ -281,6 +263,23 @@ def kfold_training():
         run.finish()
 
 
+def open_data():
+    with open("config.yml", 'r') as stream:
+        config = yaml.safe_load(stream)
+
+    gcp = GeneCharacterisationPreprocessor(config=config)
+    print("Gene characterisation features preprocessed!\n")
+
+    config = config['hyperparameters']
+
+    data = gcp.data
+
+    features = data.iloc[:, 1:-1].values
+    num_features = features.shape[1]
+
+    return data, num_features, gcp, config
+
+
 def distillation():
     """
     Training a student model by distilling from a teacher model where the teacher model is used to provide pseudo-labels
@@ -299,16 +298,26 @@ def distillation():
 
     data = gcp.data
 
+    labels = data.iloc[:, -1].values
     features = data.iloc[:, 1:-1].values
     num_features = features.shape[1]
 
-    train_raw, val_raw = train_test_split(data, test_size=0.2, random_state=42)
+    # indices = np.arange(len(data))
+    #
+    # train_indices, val_indices = train_test_split(indices, test_size=0.2, random_state=42)
+    #
+    # train_raw = data.iloc[train_indices]
+    # val_raw = data.iloc[val_indices]
+    #
+    # train, val = normalise_data(train_raw, val_raw, hyperparams)
+    # train_labels = train.dataset.labels
 
-    train, val = normalise_data(train_raw, val_raw, features, hyperparams)
-    train_labels = train.dataset.labels
+    unlabelled_data = data[data.iloc[:, -1] == 0]
+    U = np.where(labels == 0)[0]
 
-    unlabelled_data = torch.tensor(train.dataset.data[train_labels == 0], dtype=torch.float32)
-    U = torch.where(train_labels == 0)[0]
+    val = None
+    unlabelled_dl = normalise_data(unlabelled_data, val, hyperparams)
+    unlabelled_tensor = unlabelled_dl.dataset.features
 
     teacher_model = PyTorchMLP(config=hyperparams, num_features=num_features)
     raw_state_dict = torch.load("checkpoints/frosty-salad-126-epoch=99-val_auroc=0.87-fold3.ckpt")['state_dict']
@@ -316,31 +325,30 @@ def distillation():
     teacher_model.load_state_dict(state_dict)
     teacher_model.eval()
 
-    logits, probas, bin_preds = teacher_model(unlabelled_data)
+    logits, probas, bin_preds = teacher_model(unlabelled_tensor)
 
-    if not torch.any(train_labels == -1):
-        train_labels[train_labels == 0] = -1
-
-    assert torch.sum(train_labels == -1) > 0
-
-    delta = 0.15     # threshold for pseudo-labeling
+    delta = 0.25    # threshold for pseudo-labeling
 
     pseudo_labels = torch.full_like(probas, -1)
 
     pos_count = 0
     neg_count = 0
     for i, proba in enumerate(probas):
-        if proba >= hyperparams['mlp']['threshold'] + delta:
+        if proba >= hyperparams['mlp']['threshold']:
             pseudo_labels[i] = proba
             pos_count += 1
         elif proba <= hyperparams['mlp']['threshold'] - delta:
             pseudo_labels[i] = proba
             neg_count += 1
+    unlabelled_count = len(probas) - pos_count - neg_count
 
-    train.dataset.labels[U] = pseudo_labels
+    # plot.plot_kde(pseudo_labels)
 
-    # plot the distribution of the pseudo-labels without the -1s
-    plt.hist(pseudo_labels.detach().numpy()[pseudo_labels.detach().numpy() != -1], bins=100)
-    plt.show()
+    data.iloc[U, -1] = pseudo_labels.detach().numpy()
 
-    # use the new train object to train a new model
+    # TODO: Deal with unlabelled data in data (label = -1)
+
+    kfold_training(data, num_features, hyperparams)
+
+    # NOTE: We are training with only train data. Val data is kept separate. Do one final evaluation on the full val set
+    #       with the best model from the k-fold training.
