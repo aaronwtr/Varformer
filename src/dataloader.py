@@ -3,11 +3,10 @@ from torch.utils.data import Dataset
 
 
 class DrugTargetData(Dataset):
-    def __init__(self, data, labels, gene_names, features):
+    def __init__(self, data, labels, gene_names):
         self.data = data
         self.labels = labels
         self.gene_names = gene_names
-        self.features = features
 
         x = self.data
         y = self.labels
