@@ -22,13 +22,13 @@ hyperparameters:
     lr_start: 1e-3
     lr_end: 1e-3
     epochs: 100
-    width: 64
-    batch_size: 512
-    depth: 16
+    width: 256
+    batch_size: 256
+    depth: 4
     threshold: 0.6
     dropout: 0.5
     num_workers: 0
-    weight_decay: 0.01
+    weight_decay: 0.1
   puupl:
     optimizer: Adam
     lr_start: 1e-3
@@ -36,7 +36,7 @@ hyperparameters:
     epochs: 100
     width: 64
     batch_size: 128
-    depth: 4
+    depth: 16
     threshold: 0.5
     dropout: 0.5
     num_workers: 0
