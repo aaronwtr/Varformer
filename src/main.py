@@ -11,7 +11,7 @@ def main(mode="training"):
     elif mode == "tuning":
         train.tuning()
     elif mode == "kfold_training":
-        train.kfold_training()
+        train.kfold()
     else:
         raise ValueError("Invalid mode. Pick from 'training' or 'tuning'")
 
@@ -35,11 +35,11 @@ if __name__ == "__main__":
     #  [X] Check hold out drug targets for common essential genes
     #  [X] Train baseline neural network model
     #  [FAILED] Setup PUUPL (To unstable to use, need a properly trained model to do this. --> Self-distillation)
-    #  [ ] Hyperparameter tuning run where we add logging of width/depth ratio and total number of parameters
-    #  [ ] Setup self-distillation
-    #  [ ] Self-distillation such that probas around the threshold are kept as unlabeled data and in this way
+    #  [X] Hyperparameter tuning run where we add logging of width/depth ratio and total number of parameters
+    #  [X] Setup self-distillation
+    #  [X] Self-distillation such that probas around the threshold are kept as unlabeled data and in this way
     #      iteratively gather pseudolabels
-    #  [ ] Train final models
+    #  [X] Train final models
     #  [ ] Evaluate on held out test set
     #  [ ] Add SHAP interpretability
     #  -
