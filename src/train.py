@@ -346,9 +346,6 @@ def distillation():
 
     data.iloc[U, -1] = pseudo_labels.detach().numpy()
 
-    # TODO: Deal with unlabelled data in data (label = -1)
+    data = data[data.iloc[:, -1] != -1]
 
     kfold_training(data, num_features, hyperparams)
-
-    # NOTE: We are training with only train data. Val data is kept separate. Do one final evaluation on the full val set
-    #       with the best model from the k-fold training.
