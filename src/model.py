@@ -82,21 +82,27 @@ class LightningMLP(pl.LightningModule):
         logits, probas, bin_preds = self(features)
         class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))],
                                     device=self.device)
+        labels = (labels > float(self.config['threshold'])).float()
+
         loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
         self.log('train_loss', loss)
         self.log('train_acc', self.model.acc(bin_preds, labels))
         self.log('train_auroc', self.model.auroc(bin_preds, labels))
         self.log('train_spearman', self.model.spearman(probas, labels.float()))
+        self.log('train_precision', self.model.precision(bin_preds, labels))
         return loss
 
     def validation_step(self, batch, batch_idx):
         features, labels = batch
         logits, probas, bin_preds = self(features)
         loss = F.binary_cross_entropy_with_logits(logits, labels.float())
+        labels = (labels > float(self.config['threshold'])).float()
+
         self.log('val_loss', loss)
         self.log('val_acc', self.model.acc(bin_preds, labels))
         self.log('val_auroc', self.model.auroc(bin_preds, labels))
         self.log('val_spearman', self.model.spearman(probas, labels.float()))
+        self.log('val_precision', self.model.precision(bin_preds, labels))
 
     def configure_optimizers(self):
         weight_decay = float(self.config.get('weight_decay', 0))
