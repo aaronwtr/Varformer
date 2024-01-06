@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 import torch.nn.functional as F
+import pytorch_lightning as pl
 
 
 class PathogenicityAutoencoder(nn.Module):
@@ -59,3 +60,29 @@ class PathogenicityAutoencoder(nn.Module):
             return pooled_x
         else:
             raise ValueError("Current dimension is already smaller than the target dimension.")
+
+
+class AutoencoderTrainer(pl.LightningModule):
+    def __init__(self, input_dim, encoding_dim, num_layers, nhead, reduction):
+        super().__init__()
+        self.autoencoder = PathogenicityAutoencoder(input_dim, encoding_dim, num_layers, nhead, reduction)
+        self.loss_fn = torch.nn.MSELoss()
+
+    def forward(self, x):
+        return self.autoencoder(x)
+
+    def training_step(self, batch, batch_idx):
+        x, _ = batch
+        x_hat = self.autoencoder(x)
+        loss = self.loss_fn(x_hat, x)
+        self.log('train_loss', loss)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        x, _ = batch
+        x_hat = self.autoencoder(x)
+        loss = self.loss_fn(x_hat, x)
+        self.log('val_loss', loss)
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=1e-3)
