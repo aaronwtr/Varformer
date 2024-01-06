@@ -31,11 +31,13 @@ hyperparameters:
     weight_decay: 0.1
   pathogenicity_autoencoder:
     input_dim: 1024
-    latent_dim: # tunable hyperparam
+    latent_dim: 16 # tunable hyperparam
     output_dim: 1024
-    num_layers: # tunable hyperparam
-    nhead: # tunable hyperparam
+    num_layers: 2 # tunable hyperparam
+    nhead: 2 # tunable hyperparam
     reduction: "padding" # choose from "padding" or "pooling"
+    epochs: 100
+    batch_size: 64
   puupl:
     optimizer: Adam
     lr_start: 1e-3
