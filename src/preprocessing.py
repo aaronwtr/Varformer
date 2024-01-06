@@ -440,7 +440,7 @@ class GeneCharacterisationPreprocessor:
         # target_freqs['count'] = scaler.fit_transform(target_freqs['count'].values.reshape(-1, 1))
         # target_freqs = target_freqs.to_dict()['count']
 
-    def pathogenicity_feature_extractor(self):
+    def pathogenicity_feature_extractor(self, encode=False):
         """
         Extract variant-level AlphaMissense pathogenicity score and average to gene-level using population statistics.
         """
@@ -477,11 +477,14 @@ class GeneCharacterisationPreprocessor:
             else:
                 variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
 
-        gene_am_features = {}
-        for ensg, probs in variant_am_features.items():
-            gene_am_features[ensg] = sum(probs) / len(probs)
+        if encode:
+            # TODO: make call to exome variant autoencoder scripte
+        else:
+            gene_am_features = {}
+            for ensg, probs in variant_am_features.items():
+                gene_am_features[ensg] = sum(probs) / len(probs)
 
-        self.pathogenicity_features = gene_am_features
+            self.pathogenicity_features = gene_am_features
 
     def gene_essentiality_feature_extractor(self):
         raw_data = pd.read_csv(self.config['paths']['COMMON_ESSENTIALS_PATH'])
