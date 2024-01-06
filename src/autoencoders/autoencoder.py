@@ -1,0 +1,61 @@
+import torch
+from torch import nn
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
+import torch.nn.functional as F
+
+
+class PathogenicityAutoencoder(nn.Module):
+    def __init__(self, input_dim, encoding_dim, num_layers, nhead, reduction):
+        super(PathogenicityAutoencoder, self).__init__()
+
+        self.target_dim = input_dim
+        self.reduction = reduction
+
+        # Define the encoder
+        encoder_layers = TransformerEncoderLayer(d_model=input_dim, nhead=nhead, dim_feedforward=encoding_dim)
+        self.encoder = TransformerEncoder(encoder_layers, num_layers)
+
+        # Define the decoder
+        self.decoder = nn.Sequential(
+            nn.Linear(encoding_dim, input_dim),
+            nn.ReLU(True)
+        )
+
+    def forward(self, x):
+        if self.reduction == "padding":
+            x = self.padding(x)
+        elif self.reduction == "pooling":
+            x = self.pooling(x)
+        else:
+            raise ValueError("Invalid reduction type. Expected 'padding' or 'pooling'.")
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
+
+    def padding(self, x):
+        current_dimension = x.size(-1)
+
+        if current_dimension == self.target_dim:
+            return x
+        elif current_dimension < self.target_dim:
+            # Calculate the required padding on both sides
+            padding_left = (self.target_dim - current_dimension) // 2
+            padding_right = self.target_dim - current_dimension - padding_left
+
+            # Pad the tensor
+            padded_x = F.pad(x, (padding_left, padding_right), value=0)
+            return padded_x
+        else:
+            raise ValueError("Current dimension is already greater than the target dimension.")
+
+    def pooling(self, x):
+        current_dimension = x.size(-1)
+
+        if current_dimension == self.target_dim:
+            return x
+        elif current_dimension > self.target_dim:
+            pool = nn.AdaptiveAvgPool1d(self.target_dim)
+            pooled_x = pool(x)
+            return pooled_x
+        else:
+            raise ValueError("Current dimension is already smaller than the target dimension.")
