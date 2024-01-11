@@ -1,24 +1,33 @@
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
-from autoencoder import AutoencoderTrainer
+from src.autoencoders.autoencoder import AutoencoderTrainer
+from src.dataloader import VariantPathogenicityData
 from torch.utils.data import DataLoader
+from sklearn.model_selection import train_test_split
 
 import wandb
 
 
-def ae_train(dataset, hparams):
-    wandb.init(project='danio-autoencoders')
-
+def train(data_dict, config):
     # TODO:
-    #  - [ ] split in train and val set
-    #  - [ ] when training successful, setup optuna for hyperparameter tuning
+    #  - [ ] setup training
+    #  - [ ] setup optuna hyperparameter tuning
 
-    dataloader = DataLoader(dataset, batch_size=hparams['batch_size'], shuffle=True)
+    hparams = config['hyperparameters']['pathogenicity_autoencoder']
 
-    model = AutoencoderTrainer(input_dim=hparams['input_dim'], encoding_dim=hparams['latent_dim'],
-                               num_layers=hparams['num_layers'], nhead=hparams['nhead'], reduction=hparams['reduction'])
+    # wandb.init(project='danio-autoencoders')
 
-    wandb_logger = WandbLogger()
+    variant_pathogenicity = DataLoader(
+        VariantPathogenicityData(data_dict=data_dict),
+        batch_size=hparams['batch_size'],
+        shuffle=True
+    )
 
-    trainer = Trainer(max_epochs=100, logger=wandb_logger)
-    trainer.fit(model, dataloader)
+    model = AutoencoderTrainer(input_dim=hparams['input_dim'], output_dim=hparams['output_dim'],
+                               encoding_dim=hparams['latent_dim'], num_layers=hparams['num_layers'],
+                               nhead=hparams['nhead'], reduction_type=hparams['reduction'])
+
+    # wandb_logger = WandbLogger()
+
+    trainer = Trainer(max_epochs=100)
+    trainer.fit(model, variant_pathogenicity)
