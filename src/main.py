@@ -54,6 +54,7 @@ if __name__ == "__main__":
     #  -
     #  Autoencoder deep learning model:
     #  [ ] Set up autoencoders for variant-level and categorical features
+    #       [ ] Pathogenicity autoencoder
     #  [ ] Hyperparameter tuning
     #  [ ] Train autoencoders
     #  [ ] Train final model
