@@ -8,6 +8,7 @@ import warnings
 import argparse
 import shutil
 import torch
+import utils
 
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,7 +17,8 @@ from sklearn.model_selection import train_test_split
 from Bio import SeqIO
 from torch.nn.functional import one_hot
 
-import utils
+from autoencoders import ae_train
+
 
 
 class GeneCharacterisationPreprocessor:
@@ -440,7 +442,7 @@ class GeneCharacterisationPreprocessor:
         # target_freqs['count'] = scaler.fit_transform(target_freqs['count'].values.reshape(-1, 1))
         # target_freqs = target_freqs.to_dict()['count']
 
-    def pathogenicity_feature_extractor(self, encode=False):
+    def pathogenicity_feature_extractor(self, encode=True):
         """
         Extract variant-level AlphaMissense pathogenicity score and average to gene-level using population statistics.
         """
@@ -478,7 +480,14 @@ class GeneCharacterisationPreprocessor:
                 variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
 
         if encode:
-            # TODO: make call to exome variant autoencoder scripte
+            if not os.path.exists('src/autoencoders/ae_pathogenicity_checkpoint.ckpt'):
+                print('Pre-training pathogenicity autoencoder...')
+                ae_train.train(variant_am_features, self.config)
+            else:
+                print('Loading pathogenicity autoencoder...')
+                pass
+            print('break')
+            # TODO: make call to exome variant autoencoder scripts
         else:
             gene_am_features = {}
             for ensg, probs in variant_am_features.items():
