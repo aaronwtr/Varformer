@@ -10,8 +10,8 @@ import wandb
 
 def train(data_dict, config):
     # TODO:
-    #  - [ ] setup training
-    #  - [ ] setup optuna hyperparameter tuning
+    #  - [X] setup training
+    #  - [ ] fix autoencoding with batch size > 1
 
     hparams = config['hyperparameters']['pathogenicity_autoencoder']
 
@@ -29,5 +29,5 @@ def train(data_dict, config):
 
     # wandb_logger = WandbLogger()
 
-    trainer = Trainer(max_epochs=100)
+    trainer = Trainer(max_epochs=30)
     trainer.fit(model, variant_pathogenicity)
