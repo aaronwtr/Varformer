@@ -3,6 +3,7 @@ from torch import nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer, TransformerDecoder, TransformerDecoderLayer
 import torch.nn.functional as F
 import pytorch_lightning as pl
+import math
 
 
 class PathogenicityAutoencoder(nn.Module):
@@ -39,11 +40,12 @@ class AutoencoderTrainer(pl.LightningModule):
         return self.autoencoder(x)
 
     def training_step(self, batch, batch_idx):
-        gene_name, x = batch
-        x = self.reduction(x)
+        x = batch
         x_hat = self.autoencoder(x)
         loss = self.loss_fn(x_hat, x)
+        log_loss = math.log(loss, 10)
         self.log('reconstruction_loss', loss)
+        self.log('log_reconstruction_loss', log_loss)
         return loss
 
     def configure_optimizers(self):
