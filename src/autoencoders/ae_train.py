@@ -33,7 +33,7 @@ def train(data_dict, config):
     run_name = wandb_logger.experiment.name
     checkpoint_callback = ModelCheckpoint(
         monitor='epoch',
-        dirpath='checkpoints',
+        dirpath='autoencoders/checkpoints/variant_pathogenicity_encoder',
         filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}',
         save_top_k=1,
         mode='min',
