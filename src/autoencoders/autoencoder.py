@@ -39,6 +39,10 @@ class AutoencoderTrainer(pl.LightningModule):
     def forward(self, x):
         return self.autoencoder(x)
 
+    def pathogenicity_embedding(self, x):
+        z = self.autoencoder.encoder(x)
+        return z
+
     def training_step(self, batch, batch_idx):
         x = batch
         x_hat = self.autoencoder(x)
@@ -50,39 +54,3 @@ class AutoencoderTrainer(pl.LightningModule):
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)
-
-    def reduction(self, x):
-        if self.reduction_type == "padding":
-            x = self.padding(x)
-        elif self.reduction_type == "pooling":
-            x = self.pooling(x)
-        else:
-            raise ValueError("Invalid reduction type. Expected 'padding' or 'pooling'.")
-        return x
-
-    def padding(self, x):
-        current_dimension = x.size(-1)
-        if current_dimension == self.output_dim:
-            return x
-        elif current_dimension < self.output_dim:
-            # Calculate the required padding on both sides
-            padding_left = (self.output_dim - current_dimension) // 2
-            padding_right = self.output_dim - current_dimension - padding_left
-
-            # Pad the tensor
-            padded_x = F.pad(x, (padding_left, padding_right), value=0)
-            return padded_x
-        else:
-            raise ValueError("Current dimension is already greater than the target dimension.")
-
-    def pooling(self, x):
-        current_dimension = x.size(-1)
-
-        if current_dimension == self.output_dim:
-            return x
-        elif current_dimension > self.output_dim:
-            pool = nn.AdaptiveAvgPool1d(self.output_dim)
-            pooled_x = pool(x)
-            return pooled_x
-        else:
-            raise ValueError("Current dimension is already smaller than the target dimension.")
