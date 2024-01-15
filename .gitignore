@@ -230,3 +230,7 @@ data/acmg/
 data/bindingdb/
 
 plots/
+
+src/autoencoders/checkpoints/variant_pathogenicity_encoder/
+
+*.ckpt
