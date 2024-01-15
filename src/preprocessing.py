@@ -18,7 +18,7 @@ from Bio import SeqIO
 from torch.nn.functional import one_hot
 
 from autoencoders import ae_train
-
+from autoencoders.autoencoder import AutoencoderTrainer
 
 
 class GeneCharacterisationPreprocessor:
@@ -480,20 +480,39 @@ class GeneCharacterisationPreprocessor:
                 variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
 
         if encode:
-            if not os.path.exists('src/autoencoders/ae_pathogenicity_checkpoint.ckpt'):
+            if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_encoder'):
                 print('Pre-training pathogenicity autoencoder...')
                 ae_train.train(variant_am_features, self.config)
+                print('Pathogenicity autoencoder trained!')
+                print('Embedding pathogenicity data from variant to gene level...')
+                embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+                self.pathogenicity_features = embeddings
             else:
                 print('Loading pathogenicity autoencoder...')
-                pass
-            print('break')
-            # TODO: make call to exome variant autoencoder scripts
+                embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+                self.pathogenicity_features = embeddings
         else:
             gene_am_features = {}
             for ensg, probs in variant_am_features.items():
                 gene_am_features[ensg] = sum(probs) / len(probs)
 
             self.pathogenicity_features = gene_am_features
+
+    @staticmethod
+    def fetch_pathogenicity_embeddings(variant_am_features):
+        model_dir = 'autoencoders/checkpoints/variant_pathogenicity_encoder'
+        model_files = os.listdir(model_dir)
+        assert len(model_files) == 1
+        model_file = model_files[0]
+        model = AutoencoderTrainer.load_from_checkpoint(model_dir + '/' + model_file)
+        model.eval()
+        variant_am_embeddings = {}
+        with torch.no_grad():
+            for variant, probs in variant_am_features.items():
+                proba_tensor = torch.tensor(probs, dtype=torch.float32)
+                embeddings = model.pathogenicity_embedding(proba_tensor)
+                variant_am_embeddings[variant] = embeddings
+        return variant_am_embeddings
 
     def gene_essentiality_feature_extractor(self):
         raw_data = pd.read_csv(self.config['paths']['COMMON_ESSENTIALS_PATH'])
