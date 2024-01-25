@@ -43,6 +43,11 @@ class AutoencoderTrainer(pl.LightningModule):
         z = self.autoencoder.encoder(x)
         return z
 
+    def predict_step(self, batch):
+        x = batch
+        z = self.autoencoder(x)
+        return z
+
     def training_step(self, batch, batch_idx):
         x = batch
         x_hat = self.autoencoder(x)
