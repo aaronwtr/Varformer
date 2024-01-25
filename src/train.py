@@ -13,14 +13,13 @@ import numpy as np
 
 from pytorch_lightning.loggers import WandbLogger
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
-from preprocessing import GeneCharacterisationPreprocessor
+from preprocessing import GeneCharacterisationPreprocessor, VariantToGenePreprocessor
 from dataloader import DrugTargetData
 from model import PyTorchMLP, LightningMLP
 from puupl import training as puupl_training
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import MinMaxScaler
-
 
 
 def tuning():
@@ -146,7 +145,7 @@ def initialise_model(train_raw, val_raw, num_features, config):
 
 # noinspection PyUnboundLocalVariable
 def training(tag="Training"):
-    data, num_features, gcp, config = open_data()
+    data, num_features, gcp, config = open_gc_data()
 
     test_genes = gcp.acmg_genes
 
@@ -213,7 +212,7 @@ def training(tag="Training"):
 
 
 def kfold():
-    data, num_features, _, config = open_data()
+    data, num_features, _, config = open_gc_data()
     kfold_training(data, num_features, config)
 
 
@@ -263,7 +262,7 @@ def kfold_training(data, num_features, config):
         run.finish()
 
 
-def open_data():
+def open_gc_data():
     with open("config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
 
@@ -280,6 +279,21 @@ def open_data():
     return data, num_features, gcp, config
 
 
+def open_vge_data():
+    with open("config.yml", 'r') as stream:
+        config = yaml.safe_load(stream)
+
+    vgep = VariantToGenePreprocessor(config=config)
+    print("Variant-to-gene embeddings preprocessed!\n")
+
+    data = vgep.data
+
+    features = data.iloc[:, 1:-1].values
+    num_features = features.shape[1]
+
+    return data, num_features, vgep
+
+
 def distillation():
     """
     Training a student model by distilling from a teacher model where the teacher model is used to provide pseudo-labels
@@ -288,31 +302,14 @@ def distillation():
     Firstly, we will run inference over the unlabelled data using the teacher model to define the pseudolabels. Then,
     we add the pseudolabels to the training data and train the student model on the combined dataset.
     """
-    with open("config.yml", 'r') as stream:
-        config = yaml.safe_load(stream)
+    gc_data, gc_num_features, gcp, hyperparams = open_gc_data()
+    vge_data, vge_num_features, vgep = open_vge_data()
 
-    gcp = GeneCharacterisationPreprocessor(config=config)
-    print("Gene characterisation features preprocessed!\n")
-
-    hyperparams = config['hyperparameters']
-
-    data = gcp.data
-
-    labels = data.iloc[:, -1].values
-    features = data.iloc[:, 1:-1].values
+    labels = gc_data.iloc[:, -1].values
+    features = gc_data.iloc[:, 1:-1].values
     num_features = features.shape[1]
 
-    # indices = np.arange(len(data))
-    #
-    # train_indices, val_indices = train_test_split(indices, test_size=0.2, random_state=42)
-    #
-    # train_raw = data.iloc[train_indices]
-    # val_raw = data.iloc[val_indices]
-    #
-    # train, val = normalise_data(train_raw, val_raw, hyperparams)
-    # train_labels = train.dataset.labels
-
-    unlabelled_data = data[data.iloc[:, -1] == 0]
+    unlabelled_data = gc_data[gc_data.iloc[:, -1] == 0]
     U = np.where(labels == 0)[0]
 
     val = None
@@ -327,7 +324,7 @@ def distillation():
 
     logits, probas, bin_preds = teacher_model(unlabelled_tensor)
 
-    delta = 0.25    # threshold for pseudo-labeling
+    delta = 0.25  # threshold for pseudo-labeling
 
     pseudo_labels = torch.full_like(probas, -1)
 
@@ -344,8 +341,8 @@ def distillation():
 
     # plot.plot_kde(pseudo_labels)
 
-    data.iloc[U, -1] = pseudo_labels.detach().numpy()
+    gc_data.iloc[U, -1] = pseudo_labels.detach().numpy()
 
-    data = data[data.iloc[:, -1] != -1]
+    data = gc_data[gc_data.iloc[:, -1] != -1]
 
-    kfold_training(data, num_features, hyperparams)
+    kfold_training(gc_data, num_features, hyperparams)
