@@ -15,18 +15,20 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 from sklearn.model_selection import train_test_split
 from Bio import SeqIO
-from torch.nn.functional import one_hot
+import pytorch_lightning as pl
 
 from autoencoders import ae_train
 from autoencoders.autoencoder import AutoencoderTrainer
+from src.dataloader import VariantPathogenicityData
+from torch.utils.data import DataLoader
+from src.autoencoders.ae_train import padding
 
 
 class GeneCharacterisationPreprocessor:
     """
     This class loads and combines the different data sources into a single feature matrix to be fed into our model.
     """
-
-    def __init__(self, config=None):
+    def __init__(self, config):
 
         self.config = config
         self.files_and_dirs = os.listdir("../data")
@@ -46,8 +48,8 @@ class GeneCharacterisationPreprocessor:
         self.mouse_ko_features = None
         self.gene_essentiality_features = None
         self.ppi_features = None
-        self.pathogenicity_features = None
-        self.alphafold_features = None
+        # self.pathogenicity_features = None
+        # self.alphafold_features = None
         self.binding_affinity_features = None
         self.protein_atlas_features = None
         self.protein_atlas_feature_names = None
@@ -71,7 +73,7 @@ class GeneCharacterisationPreprocessor:
             'mouse_ko_features.pkl': self.mouse_knockout_feature_extractor,
             'gene_essentiality_features.pkl': self.gene_essentiality_feature_extractor,
             'ppi_features.pkl': self.ppi_feature_extractor,
-            'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
+            # 'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
             'alphafold_features.pkl': self.alphafold_feature_extractor,
             'protein_atlas_features.pkl': self.protein_atlas_feature_extractor
         }
@@ -442,78 +444,6 @@ class GeneCharacterisationPreprocessor:
         # target_freqs['count'] = scaler.fit_transform(target_freqs['count'].values.reshape(-1, 1))
         # target_freqs = target_freqs.to_dict()['count']
 
-    def pathogenicity_feature_extractor(self, encode=True):
-        """
-        Extract variant-level AlphaMissense pathogenicity score and average to gene-level using population statistics.
-        """
-        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
-        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
-
-        am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
-
-        am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
-        self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
-        self.gh_data = self.gh_data.explode('ALT')
-        self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
-        self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
-        pos_list = self.gh_data['POS'].tolist()
-        chrom_list = self.gh_data['#CHROM'].tolist()
-        ref_list = self.gh_data['REF'].tolist()
-        alt_list = self.gh_data['ALT'].tolist()
-
-        pos_list = [str(pos) for pos in pos_list]
-        variant_id_list = [chrom + '_' + pos + '_' + ref + '_' + alt for chrom, pos, ref, alt in
-                           zip(chrom_list, pos_list, ref_list, alt_list)]
-        self.gh_data['variant_id'] = variant_id_list
-        am = am[['am_pathogenicity', 'variant_id']]
-
-        self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
-
-        variant_am_features = {}
-        for index, row in tqdm(self.gh_data.iterrows()):
-            gene = row['Gene']
-            gh_af = row['AF_ELGH']
-            am_score = row['am_pathogenicity']
-            if gene not in variant_am_features.keys():
-                variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
-            else:
-                variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
-
-        if encode:
-            if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_encoder'):
-                print('Pre-training pathogenicity autoencoder...')
-                ae_train.train(variant_am_features, self.config)
-                print('Pathogenicity autoencoder trained!')
-                print('Embedding pathogenicity data from variant to gene level...')
-                embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-                self.pathogenicity_features = embeddings
-            else:
-                print('Loading pathogenicity autoencoder...')
-                embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-                self.pathogenicity_features = embeddings
-        else:
-            gene_am_features = {}
-            for ensg, probs in variant_am_features.items():
-                gene_am_features[ensg] = sum(probs) / len(probs)
-
-            self.pathogenicity_features = gene_am_features
-
-    @staticmethod
-    def fetch_pathogenicity_embeddings(variant_am_features):
-        model_dir = 'autoencoders/checkpoints/variant_pathogenicity_encoder'
-        model_files = os.listdir(model_dir)
-        assert len(model_files) == 1
-        model_file = model_files[0]
-        model = AutoencoderTrainer.load_from_checkpoint(model_dir + '/' + model_file)
-        model.eval()
-        variant_am_embeddings = {}
-        with torch.no_grad():
-            for variant, probs in variant_am_features.items():
-                proba_tensor = torch.tensor(probs, dtype=torch.float32)
-                embeddings = model.pathogenicity_embedding(proba_tensor)
-                variant_am_embeddings[variant] = embeddings
-        return variant_am_embeddings
-
     def gene_essentiality_feature_extractor(self):
         raw_data = pd.read_csv(self.config['paths']['COMMON_ESSENTIALS_PATH'])
         raw_data = raw_data.rename(columns={raw_data.columns[0]: 'gene_name'})
@@ -543,7 +473,7 @@ class GeneCharacterisationPreprocessor:
             "mouse_ko_effect": self.mouse_ko_features,
             "ppi_count": self.ppi_features,
             "common_essentials": self.gene_essentiality_features,
-            "am_missense_pathogenicity_score": self.pathogenicity_features,
+            # "am_missense_pathogenicity_score": self.pathogenicity_features,
             "biological_processes": self.protein_atlas_features['biological_processes'],
             "molecular_functions": self.protein_atlas_features['molecular_processes'],
             "subcellular_locations": self.protein_atlas_features['subcellular_locations']
@@ -907,7 +837,7 @@ class GeneCharacterisationPreprocessor:
 
     def __binding_affinity_feature_extractor(self):
         """
-        DEPRECATED: Data is too sparse. Either K_i or IC50 is present, not both and either is to sparse to use on its
+        DEPRECATED: Data is too sparse. Either K_i or IC50 is present, not both and either is too sparse to use on its
         own.
         """
         binding_affinity_data = pd.read_csv(self.config['paths']['BINDING_AFFINITY_PATH'], on_bad_lines='warn',
@@ -915,6 +845,108 @@ class GeneCharacterisationPreprocessor:
         binding_affinity_human = binding_affinity_data[binding_affinity_data[('Target Source Organism According to '
                                                                               'Curator or DataSource')] == ('Homo '
                                                                                                             'sapiens')]
+
+
+class VariantToGenePreprocessor(GeneCharacterisationPreprocessor):
+    def __init__(self, config):
+        super().__init__(config)
+        print("Getting variant-to-gene embeddings...")
+        self.pathogenicity_embeddings = None
+        self.config = config
+        print("Processing AlphaMissense data...")
+        self.variant_pathogenicity_embedder()
+        self.pathogenicity_features = self.pathogenicity_train_data()
+
+    def variant_pathogenicity_embedder(self):
+        """
+        Extract variant-level AlphaMissense pathogenicity score and project to gene-level using autoencoder that was
+        pre-trained on GH South-Asian population variants.
+        """
+        # check if gh_am_data.pkl exists yet
+        print("Combining AM and GH data...")
+        if not os.path.exists("../data/alphamissense/gh_am_data.pkl"):
+            am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
+            am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
+            self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
+            self.gh_data = self.gh_data.explode('ALT')
+            self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
+            self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
+            pos_list = self.gh_data['POS'].tolist()
+            chrom_list = self.gh_data['#CHROM'].tolist()
+            ref_list = self.gh_data['REF'].tolist()
+            alt_list = self.gh_data['ALT'].tolist()
+
+            pos_list = [str(pos) for pos in pos_list]
+            variant_id_list = [chrom + '_' + pos + '_' + ref + '_' + alt for chrom, pos, ref, alt in
+                               zip(chrom_list, pos_list, ref_list, alt_list)]
+            self.gh_data['variant_id'] = variant_id_list
+            am = am[['am_pathogenicity', 'variant_id']]
+            print("Combining AlphaMissense data with GH data...")
+            self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
+            self.gh_data.to_pickle('../data/alphamissense/gh_am_data.pkl')
+        else:
+            self.gh_data = pd.read_pickle('../data/alphamissense/gh_am_data.pkl')
+
+        variant_am_features = {}
+        for index, row in tqdm(self.gh_data.iterrows()):
+            gene = row['Gene']
+            gh_af = row['AF_ELGH']
+            am_score = row['am_pathogenicity']
+            if gene not in variant_am_features.keys():
+                variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
+            else:
+                variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
+
+        if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_encoder'):
+            # if no pre-trained model exists, train one
+            print('Pre-training pathogenicity autoencoder...')
+            ae_train.train(variant_am_features, self.config)
+            print('Pathogenicity autoencoder trained!')
+            print('Embedding pathogenicity data from variant to gene level...')
+            embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+            self.pathogenicity_embeddings = embeddings
+        else:
+            # if pre-trained model exists, load it
+            print('Loading pathogenicity autoencoder...')
+            embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+            self.pathogenicity_embeddings = embeddings
+
+    def fetch_pathogenicity_embeddings(self, variant_am_features):
+        hparams = self.config['hyperparameters']['pathogenicity_autoencoder']
+        model_dir = 'autoencoders/checkpoints/variant_pathogenicity_encoder'
+        model_files = os.listdir(model_dir)
+        assert len(model_files) == 1
+        model_file = model_files[0]
+        model = AutoencoderTrainer.load_from_checkpoint(
+            model_dir + '/' + model_file, input_dim=hparams['input_dim'],
+            output_dim=hparams['output_dim'],
+            encoding_dim=hparams['latent_dim'],
+            num_layers=hparams['num_layers'], nhead=hparams['nhead'],
+            reduction_type=hparams['reduction']
+        )
+        model.eval()
+
+        with torch.no_grad():
+            variant_pathogenicity = DataLoader(
+                VariantPathogenicityData(data_dict=variant_am_features, reduct_dim=hparams['input_dim'],
+                                         reduction_type=hparams['reduction']),
+                collate_fn=padding,
+                shuffle=False
+            )
+
+            print("Generating embeddings...")
+
+            trainer = pl.Trainer()
+            embeddings = trainer.predict(model, dataloaders=variant_pathogenicity)
+        return embeddings
+
+    def pathogenicity_train_data(self):
+        # TODO: embeddings are not in a dictionary yet. Change this. Check variant_pathogenicity object potentially
+        combined_data = pd.DataFrame.from_dict(self.pathogenicity_embeddings, orient='index')
+        combined_data = combined_data.reset_index().rename(columns={'index': 'gene'})
+        self.pathogenicity_features = combined_data.merge(self.target, on='gene', how='left')
+        print(self.pathogenicity_features)
+        return 0
 
 
 class __WildtypeLoader:
