@@ -279,11 +279,11 @@ def open_gc_data():
     return data, num_features, gcp, config
 
 
-def open_vge_data():
+def open_vge_data(gcp):
     with open("config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
 
-    vgep = VariantToGenePreprocessor(config=config)
+    vgep = VariantToGenePreprocessor(config=config, gcp=gcp)
     print("Variant-to-gene embeddings preprocessed!\n")
 
     data = vgep.data
@@ -303,7 +303,7 @@ def distillation():
     we add the pseudolabels to the training data and train the student model on the combined dataset.
     """
     gc_data, gc_num_features, gcp, hyperparams = open_gc_data()
-    vge_data, vge_num_features, vgep = open_vge_data()
+    vge_data, vge_num_features, vgep = open_vge_data(gcp)
 
     labels = gc_data.iloc[:, -1].values
     features = gc_data.iloc[:, 1:-1].values
