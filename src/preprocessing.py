@@ -847,9 +847,12 @@ class GeneCharacterisationPreprocessor:
                                                                                                             'sapiens')]
 
 
-class VariantToGenePreprocessor(GeneCharacterisationPreprocessor):
-    def __init__(self, config):
-        super().__init__(config)
+class VariantToGenePreprocessor:
+    def __init__(self, config, gcp):
+        self.gcp = gcp
+        self.gh_data = gcp.gh_data
+        self.target = gcp.target
+        self.data = gcp.data
         print("Getting variant-to-gene embeddings...")
         self.pathogenicity_embeddings = None
         self.config = config
@@ -887,15 +890,20 @@ class VariantToGenePreprocessor(GeneCharacterisationPreprocessor):
         else:
             self.gh_data = pd.read_pickle('../data/alphamissense/gh_am_data.pkl')
 
-        variant_am_features = {}
-        for index, row in tqdm(self.gh_data.iterrows()):
-            gene = row['Gene']
-            gh_af = row['AF_ELGH']
-            am_score = row['am_pathogenicity']
-            if gene not in variant_am_features.keys():
-                variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
-            else:
-                variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
+        if not os.path.exists("../data/alphamissense/variant_am_features.pkl"):
+            variant_am_features = {}
+            for index, row in tqdm(self.gh_data.iterrows()):
+                gene = row['Gene']
+                gh_af = row['AF_ELGH']
+                am_score = row['am_pathogenicity']
+                if gene not in variant_am_features.keys():
+                    variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
+                else:
+                    variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
+            with open('../data/alphamissense/variant_am_features.pkl', 'wb') as fp:
+                pkl.dump(variant_am_features, fp)
+        else:
+            variant_am_features = pd.read_pickle('../data/alphamissense/variant_am_features.pkl')
 
         if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_encoder'):
             # if no pre-trained model exists, train one
@@ -903,12 +911,24 @@ class VariantToGenePreprocessor(GeneCharacterisationPreprocessor):
             ae_train.train(variant_am_features, self.config)
             print('Pathogenicity autoencoder trained!')
             print('Embedding pathogenicity data from variant to gene level...')
-            embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+            if not os.path.exists('../data/alphamissense/embeddings.pkl'):
+                embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+                with open('../data/alphamissense/embeddings.pkl', 'wb') as fp:
+                    pkl.dump(embeddings, fp)
+            else:
+                with open('../data/alphamissense/embeddings.pkl', 'rb') as fp:
+                    embeddings = pkl.load(fp)
             self.pathogenicity_embeddings = embeddings
         else:
             # if pre-trained model exists, load it
             print('Loading pathogenicity autoencoder...')
-            embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+            if not os.path.exists('../data/alphamissense/embeddings.pkl'):
+                embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+                with open('../data/alphamissense/embeddings.pkl', 'wb') as fp:
+                    pkl.dump(embeddings, fp)
+            else:
+                with open('../data/alphamissense/embeddings.pkl', 'rb') as fp:
+                    embeddings = pkl.load(fp)
             self.pathogenicity_embeddings = embeddings
 
     def fetch_pathogenicity_embeddings(self, variant_am_features):
@@ -933,20 +953,27 @@ class VariantToGenePreprocessor(GeneCharacterisationPreprocessor):
                 collate_fn=padding,
                 shuffle=False
             )
+            gene_names = variant_pathogenicity.dataset.gene_names
 
             print("Generating embeddings...")
 
             trainer = pl.Trainer()
             embeddings = trainer.predict(model, dataloaders=variant_pathogenicity)
+            embeddings = {gene: embedding for gene, embedding in zip(gene_names, embeddings)}
         return embeddings
 
     def pathogenicity_train_data(self):
-        # TODO: embeddings are not in a dictionary yet. Change this. Check variant_pathogenicity object potentially
         combined_data = pd.DataFrame.from_dict(self.pathogenicity_embeddings, orient='index')
-        combined_data = combined_data.reset_index().rename(columns={'index': 'gene'})
-        self.pathogenicity_features = combined_data.merge(self.target, on='gene', how='left')
-        print(self.pathogenicity_features)
-        return 0
+        combined_data = combined_data.reset_index().rename(columns={'index': 'Gene'})
+        target = self.target
+        target['target'] = 1
+        target = target.drop(['Gene'], axis=1)
+        target = target.rename(columns={'Ensembl': 'Gene'})
+        combined_data = combined_data.merge(target, on='Gene', how='left')
+        combined_data = combined_data.drop([0], axis=1)
+        combined_data = combined_data.sort_values(by=['target'], ascending=False)
+        combined_data = combined_data.fillna(0)
+        return combined
 
 
 class __WildtypeLoader:
