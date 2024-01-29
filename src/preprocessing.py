@@ -53,6 +53,7 @@ class GeneCharacterisationPreprocessor:
         self.binding_affinity_features = None
         self.protein_atlas_features = None
         self.protein_atlas_feature_names = None
+        self.tissue_specificity_features = None
 
         self.acmg_genes = None
         self.pfam_genes = None
@@ -75,7 +76,8 @@ class GeneCharacterisationPreprocessor:
             'ppi_features.pkl': self.ppi_feature_extractor,
             # 'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
             'alphafold_features.pkl': self.alphafold_feature_extractor,
-            'protein_atlas_features.pkl': self.protein_atlas_feature_extractor
+            'protein_atlas_features.pkl': self.protein_atlas_feature_extractor,
+            'tissue_specificity_features.pkl': self.tissue_expression_feature_extractor,
         }
 
         for feature_file, feature_extractor in feature_extractors.items():
@@ -455,6 +457,22 @@ class GeneCharacterisationPreprocessor:
 
         self.gene_essentiality_features = gene_essentiality
 
+    def tissue_expression_feature_extractor(self):
+        tissue_expression = pd.read_csv(self.config['paths']['TISSUE_EXPRESSION_PATH'], sep='\t')   # 1,197,500
+        tissue_expression = tissue_expression[tissue_expression['Reliability'] != 'Uncertain']  # 1,014,693
+        tissue_expression = tissue_expression[tissue_expression['Level'] != 'Uncertain']  # 1,014,693
+
+        gene_tissue_dict = {}
+        for index, row in tissue_expression.iterrows():
+            gene = row['Gene']
+            tissue = row['Tissue']
+            if gene in gene_tissue_dict:
+                gene_tissue_dict[gene].append(tissue)
+            else:
+                gene_tissue_dict[gene] = [tissue]
+
+        self.tissue_specificity_features = gene_tissue_dict
+
     def combine_features(self):
         """
         Combine all the features into a single feature matrix. Use the ELGH variant data as a framework such
@@ -474,6 +492,7 @@ class GeneCharacterisationPreprocessor:
             "ppi_count": self.ppi_features,
             "common_essentials": self.gene_essentiality_features,
             # "am_missense_pathogenicity_score": self.pathogenicity_features,
+            "tissue_specificity": self.tissue_specificity_features,
             "biological_processes": self.protein_atlas_features['biological_processes'],
             "molecular_functions": self.protein_atlas_features['molecular_processes'],
             "subcellular_locations": self.protein_atlas_features['subcellular_locations']
@@ -546,6 +565,20 @@ class GeneCharacterisationPreprocessor:
 
         feature_matrix = pd.concat([feature_matrix, bio_proc_df, mol_func_df, sub_loc_df], axis=1)
 
+        feature_matrix = feature_matrix.fillna(0)
+
+        feature_matrix['tissue_specificity'] = feature_matrix['tissue_specificity'].apply(lambda x: x if isinstance(x, list) else [])
+
+        # Get the unique tissues
+        unique_tissues = set(tissue for tissues_list in feature_matrix['tissue_specificity'] for tissue in tissues_list)
+
+        # Create new columns for each unique tissue
+        for tissue in unique_tissues:
+            feature_matrix[f'tissue_specificity_{tissue.replace(" ", "_")}'] = feature_matrix['tissue_specificity'].apply(
+                lambda x: 1 if tissue in x else 0)
+
+        # Drop the original 'tissue_specificity' column
+        feature_matrix = feature_matrix.drop('tissue_specificity', axis=1)
         feature_matrix = feature_matrix.fillna(0)
 
         # utils.count_zeros(feature_matrix)
@@ -973,7 +1006,7 @@ class VariantToGenePreprocessor:
         combined_data = combined_data.drop([0], axis=1)
         combined_data = combined_data.sort_values(by=['target'], ascending=False)
         combined_data = combined_data.fillna(0)
-        return combined
+        return combined_data
 
 
 class __WildtypeLoader:
