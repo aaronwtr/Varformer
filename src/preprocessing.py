@@ -28,6 +28,7 @@ class GeneCharacterisationPreprocessor:
     """
     This class loads and combines the different data sources into a single feature matrix to be fed into our model.
     """
+
     def __init__(self, config):
 
         self.config = config
@@ -458,7 +459,7 @@ class GeneCharacterisationPreprocessor:
         self.gene_essentiality_features = gene_essentiality
 
     def tissue_expression_feature_extractor(self):
-        tissue_expression = pd.read_csv(self.config['paths']['TISSUE_EXPRESSION_PATH'], sep='\t')   # 1,197,500
+        tissue_expression = pd.read_csv(self.config['paths']['TISSUE_EXPRESSION_PATH'], sep='\t')  # 1,197,500
         tissue_expression = tissue_expression[tissue_expression['Reliability'] != 'Uncertain']  # 1,014,693
         tissue_expression = tissue_expression[tissue_expression['Level'] != 'Uncertain']  # 1,014,693
 
@@ -567,14 +568,16 @@ class GeneCharacterisationPreprocessor:
 
         feature_matrix = feature_matrix.fillna(0)
 
-        feature_matrix['tissue_specificity'] = feature_matrix['tissue_specificity'].apply(lambda x: x if isinstance(x, list) else [])
+        feature_matrix['tissue_specificity'] = feature_matrix['tissue_specificity'].apply(
+            lambda x: x if isinstance(x, list) else [])
 
         # Get the unique tissues
         unique_tissues = set(tissue for tissues_list in feature_matrix['tissue_specificity'] for tissue in tissues_list)
 
         # Create new columns for each unique tissue
         for tissue in unique_tissues:
-            feature_matrix[f'tissue_specificity_{tissue.replace(" ", "_")}'] = feature_matrix['tissue_specificity'].apply(
+            feature_matrix[f'tissue_specificity_{tissue.replace(" ", "_")}'] = feature_matrix[
+                'tissue_specificity'].apply(
                 lambda x: 1 if tissue in x else 0)
 
         # Drop the original 'tissue_specificity' column
@@ -882,16 +885,22 @@ class GeneCharacterisationPreprocessor:
 
 class VariantToGenePreprocessor:
     def __init__(self, config, gcp):
+        self.config = config
         self.gcp = gcp
         self.gh_data = gcp.gh_data
         self.target = gcp.target
         self.data = gcp.data
+
         print("Getting variant-to-gene embeddings...")
         self.pathogenicity_embeddings = None
-        self.config = config
+        self.variant_plddt_embeddings = None
+
         print("Processing AlphaMissense data...")
         self.variant_pathogenicity_embedder()
         self.pathogenicity_features = self.pathogenicity_train_data()
+
+        print("Processing AlphaFold protein structure prediction confidence data...")
+        self.variant_plddt_embedder()
 
     def variant_pathogenicity_embedder(self):
         """
@@ -1007,6 +1016,10 @@ class VariantToGenePreprocessor:
         combined_data = combined_data.sort_values(by=['target'], ascending=False)
         combined_data = combined_data.fillna(0)
         return combined_data
+
+    def variant_plddt_embedder(self):
+        # TODO: check how this data is processed now and how to map this to autoencoder
+        pass
 
 
 class __WildtypeLoader:
