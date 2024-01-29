@@ -12,6 +12,8 @@ paths:
   ADULT_ACTIONABLE_GENES_PATH: "../data/acmg/ACI-overview-adult.tsv"
   PREDIATRIC_ACTIONABLE_GENES_PATH: "../data/acmg/ACI-overview-pediatric.tsv"
   BINDING_AFFINITY_PATH: "../data/bindingdb/BindingDB_All_202312.tsv"
+  TISSUE_EXPRESSION_PATH: "../data/hpa/normal_tissue.tsv"
+  TISSUE_EXPRESSION_DESC_PATH: "../data/hpa/rna_single_cell_cluster_description.tsv"
 
 varipred:
   num_batches: 1000
