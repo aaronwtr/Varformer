@@ -76,7 +76,7 @@ class GeneCharacterisationPreprocessor:
             'gene_essentiality_features.pkl': self.gene_essentiality_feature_extractor,
             'ppi_features.pkl': self.ppi_feature_extractor,
             # 'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
-            'alphafold_features.pkl': self.alphafold_feature_extractor,
+            # 'alphafold_features.pkl': self.alphafold_feature_extractor,
             'protein_atlas_features.pkl': self.protein_atlas_feature_extractor,
             'tissue_specificity_features.pkl': self.tissue_expression_feature_extractor,
         }
@@ -124,7 +124,7 @@ class GeneCharacterisationPreprocessor:
         """
         Recursive algorithm to parse the directory to get the files and their paths.
         """
-        exclude = ['.DS_Store', 'elgh']
+        exclude = ['.DS_Store', 'elgh', 'archive']
         subfiles = os.listdir(path)
         for subfile in subfiles:
             excl = '\t'.join(exclude)
@@ -192,31 +192,6 @@ class GeneCharacterisationPreprocessor:
         self.features.loc[self.features["ENSG"].isin(target_genes_in_features), "target"] = 1
         return self.features
 
-    def download_af_cifs(self):
-        uniprot_data = self.gh_data[["SWISSPROT", "TREMBL", "varipred_id"]]
-        uniprot_data["uniprot_id"] = uniprot_data["SWISSPROT"].fillna(uniprot_data["TREMBL"])
-        uniprot_data = uniprot_data.drop(["SWISSPROT", "TREMBL"], axis=1).rename(columns={"uniprot_id": "UNIPROT"})
-        uniprot_ids = uniprot_data["UNIPROT"].unique().tolist()
-
-        url = "https://alphafold.ebi.ac.uk/files/AF-{id}-F1-model_v4.cif"
-
-        folder = "../data/alphafold/alphafold_cifs"
-        if not os.path.exists(folder):
-            os.makedirs(folder)
-
-        for uni_id in tqdm(uniprot_ids):
-            # check if uni_id occurs in swissprot_cif_v4 folder, if so copy it to alphafold_cifs
-            if os.path.exists(f"../data/alphafold/swissprot_cif_v4/AF-{uni_id}-F1-model_v4.cif"):
-                shutil.copy(f"../data/alphafold/swissprot_cif_v4/AF-{uni_id}-F1-model_v4.cif",
-                            f"../data/alphafold/alphafold_cifs/AF-{uni_id}-F1-model_v4.cif")
-                continue
-            file_url = url.format(id=uni_id)
-            file_name = os.path.basename(file_url)
-
-            response = requests.get(file_url)
-            with open(os.path.join(folder, file_name), "wb") as f:
-                f.write(response.content)
-
     def get_holdout_genes(self):
         # ACMG actionable genes
         columns = ['disease', 'gene']
@@ -248,71 +223,6 @@ class GeneCharacterisationPreprocessor:
         act_genes_adult = act_genes_adult[act_genes_adult['overall'].notna()]
         act_genes_pediatric = act_genes_pediatric[act_genes_pediatric['overall'].notna()]
         act_genes = pd.concat([act_genes_adult, act_genes_pediatric])
-
-    def alphafold_feature_extractor(self):
-        """
-        Extract AlphaFold features from the AlphaFold API. Specifically, we get the average pLDDT score for the proteins
-        in our dataset
-        """
-        uniprot_data = self.gh_data[["SWISSPROT", "TREMBL", "varipred_id"]]
-        uniprot_data["uniprot_id"] = uniprot_data["SWISSPROT"].fillna(uniprot_data["TREMBL"])
-        uniprot_data = uniprot_data.drop(["SWISSPROT", "TREMBL"], axis=1).rename(columns={"uniprot_id": "UNIPROT"})
-        uniprot_ids = uniprot_data["UNIPROT"].unique().tolist()
-        if not os.path.exists('../data/alphafold/alphafold_cifs'):
-            self.download_af_cifs()
-        extracted_values = {}
-        if os.path.exists('../data/alphafold/af_plddt_features.pkl'):
-            with open('../data/alphafold/af_plddt_features.pkl', 'rb') as fp:
-                features = pkl.load(fp)
-            return features
-        else:
-            if os.path.exists('../data/alphafold/af_plddt_features_non_normalized.pkl'):
-                with open('../data/alphafold/af_plddt_features_non_normalized.pkl', 'rb') as fp:
-                    extracted_values = pkl.load(fp)
-            else:
-                for qualifier in tqdm(uniprot_ids):
-                    extracted_values[qualifier] = {}
-                    cif_file_path = f"{self.config['paths']['AF_PATH']}AF-{qualifier}-F1-model_v4.cif"
-                    target_format_mean = "_ma_qa_metric_global.metric_value"
-                    target_format_max = "_ma_qa_metric_local.ordinal_id"
-                    extract = False
-                    values_list = []
-                    with open(cif_file_path, "r") as cif_file:
-                        for line in cif_file:
-                            if line.startswith(target_format_mean):
-                                mean_value = line[len(target_format_mean):].strip()
-                                extracted_values[qualifier]['mean'] = float(mean_value)
-
-                            if line.startswith(target_format_max):
-                                extract = True
-                                continue
-
-                            if line == '#\n':
-                                extract = False
-                                continue
-
-                            if extract:
-                                parts = line.split()
-                                if len(parts) >= 5:
-                                    plddt = float(parts[4])
-                                    values_list.append(plddt)
-                    if len(values_list) != 0:
-                        protein_len = len(values_list)
-                        max_value = max(values_list)
-                        extracted_values[qualifier]['max'] = max_value
-                        # we extract the len for later experiments
-                        extracted_values[qualifier]['protein_len'] = protein_len
-                    else:
-                        print(f"\nError: Unable to fetch data for {qualifier}. Inserting 0.0.")
-                        extracted_values[qualifier]['mean'] = 0.0
-                        extracted_values[qualifier]['max'] = 0.0
-                        extracted_values[qualifier]['protein_len'] = np.nan
-            # NOTE: normalize AFTER train test split
-            # scaler = MinMaxScaler()
-            # extracted_values = pd.DataFrame.from_dict(extracted_values, orient='index')
-            # extracted_values[['mean', 'max']] = scaler.fit_transform(extracted_values[['mean', 'max']])
-            # features = extracted_values.to_dict()
-            self.alphafold_features = extracted_values
 
     def chem_feature_extractor(self):
         """
@@ -498,14 +408,14 @@ class GeneCharacterisationPreprocessor:
             "molecular_functions": self.protein_atlas_features['molecular_processes'],
             "subcellular_locations": self.protein_atlas_features['subcellular_locations']
         }
-        uniprot_features = {
-            "af_protein_structure_score": self.alphafold_features["mean"]
-        }
+        # uniprot_features = {
+        #     "af_protein_structure_score": self.alphafold_features["mean"]
+        # }
 
         for feature, values in ensg_features.items():
             feature_matrix[feature] = feature_matrix["ENSG"].map(values)
-        for feature, values in uniprot_features.items():
-            feature_matrix[feature] = feature_matrix["UNIPROT"].map(values)
+        # for feature, values in uniprot_features.items():
+        #    feature_matrix[feature] = feature_matrix["UNIPROT"].map(values)
 
         feature_matrix = feature_matrix.drop(["UNIPROT"], axis=1)
 
@@ -519,7 +429,7 @@ class GeneCharacterisationPreprocessor:
         # feature_matrix = feature_matrix[cols]
 
         sub_df = feature_matrix.copy()
-        sub_df = sub_df.iloc[:, -4:-1]
+        sub_df = sub_df.iloc[:, -3:]
 
         bio_proc_list = []
         mol_func_list = []
@@ -900,7 +810,8 @@ class VariantToGenePreprocessor:
         self.pathogenicity_features = self.pathogenicity_train_data()
 
         print("Processing AlphaFold protein structure prediction confidence data...")
-        self.variant_plddt_embedder()
+        self.alphafold_features = None
+        self.plddt_embedder()
 
     def variant_pathogenicity_embedder(self):
         """
@@ -1017,9 +928,127 @@ class VariantToGenePreprocessor:
         combined_data = combined_data.fillna(0)
         return combined_data
 
-    def variant_plddt_embedder(self):
+    def plddt_embedder(self):
         # TODO: check how this data is processed now and how to map this to autoencoder
-        pass
+        self.alphafold_feature_extractor()
+        alphafold_raw = self.alphafold_features
+
+        plddt_raw = {}
+        for uniprot_id, data_types in alphafold_raw.items():
+            res_pldtt_values = data_types['res_plddt']
+            plddt_raw[uniprot_id] = res_pldtt_values
+        print(plddt_raw)
+        return 0
+
+    def alphafold_feature_extractor(self):
+        """
+        Extract AlphaFold features from the AlphaFold API. Specifically, we get the average pLDDT score for the proteins
+        in our dataset
+        """
+        if not os.path.exists('../data/cache/uniprot_ids.pkl'):
+            uni_to_gene = {}
+            for index, row in self.gh_data.iterrows():
+                gene = row['Gene']
+                uni = row['UNIPROT']
+                uni_to_gene[uni] = gene
+
+            # write the uniprot ids to a pkl file
+            with open('../data/cache/uniprot_ids.pkl', 'wb') as fp:
+                pkl.dump(uni_to_gene, fp)
+        else:
+            with open('../data/cache/uniprot_ids.pkl', 'rb') as fp:
+                uni_to_gene = pkl.load(fp)
+
+        uniprot_ids = self.gh_data["UNIPROT"].unique().tolist()
+
+        if not os.path.exists('../data/alphafold/alphafold_cifs'):
+            self.download_af_cifs()
+        extracted_values = {}
+        if os.path.exists('../data/features/alphafold_features.pkl'):
+            with open('../data/features/alphafold_features.pkl', 'rb') as fp:
+                features = pkl.load(fp)
+                self.alphafold_features = features
+        else:
+            if os.path.exists('../data/alphafold/af_plddt_features_non_normalized.pkl'):
+                with open('../data/alphafold/af_plddt_features_non_normalized.pkl', 'rb') as fp:
+                    extracted_values = pkl.load(fp)
+            else:
+                for qualifier in tqdm(uniprot_ids):
+                    extracted_values[qualifier] = {}
+                    cif_file_path = f"{self.config['paths']['AF_PATH']}AF-{qualifier}-F1-model_v4.cif"
+                    target_format_mean = "_ma_qa_metric_global.metric_value"
+                    target_format_max = "_ma_qa_metric_local.ordinal_id"
+                    extract = True
+                    values_list = []
+                    try:
+                        with open(cif_file_path, "r") as cif_file:
+                            for line in cif_file:
+                                if line.startswith(target_format_mean):
+                                    mean_value = line[len(target_format_mean):].strip()
+                                    extracted_values[qualifier]['mean'] = float(mean_value)
+
+                                if line.startswith(target_format_max):
+                                    extract = True
+                                    continue
+
+                                if line == '#\n':
+                                    extract = False
+                                    continue
+
+                                if extract:
+                                    parts = line.split()
+                                    line_str = ' '.join(parts)
+                                    if line_str.startswith('<?xml') and '<Error>' in line_str:
+                                        continue
+                                    elif len(parts) >= 5:
+                                        plddt = float(parts[4])
+                                        values_list.append(plddt)
+                            if len(values_list) != 0:
+                                protein_len = len(values_list)
+                                max_value = max(values_list)
+                                extracted_values[qualifier]['max'] = max_value
+                                extracted_values[qualifier]['res_plddt'] = values_list
+                                # we extract the len for later experiments
+                                extracted_values[qualifier]['protein_len'] = protein_len
+                            else:
+                                print(f"\nError: Unable to fetch data for {qualifier}. Inserting 0.0.")
+                                extracted_values[qualifier]['mean'] = 0.0
+                                extracted_values[qualifier]['max'] = 0.0
+                                extracted_values[qualifier]['protein_len'] = np.nan
+                                extracted_values[qualifier]['res_plddt'] = []
+                    except FileNotFoundError as e:
+                        print(f"\nError: Unable to fetch data for {qualifier}. Inserting 0.0.")
+                        extracted_values[qualifier]['mean'] = 0.0
+                        extracted_values[qualifier]['max'] = 0.0
+                        extracted_values[qualifier]['protein_len'] = np.nan
+                        extracted_values[qualifier]['res_plddt'] = []
+
+                # map uniprot ids to gene names
+                extracted_values = {uni_to_gene[uniprot]: values for uniprot, values in extracted_values.items()}
+                with open('../data/features/alphafold_features.pkl', 'wb') as fp:
+                    pkl.dump(extracted_values, fp)
+
+            self.alphafold_features = extracted_values
+
+    def download_af_cifs(self):
+        uniprot_ids = self.gh_data["UNIPROT"].unique().tolist()
+
+        url = "https://alphafold.ebi.ac.uk/files/AF-{id}-F1-model_v4.cif"
+
+        folder = "../data/alphafold/alphafold_cifs"
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+
+        for uni_id in tqdm(uniprot_ids):
+            # check if uni_id occurs in swissprot_cif_v4 folder, if so copy it to alphafold_cifs
+            if os.path.exists(f"../data/alphafold/alphafold_cifs/AF-{uni_id}-F1-model_v4.cif"):
+                continue
+            file_url = url.format(id=uni_id)
+            file_name = os.path.basename(file_url)
+
+            response = requests.get(file_url)
+            with open(os.path.join(folder, file_name), "wb") as f:
+                f.write(response.content)
 
 
 class __WildtypeLoader:
