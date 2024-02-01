@@ -17,11 +17,10 @@ from sklearn.model_selection import train_test_split
 from Bio import SeqIO
 import pytorch_lightning as pl
 
-from autoencoders import ae_train
 from autoencoders.autoencoder import AutoencoderTrainer
 from src.dataloader import VariantPathogenicityData
 from torch.utils.data import DataLoader
-from src.autoencoders.ae_train import padding
+from src.autoencoders import ae_training
 
 
 class GeneCharacterisationPreprocessor:
@@ -49,12 +48,16 @@ class GeneCharacterisationPreprocessor:
         self.mouse_ko_features = None
         self.gene_essentiality_features = None
         self.ppi_features = None
-        # self.pathogenicity_features = None
-        # self.alphafold_features = None
+
         self.binding_affinity_features = None
         self.protein_atlas_features = None
         self.protein_atlas_feature_names = None
         self.tissue_specificity_features = None
+
+        if not config['preprocessing']['pathogenicity_embed']:
+            self.pathogenicity_features = None
+        if not config['preprocessing']['alphafold_embed']:
+            self.alphafold_features = None
 
         self.acmg_genes = None
         self.pfam_genes = None
@@ -75,7 +78,7 @@ class GeneCharacterisationPreprocessor:
             'mouse_ko_features.pkl': self.mouse_knockout_feature_extractor,
             'gene_essentiality_features.pkl': self.gene_essentiality_feature_extractor,
             'ppi_features.pkl': self.ppi_feature_extractor,
-            # 'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
+            'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
             # 'alphafold_features.pkl': self.alphafold_feature_extractor,
             'protein_atlas_features.pkl': self.protein_atlas_feature_extractor,
             'tissue_specificity_features.pkl': self.tissue_expression_feature_extractor,
@@ -195,7 +198,7 @@ class GeneCharacterisationPreprocessor:
     def get_holdout_genes(self):
         # ACMG actionable genes
         columns = ['disease', 'gene']
-        acmg_raw = pd.read_excel(self.config['paths']['ACMG_CLINACT_PATH'], sheet_name=0)
+        acmg_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name=0)  # sheet 0 is acmg genes
         acmg_raw.columns = columns
         acmg_raw['gene'] = acmg_raw['gene'].apply(lambda x: x.replace(u'\xa0', u' '))
         genes = acmg_raw['gene'].tolist()
@@ -206,7 +209,8 @@ class GeneCharacterisationPreprocessor:
         self.acmg_genes = ensg_genes
 
         # Pfam genes
-        pfam_raw = pd.read_excel(self.config['paths']['ACMG_CLINACT_PATH'], sheet_name=1)
+        pfam_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name=1)  # sheet 1 is manually curated
+        # pfam genes
         ensg_pfam = pfam_raw['ENSG'].tolist()
         self.pfam_genes = ensg_pfam
 
@@ -384,6 +388,49 @@ class GeneCharacterisationPreprocessor:
 
         self.tissue_specificity_features = gene_tissue_dict
 
+    def pathogenicity_feature_extractor(self):
+        """
+        Extract variant-level AlphaMissense pathogenicity score and average to gene-level using population statistics.
+        """
+        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
+        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
+
+        am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
+
+        am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
+        self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
+        self.gh_data = self.gh_data.explode('ALT')
+        self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
+        self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
+        pos_list = self.gh_data['POS'].tolist()
+        chrom_list = self.gh_data['#CHROM'].tolist()
+        ref_list = self.gh_data['REF'].tolist()
+        alt_list = self.gh_data['ALT'].tolist()
+
+        pos_list = [str(pos) for pos in pos_list]
+        variant_id_list = [chrom + '_' + pos + '_' + ref + '_' + alt for chrom, pos, ref, alt in
+                           zip(chrom_list, pos_list, ref_list, alt_list)]
+        self.gh_data['variant_id'] = variant_id_list
+        am = am[['am_pathogenicity', 'variant_id']]
+
+        self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
+
+        variant_am_features = {}
+        for index, row in tqdm(self.gh_data.iterrows()):
+            gene = row['Gene']
+            gh_af = row['AF_ELGH']
+            am_score = row['am_pathogenicity']
+            if gene not in variant_am_features.keys():
+                variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
+            else:
+                variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
+
+        gene_am_features = {}
+        for ensg, probs in variant_am_features.items():
+            gene_am_features[ensg] = sum(probs) / len(probs)
+
+        self.pathogenicity_features = gene_am_features
+
     def combine_features(self):
         """
         Combine all the features into a single feature matrix. Use the ELGH variant data as a framework such
@@ -396,18 +443,44 @@ class GeneCharacterisationPreprocessor:
         feature_matrix = feature_matrix.rename(columns={"Gene": "ENSG"})
         feature_matrix = feature_matrix.drop_duplicates(subset=['ENSG'])
 
-        ensg_features = {
+        ensg_features_path = {}
+        ensg_features_af = {}
+
+        if not self.config['preprocessing']['pathogenicity_embed']:
+            ensg_features_path["pathogenicity"] = self.pathogenicity_features
+        if not self.config['preprocessing']['alphafold_embed']:
+            ensg_features_af["af_protein_structure_score"] = self.alphafold_features["mean"]
+
+        base_ensg_features = {
             "chemical_interaction_count": self.chem_features,
             "pli_lof_constraint": self.gnomad_features,
             "mouse_ko_effect": self.mouse_ko_features,
             "ppi_count": self.ppi_features,
             "common_essentials": self.gene_essentiality_features,
-            # "am_missense_pathogenicity_score": self.pathogenicity_features,
+        }
+
+        categorical_ensg_features = {
             "tissue_specificity": self.tissue_specificity_features,
             "biological_processes": self.protein_atlas_features['biological_processes'],
             "molecular_functions": self.protein_atlas_features['molecular_processes'],
             "subcellular_locations": self.protein_atlas_features['subcellular_locations']
         }
+
+        # combine the dictionaries, with path and af features in between the base and categorical features, if the path
+        # and af features are not None
+
+        if (not self.config['preprocessing']['pathogenicity_embed']
+                and not self.config['preprocessing']['alphafold_embed']):
+            ensg_features = {
+                **base_ensg_features, **ensg_features_path, **ensg_features_af, **categorical_ensg_features
+            }
+        elif not self.config['preprocessing']['pathogenicity_embed']:
+            ensg_features = {**base_ensg_features, **ensg_features_path, **categorical_ensg_features}
+        elif self.config['preprocessing']['alphafold_embed']:
+            ensg_features = {**base_ensg_features, **ensg_features_af, **categorical_ensg_features}
+        else:
+            ensg_features = {**base_ensg_features, **categorical_ensg_features}
+
         # uniprot_features = {
         #     "af_protein_structure_score": self.alphafold_features["mean"]
         # }
@@ -861,7 +934,8 @@ class VariantToGenePreprocessor:
         if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_encoder'):
             # if no pre-trained model exists, train one
             print('Pre-training pathogenicity autoencoder...')
-            ae_train.train(variant_am_features, self.config)
+
+            ae_training.train(variant_am_features, self.config)
             print('Pathogenicity autoencoder trained!')
             print('Embedding pathogenicity data from variant to gene level...')
             if not os.path.exists('../data/alphamissense/embeddings.pkl'):
@@ -903,7 +977,7 @@ class VariantToGenePreprocessor:
             variant_pathogenicity = DataLoader(
                 VariantPathogenicityData(data_dict=variant_am_features, reduct_dim=hparams['input_dim'],
                                          reduction_type=hparams['reduction']),
-                collate_fn=padding,
+                collate_fn=ae_training.padding,
                 shuffle=False
             )
             gene_names = variant_pathogenicity.dataset.gene_names
@@ -929,7 +1003,7 @@ class VariantToGenePreprocessor:
         return combined_data
 
     def plddt_embedder(self):
-        # TODO: check how this data is processed now and how to map this to autoencoder
+        # TODO: homogenise inputs before feeding to autoencoder
         self.alphafold_feature_extractor()
         alphafold_raw = self.alphafold_features
 
@@ -937,7 +1011,6 @@ class VariantToGenePreprocessor:
         for uniprot_id, data_types in alphafold_raw.items():
             res_pldtt_values = data_types['res_plddt']
             plddt_raw[uniprot_id] = res_pldtt_values
-        print(plddt_raw)
         return 0
 
     def alphafold_feature_extractor(self):
