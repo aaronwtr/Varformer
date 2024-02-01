@@ -38,7 +38,7 @@ def test_model_on_acmg_data(model, acmg_dataloader, pfam_dataloader):
     trainer.test(model, dataloaders=pfam_dataloader)
 
 
-def testing():
+def test():
     with open("config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
     model_path = 'path_to_your_model.pt'  # Replace with your model path

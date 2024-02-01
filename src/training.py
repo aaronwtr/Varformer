@@ -22,7 +22,7 @@ from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import MinMaxScaler
 
 
-def tuning():
+def tune():
     study = optuna.create_study(
         study_name="gdtp_mlp",
         direction="maximize"
@@ -69,7 +69,7 @@ def objective(trial: optuna.trial.Trial) -> float:
     config['mlp']['threshold'] = trial.suggest_float('threshold', 0.2, 0.8, step=0.05)
     config['mlp']['weight_decay'] = trial.suggest_categorical('weight_decay', [0.0, 0.001, 0.01, 0.1])
 
-    trainer = training(tag="Tuning")
+    trainer = train(tag="Tuning")
 
     width_depth_ratio = config['mlp']['width'] / config['mlp']['depth']
     total_params = sum(p.numel() for p in trainer.model.parameters())
@@ -144,7 +144,7 @@ def initialise_model(train_raw, val_raw, num_features, config):
 
 
 # noinspection PyUnboundLocalVariable
-def training(tag="Training"):
+def train(tag="Training"):
     data, num_features, gcp, config = open_gc_data()
 
     test_genes = gcp.acmg_genes
@@ -211,14 +211,24 @@ def training(tag="Training"):
         raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
 
 
-def kfold():
+def kfold_teacher():
     data, num_features, _, config = open_gc_data()
-    kfold_training(data, num_features, config)
+    kfold_train(data, num_features, config, model_type="teacher")
 
 
-def kfold_training(data, num_features, config):
+def kfold_train(data, num_features, config, model_type):
     num_splits = 5
     kfold = KFold(n_splits=num_splits, shuffle=True, random_state=42)
+
+    group = f"distillation-1-{model_type}"
+    if not os.path.isdir(f'checkpoints/{group}'):
+        os.mkdir(f'checkpoints/{group}')
+    else:
+        i = 1
+        while os.path.isdir(f'checkpoints/{group}'):
+            i += 1
+            group = f"distillation-{i}-{model_type}"
+        os.mkdir(f'checkpoints/{group}')
 
     # use the new train object to train a new model
     for fold, (train_indices, val_indices) in enumerate(kfold.split(data)):
@@ -235,13 +245,13 @@ def kfold_training(data, num_features, config):
             project="drug-target-prediction",
             tags=[f"distillation-fold{fold + 1}"],
             config=hyperparameters,
-            group="distillation1"
+            group=f"{group}"
         )
 
         run_name = wandb.run.name
         checkpoint_callback = ModelCheckpoint(
             monitor='epoch',
-            dirpath='checkpoints',
+            dirpath=f'checkpoints/{group}',
             filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}-' + f'fold{fold}',
             save_top_k=1,
             mode='max',
@@ -294,7 +304,7 @@ def open_vge_data(gcp):
     return data, num_features, vgep
 
 
-def distillation():
+def kfold_student():
     """
     Training a student model by distilling from a teacher model where the teacher model is used to provide pseudo-labels
     for the unlabeled data used by the student model.
@@ -304,6 +314,7 @@ def distillation():
     """
     gc_data, gc_num_features, gcp, hyperparams = open_gc_data()
     vge_data, vge_num_features, vgep = open_vge_data(gcp)
+    # TODO: When adding autoencoder features, make sure to make use of the preprocessing config
 
     labels = gc_data.iloc[:, -1].values
     features = gc_data.iloc[:, 1:-1].values
@@ -317,7 +328,10 @@ def distillation():
     unlabelled_tensor = unlabelled_dl.dataset.features
 
     teacher_model = PyTorchMLP(config=hyperparams, num_features=num_features)
-    raw_state_dict = torch.load("checkpoints/frosty-salad-126-epoch=99-val_auroc=0.87-fold3.ckpt")['state_dict']
+    raw_state_dict = torch.load(
+        "checkpoints/distillation-2-teacher/balmy-cherry-159-epoch=99-val_auroc=0.80-fold1.ckpt"
+    )['state_dict']
+
     state_dict = {k.replace("model.", ""): v for k, v in raw_state_dict.items()}
     teacher_model.load_state_dict(state_dict)
     teacher_model.eval()
@@ -345,4 +359,4 @@ def distillation():
 
     data = gc_data[gc_data.iloc[:, -1] != -1]
 
-    kfold_training(gc_data, num_features, hyperparams)
+    kfold_train(gc_data, num_features, hyperparams, model_type="student")
