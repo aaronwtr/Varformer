@@ -104,6 +104,21 @@ class LightningMLP(pl.LightningModule):
         self.log('val_spearman', self.model.spearman(probas, labels.float()))
         self.log('val_precision', self.model.precision(bin_preds, labels))
 
+    def test_step(self, batch, batch_idx):
+        features, labels = batch
+        logits, probas, bin_preds = self(features)
+        labels = (labels > float(self.config['threshold'])).float()
+
+        self.log('test_acc', self.model.acc(bin_preds, labels))
+        self.log('test_auroc', self.model.auroc(bin_preds, labels))
+        self.log('test_spearman', self.model.spearman(probas, labels.float()))
+        self.log('test_precision', self.model.precision(bin_preds, labels))
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        features = batch
+        logits, probas, bin_preds = self(features)
+        return probas
+
     def configure_optimizers(self):
         weight_decay = float(self.config.get('weight_decay', 0))
         if self.config['optimizer'] == "Adam":
