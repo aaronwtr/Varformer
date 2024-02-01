@@ -8,12 +8,16 @@ paths:
   COMMON_ESSENTIALS_PATH: "../data/depmap/CRISPRInferredCommonEssentials.csv" # 23Q2 release
   GENE_DRUG_EVIDENCE_PATH: "../data/pharmgkb/clinicalAnnotations/clinical_annotations.tsv"
   PROTEIN_ATLAS_FEATURES: "../data/hpa/proteinatlas.tsv"
-  ACMG_CLINACT_PATH: "../data/acmg/holdout_genes.xlsx"
+  TEST_GENES_PATH: "../data/acmg/holdout_genes.xlsx"
   ADULT_ACTIONABLE_GENES_PATH: "../data/acmg/ACI-overview-adult.tsv"
   PREDIATRIC_ACTIONABLE_GENES_PATH: "../data/acmg/ACI-overview-pediatric.tsv"
   BINDING_AFFINITY_PATH: "../data/bindingdb/BindingDB_All_202312.tsv"
   TISSUE_EXPRESSION_PATH: "../data/hpa/normal_tissue.tsv"
   TISSUE_EXPRESSION_DESC_PATH: "../data/hpa/rna_single_cell_cluster_description.tsv"
+
+preprocessing:
+  pathogenicity_embed: False
+  alphafold_embed: None
 
 varipred:
   num_batches: 1000
