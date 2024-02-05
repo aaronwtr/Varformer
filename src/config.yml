@@ -16,7 +16,7 @@ paths:
   TISSUE_EXPRESSION_DESC_PATH: "../data/hpa/rna_single_cell_cluster_description.tsv"
 
 preprocessing:
-  pathogenicity_embed: False
+  pathogenicity_embed: True
   alphafold_embed: None
 
 varipred:
