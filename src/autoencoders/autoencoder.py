@@ -21,15 +21,16 @@ class PathogenicityAutoencoder(nn.Module):
         self.decoder = TransformerDecoder(decoder_layers, num_layers)
 
     def forward(self, x):
-        z = self.encoder(x)
-        y = self.decoder(x, z)
-        return y
+        x_hat = self.encoder(x)
+        z = self.encoder.layers[0].linear1(x)   # extract the latent representation from TransformerEncoder
+        y = self.decoder(x, x_hat)
+        return y, z
 
 
 class AutoencoderTrainer(pl.LightningModule):
     def __init__(self, input_dim, output_dim, encoding_dim, num_layers, nhead, reduction_type):
         super().__init__()
-        self.autoencoder = PathogenicityAutoencoder(input_dim, output_dim, encoding_dim,num_layers, nhead,
+        self.autoencoder = PathogenicityAutoencoder(input_dim, output_dim, encoding_dim, num_layers, nhead,
                                                     reduction_type)
         self.reduction_type = reduction_type
         self.output_dim = output_dim
@@ -39,18 +40,14 @@ class AutoencoderTrainer(pl.LightningModule):
     def forward(self, x):
         return self.autoencoder(x)
 
-    def pathogenicity_embedding(self, x):
-        z = self.autoencoder.encoder(x)
-        return z
-
     def predict_step(self, batch):
         x = batch
-        z = self.autoencoder(x)
+        _, z = self.autoencoder(x)
         return z
 
     def training_step(self, batch, batch_idx):
         x = batch
-        x_hat = self.autoencoder(x)
+        x_hat, _ = self.autoencoder(x)
         loss = self.loss_fn(x_hat, x)
         log_loss = math.log(loss, 10)
         self.log('reconstruction_loss', loss)
