@@ -986,7 +986,7 @@ class VariantToGenePreprocessor:
 
             trainer = pl.Trainer()
             embeddings = trainer.predict(model, dataloaders=variant_pathogenicity)
-            embeddings = {gene: embedding for gene, embedding in zip(gene_names, embeddings)}
+            embeddings = {gene: embedding.tolist()[0] for gene, embedding in zip(gene_names, embeddings)}
         return embeddings
 
     def pathogenicity_train_data(self):
