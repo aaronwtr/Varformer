@@ -296,12 +296,9 @@ def open_vge_data(gcp):
     vgep = VariantToGenePreprocessor(config=config, gcp=gcp)
     print("Variant-to-gene embeddings preprocessed!\n")
 
-    data = vgep.data
+    pathcty_embds = vgep.pathogenicity_embeddings
 
-    features = data.iloc[:, 1:-1].values
-    num_features = features.shape[1]
-
-    return data, num_features, vgep
+    return pathcty_embds
 
 
 def kfold_student():
@@ -313,8 +310,20 @@ def kfold_student():
     we add the pseudolabels to the training data and train the student model on the combined dataset.
     """
     gc_data, gc_num_features, gcp, hyperparams = open_gc_data()
-    vge_data, vge_num_features, vgep = open_vge_data(gcp)
-    # TODO: When adding autoencoder features, make sure to make use of the preprocessing config
+    pathcty_embds = open_vge_data(gcp)
+
+    # TODO: train Danio with concatenated pathogenicity embeddings
+
+    pthcty_df = pd.DataFrame.from_dict(pathcty_embds, orient='index')
+
+    pthcty_df = pthcty_df.reset_index()
+    pthcty_df = pthcty_df.rename(columns={'index': 'ENSG'})
+
+    pthcty_df = pthcty_df.rename(columns={i: f"pathogenicity_{i}" for i in range(0, pthcty_df.shape[1] - 1)})
+
+    data = pd.merge(gc_data, pthcty_df, on='ENSG', how='inner')
+
+    data = data[[c for c in data if c not in ['target']] + ['target']]
 
     labels = gc_data.iloc[:, -1].values
     features = gc_data.iloc[:, 1:-1].values
