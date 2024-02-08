@@ -553,3 +553,17 @@ def apply_convert_to_dense_on_dict(dict_obj, shape):
     for key, value in dict_obj.items():
         dict_obj[key] = _convert_to_dense(value, shape)
     return dict_obj
+
+
+def featurise(features: dict) -> pandas.DataFrame:
+    with open("../data/features/raw_feature_matrix.pkl", 'rb') as f:
+        feature_matrix = pkl.load(f)
+
+    for feature, values in features.items():
+        feature_matrix[feature] = feature_matrix["ENSG"].map(values)
+
+    # utils.count_zeros(feature_matrix)
+
+    # plot.correlation_heatmap(feature_matrix)
+
+    return feature_matrix
