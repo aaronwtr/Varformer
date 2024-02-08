@@ -13,7 +13,7 @@ import numpy as np
 
 from pytorch_lightning.loggers import WandbLogger
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
-from preprocessing import GeneCharacterisationPreprocessor, VariantToGenePreprocessor
+from preprocessing import GeneCharacterisationPreprocessor, VariantAndStructurePreprocessor
 from dataloader import DrugTargetData
 from model import PyTorchMLP, LightningMLP
 from puupl import training as puupl_training
@@ -212,7 +212,13 @@ def train(tag="Training"):
 
 
 def kfold_teacher():
-    data, num_features, _, config = open_gc_data()
+    print("Training teacher model...\n")
+    data, _, gcp, config = open_gc_data()
+    if config['pathogenicity_autoencoder']['usage']:
+        data = open_vge_data(gcp, data)
+
+    num_features = data.iloc[:, 1:-1].shape[1]
+
     kfold_train(data, num_features, config, model_type="teacher")
 
 
@@ -289,7 +295,7 @@ def open_gc_data():
     return data, num_features, gcp, config
 
 
-def open_vge_data(gcp):
+def open_vge_data(gcp, gc_data):
     with open("config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
 
@@ -297,22 +303,6 @@ def open_vge_data(gcp):
     print("Variant-to-gene embeddings preprocessed!\n")
 
     pathcty_embds = vgep.pathogenicity_embeddings
-
-    return pathcty_embds
-
-
-def kfold_student():
-    """
-    Training a student model by distilling from a teacher model where the teacher model is used to provide pseudo-labels
-    for the unlabeled data used by the student model.
-
-    Firstly, we will run inference over the unlabelled data using the teacher model to define the pseudolabels. Then,
-    we add the pseudolabels to the training data and train the student model on the combined dataset.
-    """
-    gc_data, gc_num_features, gcp, hyperparams = open_gc_data()
-    pathcty_embds = open_vge_data(gcp)
-
-    # TODO: train Danio with concatenated pathogenicity embeddings
 
     pthcty_df = pd.DataFrame.from_dict(pathcty_embds, orient='index')
 
@@ -325,11 +315,31 @@ def kfold_student():
 
     data = data[[c for c in data if c not in ['target']] + ['target']]
 
-    labels = gc_data.iloc[:, -1].values
-    features = gc_data.iloc[:, 1:-1].values
+    return data
+
+
+def kfold_student():
+    """
+    Training a student model by distilling from a teacher model where the teacher model is used to provide pseudo-labels
+    for the unlabeled data used by the student model.
+
+    Firstly, we will run inference over the unlabelled data using the teacher model to define the pseudolabels. Then,
+    we add the pseudolabels to the training data and train the student model on the combined dataset.
+    """
+    with open("config.yml", 'r') as stream:
+        config = yaml.safe_load(stream)
+
+    print("Training student model by distillation from teacher model...\n")
+
+    data, gc_num_features, gcp, hyperparams = open_gc_data()
+    if config['hyperparameters']['pathogenicity_autoencoder']['usage']:
+        data = open_vge_data(gcp, data)
+
+    labels = data.iloc[:, -1].values
+    features = data.iloc[:, 1:-1].values
     num_features = features.shape[1]
 
-    unlabelled_data = gc_data[gc_data.iloc[:, -1] == 0]
+    unlabelled_data = data[data.iloc[:, -1] == 0]
     U = np.where(labels == 0)[0]
 
     val = None
@@ -338,7 +348,7 @@ def kfold_student():
 
     teacher_model = PyTorchMLP(config=hyperparams, num_features=num_features)
     raw_state_dict = torch.load(
-        "checkpoints/distillation-2-teacher/balmy-cherry-159-epoch=99-val_auroc=0.80-fold1.ckpt"
+        "checkpoints/distillation-3-teacher/swift-jazz-179-epoch=99-val_auroc=0.84-fold0.ckpt"
     )['state_dict']
 
     state_dict = {k.replace("model.", ""): v for k, v in raw_state_dict.items()}
@@ -364,8 +374,8 @@ def kfold_student():
 
     # plot.plot_kde(pseudo_labels)
 
-    gc_data.iloc[U, -1] = pseudo_labels.detach().numpy()
+    data.iloc[U, -1] = pseudo_labels.detach().numpy()
 
-    data = gc_data[gc_data.iloc[:, -1] != -1]
+    data = data[data.iloc[:, -1] != -1]
 
-    kfold_train(gc_data, num_features, hyperparams, model_type="student")
+    kfold_train(data, num_features, hyperparams, model_type="student")
