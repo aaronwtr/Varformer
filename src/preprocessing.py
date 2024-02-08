@@ -6,7 +6,6 @@ import os
 import gc
 import warnings
 import argparse
-import shutil
 import torch
 import utils
 
@@ -29,7 +28,7 @@ class GeneCharacterisationPreprocessor:
     """
 
     def __init__(self, config):
-
+        print("Gene Characterisation Preprocessor is booting up...")
         self.config = config
         self.files_and_dirs = os.listdir("../data")
         self.data_name_mapping = {
@@ -48,16 +47,6 @@ class GeneCharacterisationPreprocessor:
         self.mouse_ko_features = None
         self.gene_essentiality_features = None
         self.ppi_features = None
-
-        self.binding_affinity_features = None
-        self.protein_atlas_features = None
-        self.protein_atlas_feature_names = None
-        self.tissue_specificity_features = None
-
-        if not config['preprocessing']['pathogenicity_embed']:
-            self.pathogenicity_features = None
-        if not config['preprocessing']['alphafold_embed']:
-            self.alphafold_features = None
 
         self.acmg_genes = None
         self.pfam_genes = None
@@ -78,10 +67,6 @@ class GeneCharacterisationPreprocessor:
             'mouse_ko_features.pkl': self.mouse_knockout_feature_extractor,
             'gene_essentiality_features.pkl': self.gene_essentiality_feature_extractor,
             'ppi_features.pkl': self.ppi_feature_extractor,
-            'pathogenicity_features.pkl': self.pathogenicity_feature_extractor,
-            # 'alphafold_features.pkl': self.alphafold_feature_extractor,
-            'protein_atlas_features.pkl': self.protein_atlas_feature_extractor,
-            'tissue_specificity_features.pkl': self.tissue_expression_feature_extractor,
         }
 
         for feature_file, feature_extractor in feature_extractors.items():
@@ -372,65 +357,6 @@ class GeneCharacterisationPreprocessor:
 
         self.gene_essentiality_features = gene_essentiality
 
-    def tissue_expression_feature_extractor(self):
-        tissue_expression = pd.read_csv(self.config['paths']['TISSUE_EXPRESSION_PATH'], sep='\t')  # 1,197,500
-        tissue_expression = tissue_expression[tissue_expression['Reliability'] != 'Uncertain']  # 1,014,693
-        tissue_expression = tissue_expression[tissue_expression['Level'] != 'Uncertain']  # 1,014,693
-
-        gene_tissue_dict = {}
-        for index, row in tissue_expression.iterrows():
-            gene = row['Gene']
-            tissue = row['Tissue']
-            if gene in gene_tissue_dict:
-                gene_tissue_dict[gene].append(tissue)
-            else:
-                gene_tissue_dict[gene] = [tissue]
-
-        self.tissue_specificity_features = gene_tissue_dict
-
-    def pathogenicity_feature_extractor(self):
-        """
-        Extract variant-level AlphaMissense pathogenicity score and average to gene-level using population statistics.
-        """
-        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
-        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
-
-        am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
-
-        am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
-        self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
-        self.gh_data = self.gh_data.explode('ALT')
-        self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
-        self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
-        pos_list = self.gh_data['POS'].tolist()
-        chrom_list = self.gh_data['#CHROM'].tolist()
-        ref_list = self.gh_data['REF'].tolist()
-        alt_list = self.gh_data['ALT'].tolist()
-
-        pos_list = [str(pos) for pos in pos_list]
-        variant_id_list = [chrom + '_' + pos + '_' + ref + '_' + alt for chrom, pos, ref, alt in
-                           zip(chrom_list, pos_list, ref_list, alt_list)]
-        self.gh_data['variant_id'] = variant_id_list
-        am = am[['am_pathogenicity', 'variant_id']]
-
-        self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
-
-        variant_am_features = {}
-        for index, row in tqdm(self.gh_data.iterrows()):
-            gene = row['Gene']
-            gh_af = row['AF_ELGH']
-            am_score = row['am_pathogenicity']
-            if gene not in variant_am_features.keys():
-                variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
-            else:
-                variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
-
-        gene_am_features = {}
-        for ensg, probs in variant_am_features.items():
-            gene_am_features[ensg] = sum(probs) / len(probs)
-
-        self.pathogenicity_features = gene_am_features
-
     def combine_features(self):
         """
         Combine all the features into a single feature matrix. Use the ELGH variant data as a framework such
@@ -443,15 +369,7 @@ class GeneCharacterisationPreprocessor:
         feature_matrix = feature_matrix.rename(columns={"Gene": "ENSG"})
         feature_matrix = feature_matrix.drop_duplicates(subset=['ENSG'])
 
-        ensg_features_path = {}
-        ensg_features_af = {}
-
-        if not self.config['preprocessing']['pathogenicity_embed']:
-            ensg_features_path["pathogenicity"] = self.pathogenicity_features
-        if not self.config['preprocessing']['alphafold_embed']:
-            ensg_features_af["af_protein_structure_score"] = self.alphafold_features["mean"]
-
-        base_ensg_features = {
+        ensg_features = {
             "chemical_interaction_count": self.chem_features,
             "pli_lof_constraint": self.gnomad_features,
             "mouse_ko_effect": self.mouse_ko_features,
@@ -459,288 +377,11 @@ class GeneCharacterisationPreprocessor:
             "common_essentials": self.gene_essentiality_features,
         }
 
-        categorical_ensg_features = {
-            "tissue_specificity": self.tissue_specificity_features,
-            "biological_processes": self.protein_atlas_features['biological_processes'],
-            "molecular_functions": self.protein_atlas_features['molecular_processes'],
-            "subcellular_locations": self.protein_atlas_features['subcellular_locations']
-        }
-
-        # combine the dictionaries, with path and af features in between the base and categorical features, if the path
-        # and af features are not None
-
-        if (not self.config['preprocessing']['pathogenicity_embed']
-                and not self.config['preprocessing']['alphafold_embed']):
-            ensg_features = {
-                **base_ensg_features, **ensg_features_path, **ensg_features_af, **categorical_ensg_features
-            }
-        elif not self.config['preprocessing']['pathogenicity_embed']:
-            ensg_features = {**base_ensg_features, **ensg_features_path, **categorical_ensg_features}
-        elif self.config['preprocessing']['alphafold_embed']:
-            ensg_features = {**base_ensg_features, **ensg_features_af, **categorical_ensg_features}
-        else:
-            ensg_features = {**base_ensg_features, **categorical_ensg_features}
-
-        # uniprot_features = {
-        #     "af_protein_structure_score": self.alphafold_features["mean"]
-        # }
-
-        for feature, values in ensg_features.items():
-            feature_matrix[feature] = feature_matrix["ENSG"].map(values)
-        # for feature, values in uniprot_features.items():
-        #    feature_matrix[feature] = feature_matrix["UNIPROT"].map(values)
-
-        feature_matrix = feature_matrix.drop(["UNIPROT"], axis=1)
-
-        # cols = list(feature_matrix.columns)
-        # cols_to_move = ['biological_processes', 'molecular_functions', 'subcellular_locations']
-        #
-        # cols = [col for col in cols if col not in cols_to_move]
-        #
-        # cols += cols_to_move
-        #
-        # feature_matrix = feature_matrix[cols]
-
-        sub_df = feature_matrix.copy()
-        sub_df = sub_df.iloc[:, -3:]
-
-        bio_proc_list = []
-        mol_func_list = []
-        sub_loc_list = []
-
-        for index, row in sub_df.iterrows():
-            bio_proc = row['biological_processes']
-            mol_func = row['molecular_functions']
-            sub_loc = row['subcellular_locations']
-
-            if isinstance(bio_proc, float):
-                bio_proc = [0] * len(self.protein_atlas_feature_names['biological_processes'])
-            if isinstance(mol_func, float):
-                mol_func = [0] * len(self.protein_atlas_feature_names['molecular_functions'])
-            if isinstance(sub_loc, float):
-                sub_loc = [0] * len(self.protein_atlas_feature_names['subcellular_locations'])
-
-            bio_proc_array = np.array(bio_proc).reshape(-1, len(bio_proc))
-            mol_func_array = np.array(mol_func).reshape(-1, len(mol_func))
-            sub_loc_array = np.array(sub_loc).reshape(-1, len(sub_loc))
-
-            bio_proc_list.append(bio_proc_array[0].tolist())
-            mol_func_list.append(mol_func_array[0].tolist())
-            sub_loc_list.append(sub_loc_array[0].tolist())
-
-        bio_proc_feature_names = self.protein_atlas_feature_names['biological_processes']
-        mol_func_feature_names = self.protein_atlas_feature_names['molecular_functions']
-        sub_loc_feature_names = self.protein_atlas_feature_names['subcellular_locations']
-
-        bio_proc_df = pd.DataFrame(np.array(bio_proc_list).reshape(-1, len(bio_proc_feature_names)),
-                                   columns=bio_proc_feature_names)
-        mol_func_df = pd.DataFrame(np.array(mol_func_list).reshape(-1, len(mol_func_feature_names)),
-                                   columns=mol_func_feature_names)
-        sub_loc_df = pd.DataFrame(np.array(sub_loc_list).reshape(-1, len(sub_loc_feature_names)),
-                                  columns=sub_loc_feature_names)
-
-        feature_matrix = feature_matrix.drop(['biological_processes', 'molecular_functions', 'subcellular_locations'],
-                                             axis=1)
-
-        feature_matrix.reset_index(drop=True, inplace=True)
-        bio_proc_df.reset_index(drop=True, inplace=True)
-        mol_func_df.reset_index(drop=True, inplace=True)
-        sub_loc_df.reset_index(drop=True, inplace=True)
-
-        feature_matrix = pd.concat([feature_matrix, bio_proc_df, mol_func_df, sub_loc_df], axis=1)
-
-        feature_matrix = feature_matrix.fillna(0)
-
-        feature_matrix['tissue_specificity'] = feature_matrix['tissue_specificity'].apply(
-            lambda x: x if isinstance(x, list) else [])
-
-        # Get the unique tissues
-        unique_tissues = set(tissue for tissues_list in feature_matrix['tissue_specificity'] for tissue in tissues_list)
-
-        # Create new columns for each unique tissue
-        for tissue in unique_tissues:
-            feature_matrix[f'tissue_specificity_{tissue.replace(" ", "_")}'] = feature_matrix[
-                'tissue_specificity'].apply(
-                lambda x: 1 if tissue in x else 0)
-
-        # Drop the original 'tissue_specificity' column
-        feature_matrix = feature_matrix.drop('tissue_specificity', axis=1)
-        feature_matrix = feature_matrix.fillna(0)
-
         # utils.count_zeros(feature_matrix)
 
         # plot.correlation_heatmap(feature_matrix)
 
         return feature_matrix
-
-    def protein_atlas_feature_extractor(self):
-        protein_atlas_features = pd.read_csv(self.config['paths']['PROTEIN_ATLAS_FEATURES'], sep='\t')
-        protein_atlas_features = protein_atlas_features[['Ensembl', 'Biological process', 'Molecular function',
-                                                         'Subcellular location']]
-
-        all_features_bio_proc = set()
-        all_features_mol_func = set()
-        all_features_sub_loc = set()
-
-        for feature_list in protein_atlas_features['Biological process'].values:
-            if isinstance(feature_list, str):
-                all_features_bio_proc.update([f.strip() for f in feature_list.split(",")])
-
-        for feature_list in protein_atlas_features['Molecular function'].values:
-            if isinstance(feature_list, str):
-                all_features_mol_func.update([f.strip() for f in feature_list.split(",")])
-
-        for feature_list in protein_atlas_features['Subcellular location'].values:
-            if isinstance(feature_list, str):
-                all_features_sub_loc.update([f.strip() for f in feature_list.split(",")])
-
-        all_features_bio_proc = sorted(list(all_features_bio_proc))
-        all_features_mol_func = sorted(list(all_features_mol_func))
-        all_features_sub_loc = sorted(list(all_features_sub_loc))
-
-        feature_dict_bio_proc = {ensg: [0] * len(all_features_bio_proc) for ensg in protein_atlas_features['Ensembl']}
-        feature_dict_mol_func = {ensg: [0] * len(all_features_mol_func) for ensg in protein_atlas_features['Ensembl']}
-        feature_dict_sub_loc = {ensg: [0] * len(all_features_sub_loc) for ensg in protein_atlas_features['Ensembl']}
-
-        bio_proc_feature_names = [f'biological_process__{feature}' for feature in all_features_bio_proc]
-        mol_func_feature_names = [f'molecular_function__{feature}' for feature in all_features_mol_func]
-        sub_loc_feature_names = [f'subcellular_location__{feature}' for feature in all_features_sub_loc]
-
-        bio_proc_feature_names = [feature.replace(' ', '_') for feature in bio_proc_feature_names]
-        mol_func_feature_names = [feature.replace(' ', '_') for feature in mol_func_feature_names]
-        sub_loc_feature_names = [feature.replace(' ', '_') for feature in sub_loc_feature_names]
-
-        self.protein_atlas_feature_names = {
-            'biological_processes': bio_proc_feature_names,
-            'molecular_functions': mol_func_feature_names,
-            'subcellular_locations': sub_loc_feature_names
-        }
-
-        with open('../data/features/protein_atlas_feature_names.pkl', 'wb') as fp:
-            pkl.dump(self.protein_atlas_feature_names, fp)
-
-        for index, row in protein_atlas_features.iterrows():
-            ensg = row['Ensembl']
-            bio_proc_features = row['Biological process'].split(",") if isinstance(row['Biological process'],
-                                                                                   str) else []
-            mol_func_features = row['Molecular function'].split(",") if isinstance(row['Molecular function'],
-                                                                                   str) else []
-            sub_loc_features = row['Subcellular location'].split(",") if isinstance(row['Subcellular location'],
-                                                                                    str) else []
-
-            for feature in bio_proc_features:
-                feature_index = all_features_bio_proc.index(feature.strip())
-                feature_dict_bio_proc[ensg][feature_index] = 1
-            for feature in mol_func_features:
-                feature_index = all_features_mol_func.index(feature.strip())
-                feature_dict_mol_func[ensg][feature_index] = 1
-            for feature in sub_loc_features:
-                feature_index = all_features_sub_loc.index(feature.strip())
-                feature_dict_sub_loc[ensg][feature_index] = 1
-
-        self.protein_atlas_features = {
-            'biological_processes': feature_dict_bio_proc,
-            'molecular_processes': feature_dict_mol_func,
-            'subcellular_locations': feature_dict_sub_loc
-        }
-
-    def _protein_atlas_feature_extractor(self):
-        protein_atlas_features = pd.read_csv(self.config['paths']['PROTEIN_ATLAS_FEATURES'], sep='\t')
-        protein_atlas_features = protein_atlas_features[['Ensembl', 'Biological process', 'Molecular function',
-                                                         'Subcellular location']]
-
-        bio_proc = []
-        mol_func = []
-        sub_loc = []
-
-        bio_proc_lens = []
-        mol_func_lens = []
-        sub_loc_lens = []
-        for index, row in protein_atlas_features.iterrows():
-            if pd.isna(row['Biological process']):
-                continue
-            bio_proc += [x.strip() for x in row['Biological process'].split(',')]
-            bio_proc_len = len(row['Biological process'].split(','))
-            bio_proc_lens.append(bio_proc_len)
-
-        for index, row in protein_atlas_features.iterrows():
-            if pd.isna(row['Molecular function']):
-                continue
-            mol_func += [x.strip() for x in row['Molecular function'].split(',')]
-            mol_func_len = len(row['Molecular function'].split(','))
-            mol_func_lens.append(mol_func_len)
-
-        for index, row in protein_atlas_features.iterrows():
-            if pd.isna(row['Subcellular location']):
-                continue
-            sub_loc += [x.strip() for x in row['Subcellular location'].split(',')]
-            sub_loc_len = len(row['Subcellular location'].split(','))
-            sub_loc_lens.append(sub_loc_len)
-
-        max_bio_proc_len = max(bio_proc_lens)
-        max_mol_func_len = max(mol_func_lens)
-        max_sub_loc_len = max(sub_loc_lens)
-
-        # make the entries unique
-        bio_proc = list(set(bio_proc))
-        mol_func = list(set(mol_func))
-        sub_loc = list(set(sub_loc))
-
-        one_hot_bio_proc = utils.one_hot_encode(bio_proc)
-        one_hot_mol_func = utils.one_hot_encode(mol_func)
-        one_hot_sub_loc = utils.one_hot_encode(sub_loc)
-
-        bio_proc_dict = {}
-        mol_func_dict = {}
-        sub_loc_dict = {}
-
-        for i, feature in enumerate(bio_proc):
-            bio_proc_dict[feature] = one_hot_bio_proc[i]
-        for i, feature in enumerate(mol_func):
-            mol_func_dict[feature] = one_hot_mol_func[i]
-        for i, feature in enumerate(sub_loc):
-            sub_loc_dict[feature] = one_hot_sub_loc[i]
-
-        protein_atlas_features['Biological process'] = protein_atlas_features['Biological process'].str.split(
-            ',').apply(lambda x: [i.strip() for i in x] if isinstance(x, list) else x)
-        protein_atlas_features['Molecular function'] = protein_atlas_features['Molecular function'].str.split(
-            ',').apply(lambda x: [i.strip() for i in x] if isinstance(x, list) else x)
-        protein_atlas_features['Subcellular location'] = protein_atlas_features['Subcellular location'].str.split(
-            ',').apply(lambda x: [i.strip() for i in x] if isinstance(x, list) else x)
-
-        bio_proc_features = {}
-        mol_func_features = {}
-        sub_loc_features = {}
-
-        for index, row in protein_atlas_features.iterrows():
-            ensg = row['Ensembl']
-            bio_proc = row['Biological process']
-            mol_func = row['Molecular function']
-            sub_loc = row['Subcellular location']
-
-            bio_proc_matrix = np.zeros((max_bio_proc_len, len(one_hot_bio_proc[0])))
-            mol_func_matrix = np.zeros((max_mol_func_len, len(one_hot_mol_func[0])))
-            sub_loc_matrix = np.zeros((max_sub_loc_len, len(one_hot_sub_loc[0])))
-
-            if isinstance(bio_proc, list):
-                for i, feature in enumerate(bio_proc):
-                    bio_proc_matrix[i] = bio_proc_dict[feature]
-            if isinstance(mol_func, list):
-                for i, feature in enumerate(mol_func):
-                    mol_func_matrix[i] = mol_func_dict[feature]
-            if isinstance(sub_loc, list):
-                for i, feature in enumerate(sub_loc):
-                    sub_loc_matrix[i] = sub_loc_dict[feature]
-
-            bio_proc_features[ensg] = bio_proc_matrix
-            mol_func_features[ensg] = mol_func_matrix
-            sub_loc_features[ensg] = sub_loc_matrix
-
-        self.protein_atlas_features = {
-            'biological_processes': bio_proc_features,
-            'molecular_processes': mol_func_features,
-            'subcellular_locations': sub_loc_features
-        }
 
     ################################################ ARCHIVED FEATURES ################################################
 
@@ -866,8 +507,15 @@ class GeneCharacterisationPreprocessor:
                                                                                                             'sapiens')]
 
 
-class VariantToGenePreprocessor:
+class VariantAndStructurePreprocessor:
+    """
+    This class processes protein variant information, specifically it obtains and processes amino acid sequence embeddings
+    and missense variant pathogenicity embeddings, and it processes protein structure confidence scores, in particular
+    it generates and processes embeddings of AlphaFold's residue-wise pLDDT score.
+    """
+
     def __init__(self, config, gcp):
+        print("Variant and Structure Preprocessor booting up...")
         self.config = config
         self.gcp = gcp
         self.gh_data = gcp.gh_data
@@ -879,12 +527,61 @@ class VariantToGenePreprocessor:
         self.variant_plddt_embeddings = None
 
         print("Processing AlphaMissense data...")
+        if not os.path.exists("../data/alphamissense/gh_am_data.pkl"):
+            self.pathogenicity_feature_extractor()
         self.variant_pathogenicity_embedder()
         self.pathogenicity_features = self.pathogenicity_train_data()
 
         print("Processing AlphaFold protein structure prediction confidence data...")
         self.alphafold_features = None
         self.plddt_embedder()
+
+    def pathogenicity_feature_extractor(self):
+        """
+        Extract variant-level AlphaMissense pathogenicity score and average to gene-level using population
+        statistics.
+        """
+        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
+        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
+
+        am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
+
+        am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
+        self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
+        self.gh_data = self.gh_data.explode('ALT')
+        self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
+        self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
+        pos_list = self.gh_data['POS'].tolist()
+        chrom_list = self.gh_data['#CHROM'].tolist()
+        ref_list = self.gh_data['REF'].tolist()
+        alt_list = self.gh_data['ALT'].tolist()
+
+        pos_list = [str(pos) for pos in pos_list]
+        variant_id_list = [chrom + '_' + pos + '_' + ref + '_' + alt for chrom, pos, ref, alt in
+                           zip(chrom_list, pos_list, ref_list, alt_list)]
+        self.gh_data['variant_id'] = variant_id_list
+        am = am[['am_pathogenicity', 'variant_id']]
+
+        self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
+
+        if not os.path.exists("../data/alphamissense/gh_am_data.pkl"):
+            self.gh_data.to_pickle('../data/alphamissense/gh_am_data.pkl')
+
+        variant_am_features = {}
+        for index, row in tqdm(self.gh_data.iterrows()):
+            gene = row['Gene']
+            gh_af = row['AF_ELGH']
+            am_score = row['am_pathogenicity']
+            if gene not in variant_am_features.keys():
+                variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
+            else:
+                variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
+
+        gene_am_features = {}
+        for ensg, probs in variant_am_features.items():
+            gene_am_features[ensg] = sum(probs) / len(probs)
+
+        self.pathogenicity_features = gene_am_features
 
     def variant_pathogenicity_embedder(self):
         """
@@ -1003,7 +700,6 @@ class VariantToGenePreprocessor:
         return combined_data
 
     def plddt_embedder(self):
-        # TODO: homogenise inputs before feeding to autoencoder
         self.alphafold_feature_extractor()
         alphafold_raw = self.alphafold_features
 
@@ -1011,6 +707,9 @@ class VariantToGenePreprocessor:
         for uniprot_id, data_types in alphafold_raw.items():
             res_pldtt_values = data_types['res_plddt']
             plddt_raw[uniprot_id] = res_pldtt_values
+
+        # TODO: continue the implementation
+
         return 0
 
     def alphafold_feature_extractor(self):
@@ -1122,6 +821,199 @@ class VariantToGenePreprocessor:
             response = requests.get(file_url)
             with open(os.path.join(folder, file_name), "wb") as f:
                 f.write(response.content)
+
+
+class GeneOntologyPreprocessor:
+    """
+    This class processes gene ontology data, specifically it extracts and processes data from the Human Protein Atlas:
+    biological processes, molecular functions, subcellular locations and tissue specificity.
+    """
+
+    def __init__(self, config, gcp):
+        print("Gene Ontology Preprocessor booting up...")
+        self.config = config
+        self.gcp = gcp
+        self.gh_data = gcp.gh_data
+        self.target = gcp.target
+        self.data = gcp.data
+
+        print("Extracting protein atlas features...")
+        self.protein_atlas_features_names = None
+        self.protein_atlas_features = None
+        self.protein_atlas_feature_extractor()
+
+        print("Extracting protein atlas features...")
+        self.tissue_specificity_features = None
+        self.tissue_expression_feature_extractor()
+
+        print("Combining gene ontology features...")
+        self.combine_features()
+
+
+    def protein_atlas_feature_extractor(self):
+        protein_atlas_features = pd.read_csv(self.config['paths']['PROTEIN_ATLAS_FEATURES'], sep='\t')
+        protein_atlas_features = protein_atlas_features[['Ensembl', 'Biological process', 'Molecular function',
+                                                         'Subcellular location']]
+
+        all_features_bio_proc = set()
+        all_features_mol_func = set()
+        all_features_sub_loc = set()
+
+        for feature_list in protein_atlas_features['Biological process'].values:
+            if isinstance(feature_list, str):
+                all_features_bio_proc.update([f.strip() for f in feature_list.split(",")])
+
+        for feature_list in protein_atlas_features['Molecular function'].values:
+            if isinstance(feature_list, str):
+                all_features_mol_func.update([f.strip() for f in feature_list.split(",")])
+
+        for feature_list in protein_atlas_features['Subcellular location'].values:
+            if isinstance(feature_list, str):
+                all_features_sub_loc.update([f.strip() for f in feature_list.split(",")])
+
+        all_features_bio_proc = sorted(list(all_features_bio_proc))
+        all_features_mol_func = sorted(list(all_features_mol_func))
+        all_features_sub_loc = sorted(list(all_features_sub_loc))
+
+        feature_dict_bio_proc = {ensg: [0] * len(all_features_bio_proc) for ensg in protein_atlas_features['Ensembl']}
+        feature_dict_mol_func = {ensg: [0] * len(all_features_mol_func) for ensg in protein_atlas_features['Ensembl']}
+        feature_dict_sub_loc = {ensg: [0] * len(all_features_sub_loc) for ensg in protein_atlas_features['Ensembl']}
+
+        bio_proc_feature_names = [f'biological_process__{feature}' for feature in all_features_bio_proc]
+        mol_func_feature_names = [f'molecular_function__{feature}' for feature in all_features_mol_func]
+        sub_loc_feature_names = [f'subcellular_location__{feature}' for feature in all_features_sub_loc]
+
+        bio_proc_feature_names = [feature.replace(' ', '_') for feature in bio_proc_feature_names]
+        mol_func_feature_names = [feature.replace(' ', '_') for feature in mol_func_feature_names]
+        sub_loc_feature_names = [feature.replace(' ', '_') for feature in sub_loc_feature_names]
+
+        self.protein_atlas_feature_names = {
+            'biological_processes': bio_proc_feature_names,
+            'molecular_functions': mol_func_feature_names,
+            'subcellular_locations': sub_loc_feature_names
+        }
+
+        with open('../data/features/protein_atlas_feature_names.pkl', 'wb') as fp:
+            pkl.dump(self.protein_atlas_feature_names, fp)
+
+        for index, row in protein_atlas_features.iterrows():
+            ensg = row['Ensembl']
+            bio_proc_features = row['Biological process'].split(",") if isinstance(row['Biological process'],
+                                                                                   str) else []
+            mol_func_features = row['Molecular function'].split(",") if isinstance(row['Molecular function'],
+                                                                                   str) else []
+            sub_loc_features = row['Subcellular location'].split(",") if isinstance(row['Subcellular location'],
+                                                                                    str) else []
+
+            for feature in bio_proc_features:
+                feature_index = all_features_bio_proc.index(feature.strip())
+                feature_dict_bio_proc[ensg][feature_index] = 1
+            for feature in mol_func_features:
+                feature_index = all_features_mol_func.index(feature.strip())
+                feature_dict_mol_func[ensg][feature_index] = 1
+            for feature in sub_loc_features:
+                feature_index = all_features_sub_loc.index(feature.strip())
+                feature_dict_sub_loc[ensg][feature_index] = 1
+
+        self.protein_atlas_features = {
+            'biological_processes': feature_dict_bio_proc,
+            'molecular_processes': feature_dict_mol_func,
+            'subcellular_locations': feature_dict_sub_loc
+        }
+
+    def tissue_expression_feature_extractor(self):
+        tissue_expression = pd.read_csv(self.config['paths']['TISSUE_EXPRESSION_PATH'], sep='\t')  # 1,197,500
+        tissue_expression = tissue_expression[tissue_expression['Reliability'] != 'Uncertain']  # 1,014,693
+        tissue_expression = tissue_expression[tissue_expression['Level'] != 'Uncertain']  # 1,014,693
+
+        gene_tissue_dict = {}
+        for index, row in tissue_expression.iterrows():
+            gene = row['Gene']
+            tissue = row['Tissue']
+            if gene in gene_tissue_dict:
+                gene_tissue_dict[gene].append(tissue)
+            else:
+                gene_tissue_dict[gene] = [tissue]
+
+        self.tissue_specificity_features = gene_tissue_dict
+
+    def combine_features(self):
+        ensg_features = {
+            "tissue_specificity": self.tissue_specificity_features,
+            "biological_processes": self.protein_atlas_features['biological_processes'],
+            "molecular_functions": self.protein_atlas_features['molecular_processes'],
+            "subcellular_locations": self.protein_atlas_features['subcellular_locations']
+        }
+
+        for feature, values in ensg_features.items():
+            feature_matrix[feature] = feature_matrix["ENSG"].map(values)
+
+        feature_matrix = feature_matrix.drop(["UNIPROT"], axis=1)
+
+        sub_df = feature_matrix.copy()
+        sub_df = sub_df.iloc[:, -3:]
+
+        bio_proc_list = []
+        mol_func_list = []
+        sub_loc_list = []
+
+        for index, row in sub_df.iterrows():
+            bio_proc = row['biological_processes']
+            mol_func = row['molecular_functions']
+            sub_loc = row['subcellular_locations']
+
+            if isinstance(bio_proc, float):
+                bio_proc = [0] * len(self.protein_atlas_feature_names['biological_processes'])
+            if isinstance(mol_func, float):
+                mol_func = [0] * len(self.protein_atlas_feature_names['molecular_functions'])
+            if isinstance(sub_loc, float):
+                sub_loc = [0] * len(self.protein_atlas_feature_names['subcellular_locations'])
+
+            bio_proc_array = np.array(bio_proc).reshape(-1, len(bio_proc))
+            mol_func_array = np.array(mol_func).reshape(-1, len(mol_func))
+            sub_loc_array = np.array(sub_loc).reshape(-1, len(sub_loc))
+
+            bio_proc_list.append(bio_proc_array[0].tolist())
+            mol_func_list.append(mol_func_array[0].tolist())
+            sub_loc_list.append(sub_loc_array[0].tolist())
+
+        bio_proc_feature_names = self.protein_atlas_feature_names['biological_processes']
+        mol_func_feature_names = self.protein_atlas_feature_names['molecular_functions']
+        sub_loc_feature_names = self.protein_atlas_feature_names['subcellular_locations']
+
+        bio_proc_df = pd.DataFrame(np.array(bio_proc_list).reshape(-1, len(bio_proc_feature_names)),
+                                   columns=bio_proc_feature_names)
+        mol_func_df = pd.DataFrame(np.array(mol_func_list).reshape(-1, len(mol_func_feature_names)),
+                                   columns=mol_func_feature_names)
+        sub_loc_df = pd.DataFrame(np.array(sub_loc_list).reshape(-1, len(sub_loc_feature_names)),
+                                  columns=sub_loc_feature_names)
+
+        feature_matrix = feature_matrix.drop(['biological_processes', 'molecular_functions', 'subcellular_locations'],
+                                             axis=1)
+
+        feature_matrix.reset_index(drop=True, inplace=True)
+        bio_proc_df.reset_index(drop=True, inplace=True)
+        mol_func_df.reset_index(drop=True, inplace=True)
+        sub_loc_df.reset_index(drop=True, inplace=True)
+
+        feature_matrix = pd.concat([feature_matrix, bio_proc_df, mol_func_df, sub_loc_df], axis=1)
+
+        feature_matrix = feature_matrix.fillna(0)
+
+        feature_matrix['tissue_specificity'] = feature_matrix['tissue_specificity'].apply(
+            lambda x: x if isinstance(x, list) else [])
+
+        # Get the unique tissues
+        unique_tissues = set(tissue for tissues_list in feature_matrix['tissue_specificity'] for tissue in tissues_list)
+
+        # Create new columns for each unique tissue
+        for tissue in unique_tissues:
+            feature_matrix[f'tissue_specificity_{tissue.replace(" ", "_")}'] = feature_matrix[
+                'tissue_specificity'].apply(
+                lambda x: 1 if tissue in x else 0)
+
+        feature_matrix = feature_matrix.drop('tissue_specificity', axis=1)
+        self.gene_ontology_features = feature_matrix.fillna(0)
 
 
 class __WildtypeLoader:
