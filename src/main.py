@@ -30,7 +30,7 @@ if __name__ == "__main__":
     #      [X] Protein variant and structure module
     #      [X] Gene ontology module
     #  Note: Each module should output a data object that can be used to train the model
-    #  [ ] Setup feature loading for pathogenicity feaatures from training.py to preprocessing.py
+    #  [ ] Setup feature loading for pathogenicity features from training.py to preprocessing.py
     #  [ ] Test the feature preprocessing pipeline
     #  [ ] Get baseline evaluation metrics at train time and test time for each module
     #  [ ] Combine modules into ensemble model and evaluate
