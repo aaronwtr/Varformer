@@ -380,7 +380,6 @@ def evaluate_am(am_data, fold):
     print("Majority class baseline performance metrics:")
     eval_metrics(merged_df["label"], merged_df["majority_baseline"], 0.5, 'majority_baseline', fold=fold)
 
-
     print("VariPred performance metrics:")
     eval_metrics(merged_df["label"], merged_df["vp_pathogenicity"], threshold, 'vp', fold=fold)
 
@@ -427,7 +426,7 @@ def eval_metrics(y_true, preds, threshold, model, fold):
         pkl.dump(results, f)
 
 
-def map_gene_names(list_of_genes, source_type, target_type):
+def map_gene_names(list_of_genes: list, source_type: str, target_type: str) -> dict:
     idmap = br.IDMapper('all')
     list_of_targets = idmap.convert(list_of_genes, source_type, target_type)
     if 'N/A' in list_of_targets:
@@ -476,6 +475,91 @@ def get_protein_length(ensp, ensg):
             raise KeyError(f"Failed to retrieve protein information. Status code: {response.status_code}")
 
 
+def count_zeros(df: pandas.DataFrame) -> None:
+    """
+    For each column in a given dataframe, count how many zeros occur
+    :return:
+    """
+    print("Feature sparsity:")
+
+    for col in df.columns:
+        num_zeros = len(df[df[col] == 0])
+        print(f"{col}: {round(num_zeros / len(df) * 100, 2)}%")
+
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    random.seed(seed)
+
+
+def _convert_to_dense(indices, shape):
+    dense_matrix = np.zeros(shape)
+
+    for index in indices:
+        dense_matrix[index] = 1
+
+    return dense_matrix
+
+
+def featurise(features: dict) -> pandas.DataFrame:
+    with open("../data/features/raw_feature_matrix.pkl", 'rb') as f:
+        feature_matrix = pkl.load(f)
+
+    for feature, values in features.items():
+        feature_matrix[feature] = feature_matrix["ENSG"].map(values)
+
+    # utils.count_zeros(feature_matrix)
+
+    # plot.correlation_heatmap(feature_matrix)
+
+    return feature_matrix
+
+
+def load_fda_labels() -> pandas.DataFrame:
+    return pd.read_excel("../data/FDA_approved_drug_targets_2023_Q3.xlsx")
+
+
+def combine_features_and_labels(features: pandas.DataFrame, target: pandas.DataFrame) -> pandas.DataFrame:
+    target_genes = list(target["Ensembl"])
+    feature_genes = list(features["ENSG"])
+    target_genes_in_features = [gene for gene in target_genes if gene in feature_genes]
+    print(f"Found {len(target_genes_in_features)} FDA approved GH genes out of a total of {len(target_genes)} FDA "
+          f"approved genes.")
+    features["target"] = 0
+    features.loc[self.features["ENSG"].isin(target_genes_in_features), "target"] = 1
+    return features
+
+
+#################################### ARCHIVE ####################################
+
+def apply_convert_to_dense_on_dict(dict_obj, shape):
+    for key, value in dict_obj.items():
+        dict_obj[key] = _convert_to_dense(value, shape)
+    return dict_obj
+
+
+def one_hot_encode(cat_list: list):
+    vocab = {category: idx for idx, category in enumerate(cat_list)}
+    indices = [vocab[category] for category in cat_list]
+    num_classes = len(cat_list)
+    one_hot_tensor = F.one_hot(torch.tensor(indices), num_classes=num_classes).float()
+    return one_hot_tensor
+
+
+def chunk_open_file(file: str):
+    chunk_size = int(1e06)
+    with open(file, 'rb') as file:
+        while True:
+            chunk = file.read(chunk_size)
+            chunk = chunk.splitlines()
+            if not chunk:
+                break
+
+
 def get_protein_length_up(up):
     uniprot_api_url = f"https://www.uniprot.org/uniprot/{up}.fasta"
 
@@ -499,71 +583,3 @@ def get_protein_length_up(up):
     except KeyError:
         print(f"Failed to retrieve protein sequence from UniProt. Status code: {response.status_code}")
         return 0
-
-
-def count_zeros(df):
-    """
-    For each column in a given dataframe, count how many zeros occur
-    :return:
-    """
-    print("Feature sparsity:")
-
-    for col in df.columns:
-        num_zeros = len(df[df[col] == 0])
-        print(f"{col}: {round(num_zeros / len(df) * 100, 2)}%")
-
-
-def set_seed(seed):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    np.random.seed(seed)
-    random.seed(seed)
-
-
-def chunk_open_file(file: str):
-    chunk_size = int(1e06)
-    with open(file, 'rb') as file:
-        while True:
-            chunk = file.read(chunk_size)
-            chunk = chunk.splitlines()
-            if not chunk:
-                break
-
-
-def one_hot_encode(cat_list: list):
-    vocab = {category: idx for idx, category in enumerate(cat_list)}
-    indices = [vocab[category] for category in cat_list]
-    num_classes = len(cat_list)
-    one_hot_tensor = F.one_hot(torch.tensor(indices), num_classes=num_classes).float()
-    return one_hot_tensor
-
-
-def _convert_to_dense(indices, shape):
-    dense_matrix = np.zeros(shape)
-
-    for index in indices:
-        dense_matrix[index] = 1
-
-    return dense_matrix
-
-
-def apply_convert_to_dense_on_dict(dict_obj, shape):
-    for key, value in dict_obj.items():
-        dict_obj[key] = _convert_to_dense(value, shape)
-    return dict_obj
-
-
-def featurise(features: dict) -> pandas.DataFrame:
-    with open("../data/features/raw_feature_matrix.pkl", 'rb') as f:
-        feature_matrix = pkl.load(f)
-
-    for feature, values in features.items():
-        feature_matrix[feature] = feature_matrix["ENSG"].map(values)
-
-    # utils.count_zeros(feature_matrix)
-
-    # plot.correlation_heatmap(feature_matrix)
-
-    return feature_matrix
