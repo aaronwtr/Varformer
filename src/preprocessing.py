@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader
 from autoencoders.autoencoder import AutoencoderTrainer
 from src.dataloader import VariantPathogenicityData
 from src.autoencoders import ae_training
-from src.utils import featurise
+from src.utils import featurise, load_fda_labels, combine_features_and_labels
 
 
 class GeneCharacterisationPreprocessor:
@@ -37,9 +37,7 @@ class GeneCharacterisationPreprocessor:
             "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
             "gnomad.exomes.v2.1.1.lof_metrics.by_gene.csv": "gnomAD Exomes Loss-of-Function Metrics",
             "9606.protein.links.full.v12.0.txt": "STRING Protein-Protein Interactions",
-            "part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet": "Mouse Knockout Phenotypes",
-
-            "FDA_approved_drug_targets_2023_Q3.xlsx": "FDA Approved Drug Targets"
+            "part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet": "Mouse Knockout Phenotypes"
         }
         self.files = self._get_files()
         self.datasets = self.load_data()
@@ -90,16 +88,23 @@ class GeneCharacterisationPreprocessor:
                 with open(f'../data/features/{feature_file}', 'rb') as fp:
                     setattr(self, feature_file.split('.')[0], pkl.load(fp))
 
-        # TODO: MOVE THE BELOW FUNCTIONS TO UTILS
-        
-        self.features = self.combine_features()
+        ensg_features = {
+            "chemical_interaction_count": self.chem_features,
+            "pli_lof_constraint": self.gnomad_features,
+            "mouse_ko_effect": self.mouse_ko_features,
+            "ppi_count": self.ppi_features,
+            "common_essentials": self.gene_essentiality_features,
+        }
+
+        self.features = featurise(ensg_features)
 
         # Ground truth
-        self.target = self.load_ground_truth()
+        self.target = load_fda_labels()
 
         # Combine features and target
-        self.data = self.make_data()
-        print("Data loaded!")
+        self.data = combine_features_and_labels(self.features, self.target)
+
+        # TODO: add num_features attribute
 
         # Explore the data
         # plot.umap(self.data)
