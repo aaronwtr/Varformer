@@ -25,9 +25,15 @@ if __name__ == "__main__":
 
     # TODO:
     #  MLP model
-    #  [ ] Evaluate on held out test set
-    #  [ ] Compare performance with missense variant pathogenicity autoencoding and without autoencoding
-    #  [ ] Add SHAP interpretability
+    #  [X] Fix preprocessing into three modules
+    #      [X] Global gene characterisation module
+    #      [X] Protein variant and structure module
+    #      [X] Gene ontology module
+    #  Note: Each module should output a data object that can be used to train the model
+    #  [ ] Setup feature loading for pathogenicity feaatures from training.py to preprocessing.py
+    #  [ ] Test the feature preprocessing pipeline
+    #  [ ] Get baseline evaluation metrics at train time and test time for each module
+    #  [ ] Combine modules into ensemble model and evaluate
     #  -
     #  XGBoost baseline:
     #  [ ] Set up training loops
@@ -37,14 +43,3 @@ if __name__ == "__main__":
     #  [ ] Train final model
     #  [ ] Evaluate on held out test set
     #  [ ] Add SHAP interpretability
-    #  -
-    #  Autoencoder deep learning model:
-    #  [ ] Set up autoencoders for variant-level and categorical features
-    #       [ ] Pathogenicity autoencoder
-    #  [ ] Hyperparameter tuning
-    #  [ ] Train autoencoders
-    #  [ ] Train final model
-    #  [ ] Evaluate on held out test set
-    #  [ ] Add SHAP interpretability
-    #  -
-    #  Add tissue-specific / disease-specific data
