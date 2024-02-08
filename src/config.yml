@@ -15,10 +15,6 @@ paths:
   TISSUE_EXPRESSION_PATH: "../data/hpa/normal_tissue.tsv"
   TISSUE_EXPRESSION_DESC_PATH: "../data/hpa/rna_single_cell_cluster_description.tsv"
 
-preprocessing:
-  pathogenicity_embed: True
-  alphafold_embed: None
-
 varipred:
   num_batches: 1000
 
@@ -36,6 +32,7 @@ hyperparameters:
     num_workers: 0
     weight_decay: 0.1
   pathogenicity_autoencoder:
+    usage: True
     input_dim: 1024
     latent_dim: 256
     output_dim: 1024
@@ -45,6 +42,8 @@ hyperparameters:
     epochs: 100
     batch_size: 128
     max_epochs: 20
+  plddt_autoencoder:
+    usage: None
   puupl:
     optimizer: Adam
     lr_start: 1e-3
