@@ -1,6 +1,7 @@
 import torch
 
 import lightning as pl
+import torch.nn as nn
 import torch.nn.functional as F
 import xgboost as xgb
 
@@ -10,9 +11,9 @@ from scipy.stats import spearmanr
 from sklearn.model_selection import train_test_split
 
 
-class PyTorchMLP(torch.nn.Module):
+class BaseTargetIdentifier(torch.nn.Module):
     def __init__(self, config, num_features, model_type="mlp"):
-        super(PyTorchMLP, self).__init__()
+        super(BaseTargetIdentifier, self).__init__()
         self.config = config[model_type]
         self.layers = []
         layer_sizes = [num_features] + [int(self.config['width'])] * int(self.config['depth'])
@@ -67,10 +68,9 @@ class PyTorchMLP(torch.nn.Module):
         return logits, probabilities, binary_predictions
 
 
-class LightningMLP(pl.LightningModule):
-    def __init__(self, model, config, imbalance, model_type="mlp"):
+class BaseLightningTargetIdentifier(pl.LightningModule):
+    def __init__(self, config, imbalance, model_type="mlp"):
         super().__init__()
-        self.model = model
         self.imbalance = imbalance
         self.config = config[model_type]
 
@@ -135,14 +135,18 @@ class LightningMLP(pl.LightningModule):
         else:
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
 
-        # lr_start = float(self.config['lr_start'])
-        # lr_end = float(self.config['lr_end'])
-        # lr_decay_epochs = int(self.config['epochs'] * 0.5)
-        # scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer,
-        #                                                  lambda epoch: max((lr_end / lr_start) +
-        #                                   (1 - epoch / lr_decay_epochs) * (1 - lr_end / lr_start), lr_end / lr_start))
-
         return optimizer
+
+
+class EnsembleTargetIdentifier(BaseLightningTargetIdentifier):
+    def __init__(self, models, config, imbalance, model_type="mlp"):
+        super().__init__(config, imbalance, model_type)
+        self.models = nn.ModuleList(models)
+
+    def forward(self, x):
+        predictions = [model(x) for model in self.models]
+        combined_predictions = torch.mean(torch.stack(predictions), dim=0)
+        return combined_predictions
 
 
 class XGBoostModel:
