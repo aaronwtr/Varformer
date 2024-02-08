@@ -299,7 +299,7 @@ def open_vge_data(gcp, gc_data):
     with open("config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
 
-    vgep = VariantToGenePreprocessor(config=config, gcp=gcp)
+    vgep = VariantAndStructurePreprocessor(config=config, gcp=gcp)
     print("Variant-to-gene embeddings preprocessed!\n")
 
     pathcty_embds = vgep.pathogenicity_embeddings
