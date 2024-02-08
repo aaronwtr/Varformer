@@ -1,7 +1,4 @@
-import pandas as pd
-import numpy as np
 import requests
-import pickle as pkl
 import os
 import gc
 import warnings
@@ -9,17 +6,22 @@ import argparse
 import torch
 import utils
 
+import pytorch_lightning as pl
+import pickle as pkl
+import pandas as pd
+import numpy as np
+
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 from sklearn.model_selection import train_test_split
 from Bio import SeqIO
-import pytorch_lightning as pl
+from torch.utils.data import DataLoader
 
 from autoencoders.autoencoder import AutoencoderTrainer
 from src.dataloader import VariantPathogenicityData
-from torch.utils.data import DataLoader
 from src.autoencoders import ae_training
+from src.utils import featurise
 
 
 class GeneCharacterisationPreprocessor:
@@ -54,12 +56,20 @@ class GeneCharacterisationPreprocessor:
         # Get ACMG clinically actionable genes and PFAM genes
         self.get_holdout_genes()
 
-        # Population genomics data
+        # Load Genes & Health South-Asian Population exome data
         self.gh_data = self.load_gh_data()
 
-        if os.path.exists('../data/features/protein_atlas_feature_names.pkl'):
-            with open('../data/features/protein_atlas_feature_names.pkl', 'rb') as fp:
-                self.protein_atlas_feature_names = pkl.load(fp)
+        self.gh_data["UNIPROT"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
+        self.gh_data = self.gh_data.drop(["SWISSPROT", "TREMBL"], axis=1)
+
+        feature_matrix = self.gh_data[["Gene", "UNIPROT"]]
+        feature_matrix = feature_matrix.rename(columns={"Gene": "ENSG"})
+        feature_matrix = feature_matrix.drop_duplicates(subset=['ENSG'])
+        feature_matrix = feature_matrix[~feature_matrix["ENSG"].isin(self.acmg_genes)]
+        feature_matrix = feature_matrix[~feature_matrix["ENSG"].isin(self.pfam_genes)]
+
+        if os.path.exists('../data/features/raw_feature_matrix.pkl'):
+            feature_matrix.to_pickle('../data/features/raw_feature_matrix.pkl')
 
         feature_extractors = {
             'chem_features.pkl': self.chem_feature_extractor,
@@ -80,6 +90,8 @@ class GeneCharacterisationPreprocessor:
                 with open(f'../data/features/{feature_file}', 'rb') as fp:
                     setattr(self, feature_file.split('.')[0], pkl.load(fp))
 
+        # TODO: MOVE THE BELOW FUNCTIONS TO UTILS
+        
         self.features = self.combine_features()
 
         # Ground truth
@@ -362,13 +374,6 @@ class GeneCharacterisationPreprocessor:
         Combine all the features into a single feature matrix. Use the ELGH variant data as a framework such
         that we can easily map between ensg, uniprot, and symbols as contained in the ELGH variant data.
         """
-        self.gh_data["UNIPROT"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
-        self.gh_data = self.gh_data.drop(["SWISSPROT", "TREMBL"], axis=1)
-
-        feature_matrix = self.gh_data[["Gene", "UNIPROT"]]
-        feature_matrix = feature_matrix.rename(columns={"Gene": "ENSG"})
-        feature_matrix = feature_matrix.drop_duplicates(subset=['ENSG'])
-
         ensg_features = {
             "chemical_interaction_count": self.chem_features,
             "pli_lof_constraint": self.gnomad_features,
@@ -377,9 +382,7 @@ class GeneCharacterisationPreprocessor:
             "common_essentials": self.gene_essentiality_features,
         }
 
-        # utils.count_zeros(feature_matrix)
-
-        # plot.correlation_heatmap(feature_matrix)
+        feature_matrix = featurise(ensg_features)
 
         return feature_matrix
 
@@ -847,8 +850,8 @@ class GeneOntologyPreprocessor:
         self.tissue_expression_feature_extractor()
 
         print("Combining gene ontology features...")
+        self.gene_ontology_features = None
         self.combine_features()
-
 
     def protein_atlas_feature_extractor(self):
         protein_atlas_features = pd.read_csv(self.config['paths']['PROTEIN_ATLAS_FEATURES'], sep='\t')
@@ -892,9 +895,6 @@ class GeneOntologyPreprocessor:
             'molecular_functions': mol_func_feature_names,
             'subcellular_locations': sub_loc_feature_names
         }
-
-        with open('../data/features/protein_atlas_feature_names.pkl', 'wb') as fp:
-            pkl.dump(self.protein_atlas_feature_names, fp)
 
         for index, row in protein_atlas_features.iterrows():
             ensg = row['Ensembl']
