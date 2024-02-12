@@ -3,6 +3,7 @@ import os
 import torch
 import optuna
 import wandb
+from typing import Dict
 
 import utils
 import plot
@@ -14,8 +15,8 @@ import numpy as np
 from pytorch_lightning.loggers import WandbLogger
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from preprocessing import GeneCharacterisationPreprocessor, VariantAndStructurePreprocessor
-from dataloader import DrugTargetData
-from model import PyTorchMLP, LightningMLP
+from dataloader import DrugTargetData, ModuleDataProcessor
+from model import BaseTargetIdentifier, BaseLightningTargetIdentifier
 from puupl import training as puupl_training
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split, KFold
@@ -93,10 +94,10 @@ def normalise_data(train_raw, val_raw, config, model_type="mlp"):
 
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
-    train = np.concatenate((train_norm, train_bin), axis=1)
+    _train = np.concatenate((train_norm, train_bin), axis=1)
 
-    train = DataLoader(
-        DrugTargetData(data=train, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train),
+    _train = DataLoader(
+        DrugTargetData(data=_train, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train),
         batch_size=int(config[model_type]['batch_size']),
         shuffle=True,
         num_workers=int(config[model_type]['num_workers'])
@@ -110,17 +111,17 @@ def normalise_data(train_raw, val_raw, config, model_type="mlp"):
             batch_size=int(config['puupl']['batch_size']),
             shuffle=False
         )
-        return train, val
-    return train
+        return _train, val
+    return _train
 
 
 def initialise_model(train_raw, val_raw, num_features, config):
-    train, val = normalise_data(train_raw, val_raw, config)
+    _train, val = normalise_data(train_raw, val_raw, config)
 
-    train_imbalance = 1 / float(train.dataset.label_imbalance().item())  # calculate inverse class frequency
+    train_imbalance = 1 / float(_train.dataset.label_imbalance().item())  # calculate inverse class frequency
 
-    mlp_pytorch = PyTorchMLP(config=config, num_features=num_features)
-    mlp_lightning = LightningMLP(model=mlp_pytorch, config=config, imbalance=train_imbalance)
+    mlp_pytorch = BaseTargetIdentifier(config=config, num_features=num_features)
+    mlp_lightning = BaseLightningTargetIdentifier(model=mlp_pytorch, config=config, imbalance=train_imbalance)
 
     if torch.cuda.is_available():
         accelerator = 'gpu'
@@ -140,12 +141,14 @@ def initialise_model(train_raw, val_raw, num_features, config):
         weight_decay=config['mlp']['weight_decay'],
     )
 
-    return mlp_lightning, train, val, hyperparameters, accelerator
+    return mlp_lightning, _train, val, hyperparameters, accelerator
 
 
-# noinspection PyUnboundLocalVariable
 def train(tag="Training"):
-    data, num_features, gcp, config = open_gc_data()
+    gcp = ModuleDataProcessor.open_gc_data
+    data = gcp.data
+    num_features = gcp.num_features
+    config = gcp.config
 
     test_genes = gcp.acmg_genes
 
@@ -211,22 +214,14 @@ def train(tag="Training"):
         raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
 
 
-def kfold_teacher():
-    print("Training teacher model...\n")
-    data, _, gcp, config = open_gc_data()
-    if config['pathogenicity_autoencoder']['usage']:
-        data = open_vge_data(gcp, data)
-
-    num_features = data.iloc[:, 1:-1].shape[1]
-
-    kfold_train(data, num_features, config, model_type="teacher")
-
-
-def kfold_train(data, num_features, config, model_type):
+def kfold_train(data: pd.DataFrame, num_features: int, config: dict, model_type: str, modules: Dict[str, bool]):
     num_splits = 5
     kfold = KFold(n_splits=num_splits, shuffle=True, random_state=42)
 
-    group = f"distillation-1-{model_type}"
+    used_modules = [k for k, v in modules.items() if v]
+    module_str = f"{'-'.join(used_modules)}"
+
+    group = f"distillation-1-{model_type}-{module_str}"
     if not os.path.isdir(f'checkpoints/{group}'):
         os.mkdir(f'checkpoints/{group}')
     else:
@@ -244,7 +239,7 @@ def kfold_train(data, num_features, config, model_type):
         train_raw = data.iloc[train_indices, :]
         val_raw = data.iloc[val_indices, :]
 
-        mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, num_features,
+        mlp_lightning, _train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, num_features,
                                                                                    config)
 
         run = wandb.init(
@@ -273,52 +268,42 @@ def kfold_train(data, num_features, config, model_type):
             callbacks=[checkpoint_callback]
         )
 
-        trainer.fit(mlp_lightning, train, val)
+        trainer.fit(mlp_lightning, _train, val)
 
         run.finish()
 
 
-def open_gc_data():
-    with open("config.yml", 'r') as stream:
-        config = yaml.safe_load(stream)
+def kfold_teacher(ensemble=False, **modules):
+    print("Training teacher model...\n")
 
-    gcp = GeneCharacterisationPreprocessor(config=config)
-    print("Gene characterisation features preprocessed!\n")
+    gc = modules.get('gc', False)
+    go = modules.get('go', False)
+    pvc = modules.get('pvc', False)
+    psc = modules.get('psc', False)
 
-    config = config['hyperparameters']
+    modules = {
+        "gc": gc,
+        "go": go,
+        "pvc": pvc,
+        "psc": psc
+    }
 
-    data = gcp.data
+    print(f"Training teacher model with {' '.join([k for k, v in modules.items() if v])} modules...\n")
 
-    features = data.iloc[:, 1:-1].values
-    num_features = features.shape[1]
+    data = ModuleDataProcessor(gc, go, pvc, psc).process()
 
-    return data, num_features, gcp, config
-
-
-def open_vge_data(gcp, gc_data):
-    with open("config.yml", 'r') as stream:
-        config = yaml.safe_load(stream)
-
-    vgep = VariantAndStructurePreprocessor(config=config, gcp=gcp)
-    print("Variant-to-gene embeddings preprocessed!\n")
-
-    pathcty_embds = vgep.pathogenicity_embeddings
-
-    pthcty_df = pd.DataFrame.from_dict(pathcty_embds, orient='index')
-
-    pthcty_df = pthcty_df.reset_index()
-    pthcty_df = pthcty_df.rename(columns={'index': 'ENSG'})
-
-    pthcty_df = pthcty_df.rename(columns={i: f"pathogenicity_{i}" for i in range(0, pthcty_df.shape[1] - 1)})
-
-    data = pd.merge(gc_data, pthcty_df, on='ENSG', how='inner')
-
-    data = data[[c for c in data if c not in ['target']] + ['target']]
-
-    return data
+    if not ensemble:
+        for module, preprocessor in data.items():
+            train_df = preprocessor.data
+            num_features = preprocessor.num_features
+            config = preprocessor.config
+            kfold_train(train_df, num_features, config, model_type="teacher", modules=module)
+    else:
+        # TODO: Implement ensemble training
+        pass
 
 
-def kfold_student():
+def kfold_student(ensemble=False, **modules):
     """
     Training a student model by distilling from a teacher model where the teacher model is used to provide pseudo-labels
     for the unlabeled data used by the student model.
@@ -326,56 +311,74 @@ def kfold_student():
     Firstly, we will run inference over the unlabelled data using the teacher model to define the pseudolabels. Then,
     we add the pseudolabels to the training data and train the student model on the combined dataset.
     """
-    with open("config.yml", 'r') as stream:
-        config = yaml.safe_load(stream)
-
     print("Training student model by distillation from teacher model...\n")
 
-    data, gc_num_features, gcp, hyperparams = open_gc_data()
-    if config['hyperparameters']['pathogenicity_autoencoder']['usage']:
-        data = open_vge_data(gcp, data)
+    gc = modules.get('gc', False)
+    go = modules.get('go', False)
+    pvc = modules.get('pvc', False)
+    psc = modules.get('psc', False)
 
-    labels = data.iloc[:, -1].values
-    features = data.iloc[:, 1:-1].values
-    num_features = features.shape[1]
+    modules = {
+        "gc": gc,
+        "go": go,
+        "pvc": pvc,
+        "psc": psc
+    }
 
-    unlabelled_data = data[data.iloc[:, -1] == 0]
-    U = np.where(labels == 0)[0]
+    print(f"Training teacher model with {' '.join([k for k, v in modules.items() if v])} modules...\n")
 
-    val = None
-    unlabelled_dl = normalise_data(unlabelled_data, val, hyperparams)
-    unlabelled_tensor = unlabelled_dl.dataset.features
+    data = ModuleDataProcessor(gc, go, pvc, psc).process()
 
-    teacher_model = PyTorchMLP(config=hyperparams, num_features=num_features)
-    raw_state_dict = torch.load(
-        "checkpoints/distillation-3-teacher/swift-jazz-179-epoch=99-val_auroc=0.84-fold0.ckpt"
-    )['state_dict']
+    if not ensemble:
+        for module, preprocessor in data.items():
+            train_df = preprocessor.data
+            num_features = preprocessor.num_features
+            config = preprocessor.config
 
-    state_dict = {k.replace("model.", ""): v for k, v in raw_state_dict.items()}
-    teacher_model.load_state_dict(state_dict)
-    teacher_model.eval()
+            labels = train_df.iloc[:, -1].values
 
-    logits, probas, bin_preds = teacher_model(unlabelled_tensor)
+            unlabelled_data = data[data.iloc[:, -1] == 0]
+            U = np.where(labels == 0)[0]
 
-    delta = 0.25  # threshold for pseudo-labeling
+            hyperparams = config['hyperparameters']
 
-    pseudo_labels = torch.full_like(probas, -1)
+            val = None
+            unlabelled_dl = normalise_data(unlabelled_data, val, hyperparams)
+            unlabelled_tensor = unlabelled_dl.dataset.features
 
-    pos_count = 0
-    neg_count = 0
-    for i, proba in enumerate(probas):
-        if proba >= hyperparams['mlp']['threshold']:
-            pseudo_labels[i] = proba
-            pos_count += 1
-        elif proba <= hyperparams['mlp']['threshold'] - delta:
-            pseudo_labels[i] = proba
-            neg_count += 1
-    unlabelled_count = len(probas) - pos_count - neg_count
+            teacher_model = BaseTargetIdentifier(config=hyperparams, num_features=num_features)
+            raw_state_dict = torch.load(
+                "checkpoints/distillation-3-teacher/swift-jazz-179-epoch=99-val_auroc=0.84-fold0.ckpt"
+            )['state_dict']
 
-    # plot.plot_kde(pseudo_labels)
+            state_dict = {k.replace("model.", ""): v for k, v in raw_state_dict.items()}
+            teacher_model.load_state_dict(state_dict)
+            teacher_model.eval()
 
-    data.iloc[U, -1] = pseudo_labels.detach().numpy()
+            logits, probas, bin_preds = teacher_model(unlabelled_tensor)
 
-    data = data[data.iloc[:, -1] != -1]
+            delta = 0.25  # threshold for pseudo-labeling
 
-    kfold_train(data, num_features, hyperparams, model_type="student")
+            pseudo_labels = torch.full_like(probas, -1)
+
+            pos_count = 0
+            neg_count = 0
+            for i, proba in enumerate(probas):
+                if proba >= hyperparams['mlp']['threshold']:
+                    pseudo_labels[i] = proba
+                    pos_count += 1
+                elif proba <= hyperparams['mlp']['threshold'] - delta:
+                    pseudo_labels[i] = proba
+                    neg_count += 1
+            unlabelled_count = len(probas) - pos_count - neg_count
+
+            # plot.plot_kde(pseudo_labels)
+
+            data.iloc[U, -1] = pseudo_labels.detach().numpy()
+
+            data = data[data.iloc[:, -1] != -1]
+
+            kfold_train(data, num_features, hyperparams, model_type="student", modules=module)
+    else:
+        # TODO: Implement ensemble training
+        pass
