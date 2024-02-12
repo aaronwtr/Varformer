@@ -1,14 +1,15 @@
+import wandb
+import torch
+
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
 from src.autoencoders.autoencoder import AutoencoderTrainer
-from src.dataloader import VariantPathogenicityData
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
 from torch import nn
 from pytorch_lightning.callbacks import ModelCheckpoint
 
-import wandb
-import torch
+import src.dataloader as dl
+import torch.nn.functional as F
 
 
 def train(data_dict, config):
@@ -17,7 +18,7 @@ def train(data_dict, config):
     wandb.init(project='danio-autoencoders')
 
     variant_pathogenicity = DataLoader(
-        VariantPathogenicityData(data_dict=data_dict, reduct_dim=hparams['input_dim'],
+        dl.VariantPathogenicityData(data_dict=data_dict, reduct_dim=hparams['input_dim'],
                                  reduction_type=hparams['reduction']),
         batch_size=hparams['batch_size'],
         collate_fn=padding,
