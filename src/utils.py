@@ -3,6 +3,8 @@ import subprocess
 import re
 import csv
 import glob
+from typing import Tuple, Any
+
 import biorosetta as br
 import warnings
 import requests
@@ -475,7 +477,7 @@ def get_protein_length(ensp, ensg):
             raise KeyError(f"Failed to retrieve protein information. Status code: {response.status_code}")
 
 
-def count_zeros(df: pandas.DataFrame) -> None:
+def count_zeros(df: pd.DataFrame) -> None:
     """
     For each column in a given dataframe, count how many zeros occur
     :return:
@@ -505,32 +507,38 @@ def _convert_to_dense(indices, shape):
     return dense_matrix
 
 
-def featurise(features: dict) -> pandas.DataFrame:
+def featurise(features: dict) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     with open("../data/features/raw_feature_matrix.pkl", 'rb') as f:
         feature_matrix = pkl.load(f)
 
     for feature, values in features.items():
         feature_matrix[feature] = feature_matrix["ENSG"].map(values)
 
+    feature_matrix.fillna(0, inplace=True)
+
+    ensg_ids = feature_matrix["ENSG"]
+    uniprot_ids = feature_matrix["UNIPROT"]
+
+    feature_matrix.drop(["ENSG", "UNIPROT"], axis=1, inplace=True)
+
     # utils.count_zeros(feature_matrix)
 
     # plot.correlation_heatmap(feature_matrix)
 
-    return feature_matrix
+    return feature_matrix, ensg_ids, uniprot_ids
 
 
-def load_fda_labels() -> pandas.DataFrame:
+def load_fda_labels() -> pd.DataFrame:
     return pd.read_excel("../data/FDA_approved_drug_targets_2023_Q3.xlsx")
 
 
-def combine_features_and_labels(features: pandas.DataFrame, target: pandas.DataFrame) -> pandas.DataFrame:
+def combine_features_and_labels(gene_names: pd.DataFrame, features: pd.DataFrame, target: pd.DataFrame) -> pd.DataFrame:
     target_genes = list(target["Ensembl"])
-    feature_genes = list(features["ENSG"])
-    target_genes_in_features = [gene for gene in target_genes if gene in feature_genes]
+    target_genes_in_features = [gene for gene in target_genes if gene in gene_names]
     print(f"Found {len(target_genes_in_features)} FDA approved GH genes out of a total of {len(target_genes)} FDA "
           f"approved genes.")
     features["target"] = 0
-    features.loc[self.features["ENSG"].isin(target_genes_in_features), "target"] = 1
+    features.loc[gene_names.isin(target_genes), "target"] = 1
     return features
 
 
