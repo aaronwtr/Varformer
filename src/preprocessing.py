@@ -23,6 +23,7 @@ from autoencoders.autoencoder import AutoencoderTrainer
 from src.autoencoders import ae_training
 from src.utils import featurise, load_fda_labels, combine_features_and_labels
 
+
 class GeneCharacterisationPreprocessor:
     """
     This class loads and combines the different data sources into a single feature matrix to be fed into our model.
@@ -47,6 +48,8 @@ class GeneCharacterisationPreprocessor:
         self.gene_essentiality_features = None
         self.ppi_features = None
 
+
+        # TODO: Make this shared in utils.py or testing.py
         self.acmg_genes = None
         self.pfam_genes = None
 
@@ -62,8 +65,6 @@ class GeneCharacterisationPreprocessor:
         feature_matrix = self.gh_data[["Gene", "UNIPROT"]]
         feature_matrix = feature_matrix.rename(columns={"Gene": "ENSG"})
         feature_matrix = feature_matrix.drop_duplicates(subset=['ENSG'])
-        feature_matrix = feature_matrix[~feature_matrix["ENSG"].isin(self.acmg_genes)]
-        feature_matrix = feature_matrix[~feature_matrix["ENSG"].isin(self.pfam_genes)]
 
         if not os.path.exists('../data/features/raw_feature_matrix.pkl'):
             feature_matrix.to_pickle('../data/features/raw_feature_matrix.pkl')
@@ -96,7 +97,7 @@ class GeneCharacterisationPreprocessor:
         }
 
         self.features, self.ensg_ids, self.uniprot_ids = featurise(ensg_features)
-        self.num_features = len(self.features.columns)  # subtract 2 for ENSG and UNIPROT columns
+        self.num_features = len(self.features.columns)
 
         # Ground truth
         self.target = load_fda_labels()
@@ -104,6 +105,16 @@ class GeneCharacterisationPreprocessor:
         # Combine features and target
         self.data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
 
+        # Get test data
+        # TODO: Fix this
+        acmg_test_genes = self.ensg_ids[self.ensg_ids.isin(self.acmg_genes)]
+        self.acmg_data = self.data.loc[self.data.index.isin(acmg_test_genes)]
+        self.pfam_data = self.data.loc[self.data.index.isin(self.pfam_genes)]
+
+        # Remove test genes from training data
+        self.data = self.data.loc[~self.data.index.isin(self.acmg_genes)]
+        self.data = self.data.loc[~self.data.index.isin(self.pfam_genes)]
+        print('joe')
         # Explore the data
         # plot.umap(self.data)
 
@@ -666,7 +677,7 @@ class VariantAndStructurePreprocessor:
         with torch.no_grad():
             variant_pathogenicity = DataLoader(
                 dl.VariantPathogenicityData(data_dict=variant_am_features, reduct_dim=hparams['input_dim'],
-                                         reduction_type=hparams['reduction']),
+                                            reduction_type=hparams['reduction']),
                 collate_fn=ae_training.padding,
                 shuffle=False
             )
