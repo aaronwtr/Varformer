@@ -10,6 +10,7 @@ import pytorch_lightning as pl
 import pickle as pkl
 import pandas as pd
 import numpy as np
+import src.dataloader as dl
 
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,10 +20,8 @@ from Bio import SeqIO
 from torch.utils.data import DataLoader
 
 from autoencoders.autoencoder import AutoencoderTrainer
-from src.dataloader import VariantPathogenicityData
 from src.autoencoders import ae_training
 from src.utils import featurise, load_fda_labels, combine_features_and_labels
-
 
 class GeneCharacterisationPreprocessor:
     """
@@ -66,7 +65,7 @@ class GeneCharacterisationPreprocessor:
         feature_matrix = feature_matrix[~feature_matrix["ENSG"].isin(self.acmg_genes)]
         feature_matrix = feature_matrix[~feature_matrix["ENSG"].isin(self.pfam_genes)]
 
-        if os.path.exists('../data/features/raw_feature_matrix.pkl'):
+        if not os.path.exists('../data/features/raw_feature_matrix.pkl'):
             feature_matrix.to_pickle('../data/features/raw_feature_matrix.pkl')
 
         feature_extractors = {
@@ -96,15 +95,14 @@ class GeneCharacterisationPreprocessor:
             "common_essentials": self.gene_essentiality_features,
         }
 
-        self.features = featurise(ensg_features)
+        self.features, self.ensg_ids, self.uniprot_ids = featurise(ensg_features)
+        self.num_features = len(self.features.columns)  # subtract 2 for ENSG and UNIPROT columns
 
         # Ground truth
         self.target = load_fda_labels()
 
         # Combine features and target
-        self.data = combine_features_and_labels(self.features, self.target)
-
-        # TODO: add num_features attribute
+        self.data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
 
         # Explore the data
         # plot.umap(self.data)
@@ -183,19 +181,6 @@ class GeneCharacterisationPreprocessor:
         Load the ground truth data.
         """
         return self.datasets["FDA Approved Drug Targets"]
-
-    def make_data(self):
-        """
-        Combine the features and the target.
-        """
-        target_genes = list(self.target["Ensembl"])
-        feature_genes = list(self.features["ENSG"])
-        target_genes_in_features = [gene for gene in target_genes if gene in feature_genes]
-        print(f"Found {len(target_genes_in_features)} FDA approved GH genes out of a total of {len(target_genes)} FDA "
-              f"approved genes.")
-        self.features["target"] = 0
-        self.features.loc[self.features["ENSG"].isin(target_genes_in_features), "target"] = 1
-        return self.features
 
     def get_holdout_genes(self):
         # ACMG actionable genes
@@ -680,7 +665,7 @@ class VariantAndStructurePreprocessor:
 
         with torch.no_grad():
             variant_pathogenicity = DataLoader(
-                VariantPathogenicityData(data_dict=variant_am_features, reduct_dim=hparams['input_dim'],
+                dl.VariantPathogenicityData(data_dict=variant_am_features, reduct_dim=hparams['input_dim'],
                                          reduction_type=hparams['reduction']),
                 collate_fn=ae_training.padding,
                 shuffle=False
@@ -949,6 +934,8 @@ class GeneOntologyPreprocessor:
             "molecular_functions": self.protein_atlas_features['molecular_processes'],
             "subcellular_locations": self.protein_atlas_features['subcellular_locations']
         }
+
+        feature_matrix = pd.read_csv("../data/features/raw_feature_matrix.csv")
 
         for feature, values in ensg_features.items():
             feature_matrix[feature] = feature_matrix["ENSG"].map(values)
