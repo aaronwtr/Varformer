@@ -109,7 +109,7 @@ def normalise_data(train_raw, val_raw, config, model_type="mlp"):
         val = np.concatenate((val_norm, val_bin), axis=1)
         val = DataLoader(
             DrugTargetData(data=val, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_test),
-            batch_size=int(config['puupl']['batch_size']),
+            batch_size=int(hparams['puupl']['batch_size']),
             shuffle=False
         )
         return _train, val
