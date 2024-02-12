@@ -82,6 +82,8 @@ def objective(trial: optuna.trial.Trial) -> float:
 
 
 def normalise_data(train_raw, val_raw, config, model_type="mlp"):
+    hparams = config['hyperparameters']
+
     if val_raw is not None:
         gene_names_test = val_raw.iloc[:, 0].values
         val_norm = val_raw.iloc[:, 1:8].values
@@ -91,16 +93,15 @@ def normalise_data(train_raw, val_raw, config, model_type="mlp"):
     train_norm = train_raw.iloc[:, 1:8].values
 
     train_bin = train_raw.iloc[:, 8:-1].values
-
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
     _train = np.concatenate((train_norm, train_bin), axis=1)
 
     _train = DataLoader(
         DrugTargetData(data=_train, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train),
-        batch_size=int(config[model_type]['batch_size']),
+        batch_size=int(hparams[model_type]['batch_size']),
         shuffle=True,
-        num_workers=int(config[model_type]['num_workers'])
+        num_workers=int(hparams[model_type]['num_workers'])
     )
 
     if val_raw is not None:
