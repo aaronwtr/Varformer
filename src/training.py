@@ -3,7 +3,6 @@ import os
 import torch
 import optuna
 import wandb
-from typing import Dict
 
 import utils
 import plot
@@ -21,6 +20,7 @@ from puupl import training as puupl_training
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import MinMaxScaler
+from typing import Dict, Union
 
 
 def tune():
@@ -214,11 +214,16 @@ def train(tag="Training"):
         raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
 
 
-def kfold_train(data: pd.DataFrame, num_features: int, config: dict, model_type: str, modules: Dict[str, bool]):
+def kfold_train(data: pd.DataFrame, num_features: int, config: dict, model_type: str,
+                modules: Union[str, Dict[str, bool]]):
     num_splits = 5
     kfold = KFold(n_splits=num_splits, shuffle=True, random_state=42)
 
-    used_modules = [k for k, v in modules.items() if v]
+    if isinstance(modules, str):
+        used_modules = [modules]
+    else:
+        used_modules = [k for k, v in modules.items() if v]
+
     module_str = f"{'-'.join(used_modules)}"
 
     group = f"distillation-1-{model_type}-{module_str}"
