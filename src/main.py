@@ -10,7 +10,7 @@ def main(mode="training"):
     elif mode == "tuning":
         training.tune()
     elif mode == "kfold_teacher":
-        training.kfold_teacher()
+        training.kfold_teacher(gc=True)
     elif mode == "kfold_student":
         training.kfold_student()
     elif mode == "testing":
@@ -21,7 +21,7 @@ def main(mode="training"):
 
 
 if __name__ == "__main__":
-    main(mode="kfold_student")
+    main(mode="kfold_teacher")
 
     # TODO:
     #  MLP model
@@ -29,6 +29,7 @@ if __name__ == "__main__":
     #      [X] Global gene characterisation module
     #      [X] Protein variant and structure module
     #      [X] Gene ontology module
+    #  [ ] Train and test each module separately
     #  Note: Each module should output a data object that can be used to train the model
     #  [ ] Setup feature loading for pathogenicity features from training.py to preprocessing.py
     #  [ ] Test the feature preprocessing pipeline
