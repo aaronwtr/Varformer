@@ -69,10 +69,11 @@ class BaseTargetIdentifier(torch.nn.Module):
 
 
 class BaseLightningTargetIdentifier(pl.LightningModule):
-    def __init__(self, config, imbalance, model_type="mlp"):
+    def __init__(self, model, config, imbalance, model_type="mlp"):
         super().__init__()
         self.imbalance = imbalance
         self.config = config[model_type]
+        self.model = model
 
     def forward(self, x):
         return self.model(x)
