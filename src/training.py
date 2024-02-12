@@ -81,43 +81,58 @@ def objective(trial: optuna.trial.Trial) -> float:
     return trainer.callback_metrics["val_auroc"].item()
 
 
-def normalise_data(train_raw, val_raw, config, model_type="mlp"):
+def normalise_data(train_raw, val_raw, acmg_data, pfam_data, config, model_type="mlp"):
     hparams = config['hyperparameters']
 
-    if val_raw is not None:
-        gene_names_test = val_raw.iloc[:, 0].values
-        val_norm = val_raw.iloc[:, 1:8].values
-        val_bin = val_raw.iloc[:, 8:-1].values
+    gene_names_test = val_raw.iloc[:, 0].values
+    val_norm = val_raw.iloc[:, 1:].values
 
     gene_names_train = train_raw.iloc[:, 0].values
-    train_norm = train_raw.iloc[:, 1:8].values
+    train_norm = train_raw.iloc[:, 1:].values
 
-    train_bin = train_raw.iloc[:, 8:-1].values
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
-    _train = np.concatenate((train_norm, train_bin), axis=1)
 
     _train = DataLoader(
-        DrugTargetData(data=_train, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train),
+        DrugTargetData(data=train_norm, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train),
         batch_size=int(hparams[model_type]['batch_size']),
         shuffle=True,
         num_workers=int(hparams[model_type]['num_workers'])
     )
 
-    if val_raw is not None:
-        val_norm = scaler.transform(val_norm)
-        val = np.concatenate((val_norm, val_bin), axis=1)
-        val = DataLoader(
-            DrugTargetData(data=val, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_test),
-            batch_size=int(hparams['puupl']['batch_size']),
-            shuffle=False
-        )
-        return _train, val
-    return _train
+    val_norm = scaler.transform(val_norm)
+    val = DataLoader(
+        DrugTargetData(data=val_norm, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_test),
+        batch_size=int(hparams[model_type]['batch_size']),
+        shuffle=False
+    )
+
+    acmg_gene_names = acmg_data.iloc[:, 0].values
+    acmg_data = acmg_data.iloc[:, 1:].values
+    acmg_data = scaler.transform(acmg_data)
+    acmg_test = DataLoader(
+        DrugTargetData(data=acmg_data, labels=acmg_data.iloc[:, -1].values, gene_names=acmg_gene_names,
+                       test_source='acmg'),
+        batch_size=int(hparams[model_type]['batch_size']),
+        shuffle=False
+    )
+
+    pfam_gene_names = pfam_data.iloc[:, 0].values
+    pfam_data = pfam_data.iloc[:, 1:].values
+    pfam_data = scaler.transform(pfam_data)
+    pfam_test = DataLoader(
+        DrugTargetData(data=pfam_data, labels=pfam_data.iloc[:, -1].values, gene_names=pfam_gene_names,
+                       test_source='pfam'),
+        batch_size=int(hparams[model_type]['batch_size']), test_source='pfam',
+        shuffle=False
+    )
+
+    return _train, val, acmg_test, pfam_test
 
 
-def initialise_model(train_raw, val_raw, num_features, config):
-    _train, val = normalise_data(train_raw, val_raw, config)
+def initialise_model(train_raw, val_raw, acmg_data, pfam_data, num_features, config):
+    hyperparams = config['hyperparameters']
+    _train, val, acmg_test, pfam_test = normalise_data(train_raw, val_raw, acmg_data, pfam_data, config)
 
     train_imbalance = 1 / float(_train.dataset.label_imbalance().item())  # calculate inverse class frequency
 
@@ -132,17 +147,17 @@ def initialise_model(train_raw, val_raw, num_features, config):
     # lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
     hyperparameters = dict(
-        depth=config['mlp']['depth'],
-        lr=config['mlp']['lr_start'],
-        batch_size=config['mlp']['batch_size'],
-        optimizer=config['mlp']['optimizer'],
-        epochs=config['mlp']['epochs'],
-        dropout=config['mlp']['dropout'],
-        width=config['mlp']['width'],
-        weight_decay=config['mlp']['weight_decay'],
+        depth=hyperparams['mlp']['depth'],
+        lr=hyperparams['mlp']['lr_start'],
+        batch_size=hyperparams['mlp']['batch_size'],
+        optimizer=hyperparams['mlp']['optimizer'],
+        epochs=hyperparams['mlp']['epochs'],
+        dropout=hyperparams['mlp']['dropout'],
+        width=hyperparams['mlp']['width'],
+        weight_decay=hyperparams['mlp']['weight_decay'],
     )
 
-    return mlp_lightning, _train, val, hyperparameters, accelerator
+    return mlp_lightning, _train, val, acmg_test, pfam_test, hyperparameters, accelerator
 
 
 def train(tag="Training"):
@@ -151,23 +166,19 @@ def train(tag="Training"):
     num_features = gcp.num_features
     config = gcp.config
 
-    test_genes = gcp.acmg_genes
+    acmg_data = gcp.acmg_data
+    pfam_data = gcp.pfam_data
 
     # Note: Validation samples are clinically actionable genes as defined by the ACMG (see:
     # https://www.coriell.org/1/NIGMS/Collections/ACMG-73-Genes). We also have a broader set of clinically actionable
     # genes - with scores - from ClinGen. These are currently loaded in `get_actionable_genes` in `preprocessing.py`.
     # These need NOT yet have FDA-approved drugs.
-    test = data[data['ENSG'].isin(test_genes)]
 
     train_raw, val_raw = train_test_split(data, test_size=0.2, random_state=42)
 
-    if tag == "Standard Training" or tag == "Tuning":
-        mlp_lightning, train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, num_features,
-                                                                                   config)
-    elif tag == "PUUPL Training":
-        train, val = normalise_data(train_raw, val_raw, config, model_type="puupl")
-    else:
-        raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
+    mlp_lightning, train, val, acmg_test, pfam_test, hyperparameters, accelerator = (
+        initialise_model(train_raw, val_raw, acmg_data, pfam_data, num_features, config)
+    )
 
     if tag == "Standard Training":
         wandb_logger = WandbLogger(
@@ -195,7 +206,8 @@ def train(tag="Training"):
             callbacks=[checkpoint_callback]
         )
         trainer.fit(mlp_lightning, train, val)
-
+        trainer.test(ckpt_path="best", dataloaders=acmg_test)
+        trainer.test(ckpt_path="best", dataloaders=pfam_test)
         return trainer
     elif tag == "PUUPL Training":
         puupl_training(train=train, val=val, config=config)
@@ -215,8 +227,8 @@ def train(tag="Training"):
         raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
 
 
-def kfold_train(data: pd.DataFrame, num_features: int, config: dict, model_type: str,
-                modules: Union[str, Dict[str, bool]]):
+def kfold_train(data: pd.DataFrame, acmg_data: pd.DataFrame, pfam_data: pd.DataFrame, num_features: int, config: dict,
+                model_type: str, modules: Union[str, Dict[str, bool]]):
     num_splits = 5
     kfold = KFold(n_splits=num_splits, shuffle=True, random_state=42)
 
@@ -245,8 +257,9 @@ def kfold_train(data: pd.DataFrame, num_features: int, config: dict, model_type:
         train_raw = data.iloc[train_indices, :]
         val_raw = data.iloc[val_indices, :]
 
-        mlp_lightning, _train, val, hyperparameters, accelerator = initialise_model(train_raw, val_raw, num_features,
-                                                                                   config)
+        mlp_lightning, _train, val, acmg_test, pfam_test, hyperparameters, accelerator = (
+            initialise_model(train_raw, val_raw, acmg_data, pfam_data, num_features, config)
+        )
 
         run = wandb.init(
             project="drug-target-prediction",
@@ -275,6 +288,8 @@ def kfold_train(data: pd.DataFrame, num_features: int, config: dict, model_type:
         )
 
         trainer.fit(mlp_lightning, _train, val)
+        trainer.test(ckpt_path="best", dataloaders=acmg_test)
+        trainer.test(ckpt_path="best", dataloaders=pfam_test)
 
         run.finish()
 
@@ -303,7 +318,9 @@ def kfold_teacher(ensemble=False, **modules):
             train_df = preprocessor.data
             num_features = preprocessor.num_features
             config = preprocessor.config
-            kfold_train(train_df, num_features, config, model_type="teacher", modules=module)
+            acmg_data = preprocessor.acmg_data
+            pfam_data = preprocessor.pfam_data
+            kfold_train(train_df, acmg_data, pfam_data, num_features, config, model_type="teacher", modules=module)
     else:
         # TODO: Implement ensemble training
         pass
