@@ -14,7 +14,7 @@ from sklearn.model_selection import train_test_split
 class BaseTargetIdentifier(torch.nn.Module):
     def __init__(self, config, num_features, model_type="mlp"):
         super(BaseTargetIdentifier, self).__init__()
-        self.config = config[model_type]
+        self.config = config['hyperparameters'][model_type]
         self.layers = []
         layer_sizes = [num_features] + [int(self.config['width'])] * int(self.config['depth'])
         layer_size_prev = layer_sizes[0]
@@ -72,7 +72,7 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
     def __init__(self, model, config, imbalance, model_type="mlp"):
         super().__init__()
         self.imbalance = imbalance
-        self.config = config[model_type]
+        self.config = config['hyperparameters'][model_type]
         self.model = model
 
     def forward(self, x):
@@ -106,14 +106,14 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
         self.log('val_precision', self.model.precision(bin_preds, labels))
 
     def test_step(self, batch, batch_idx):
-        features, labels = batch
+        features, labels, test_source = batch
         logits, probas, bin_preds = self(features)
         labels = (labels > float(self.config['threshold'])).float()
 
-        self.log('test_acc', self.model.acc(bin_preds, labels))
-        self.log('test_auroc', self.model.auroc(bin_preds, labels))
-        self.log('test_spearman', self.model.spearman(probas, labels.float()))
-        self.log('test_precision', self.model.precision(bin_preds, labels))
+        self.log(f'test_acc_{test_source}', self.model.acc(bin_preds, labels))
+        self.log(f'test_auroc_{test_source}', self.model.auroc(bin_preds, labels))
+        self.log(f'test_spearman_{test_source}', self.model.spearman(probas, labels.float()))
+        self.log(f'test_precision_{test_source}', self.model.precision(bin_preds, labels))
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         features = batch
