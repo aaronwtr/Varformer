@@ -1,10 +1,60 @@
 import torch
+import yaml
+
 import torch.nn as nn
 import torch.nn.functional as F
+import pandas as pd
 
 from torch.utils.data import Dataset
 
 from src.autoencoders.autoencoder import AutoencoderTrainer
+from src.preprocessing import GeneCharacterisationPreprocessor, VariantAndStructurePreprocessor
+
+
+class ModuleDataProcessor:
+    def __init__(self, gc, go, pvc, psc):
+        assert any([gc, go, pvc, psc]), "Select at least one module to train the teacher model."
+        self.gc = gc
+        self.go = go
+        self.pvc = pvc
+        self.psc = psc
+
+        with open("config.yml", 'r') as stream:
+            self.config = yaml.safe_load(stream)
+
+    def process(self):
+        data = {}
+        if self.gc:
+            data['gc'] = self.open_gc_data()
+        if self.go:
+            # TODO: Implement and call the corresponding method for 'go'
+            pass
+        if self.pvc:
+            data['pvc'] = self.open_pvc_data()
+        if self.psc:
+            # TODO: Implement and call the corresponding method for 'psc'
+            pass
+        return data
+
+    def open_gc_data(self):
+        gcp = GeneCharacterisationPreprocessor(config=self.config)
+        print("Gene characterisation features preprocessed!\n")
+        return gcp
+
+    def open_pvc_data(self):
+        vgep = VariantAndStructurePreprocessor(config=self.config)
+        print("Variant-to-gene embeddings preprocessed!\n")
+
+        pathcty_embds = vgep.pathogenicity_embeddings
+
+        pthcty_df = pd.DataFrame.from_dict(pathcty_embds, orient='index')
+
+        pthcty_df = pthcty_df.reset_index()
+        pthcty_df = pthcty_df.rename(columns={'index': 'ENSG'})
+
+        pthcty_df = pthcty_df.rename(columns={i: f"pathogenicity_{i}" for i in range(0, pthcty_df.shape[1] - 1)})
+
+        return pthcty_df
 
 
 class DrugTargetData(Dataset):
