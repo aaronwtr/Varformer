@@ -534,7 +534,7 @@ def load_fda_labels() -> pd.DataFrame:
 
 def combine_features_and_labels(gene_names: pd.DataFrame, features: pd.DataFrame, target: pd.DataFrame) -> pd.DataFrame:
     target_genes = list(target["Ensembl"])
-    target_genes_in_features = [gene for gene in target_genes if gene in gene_names]
+    target_genes_in_features = [gene for gene in target_genes if gene in list(gene_names)]
     print(f"Found {len(target_genes_in_features)} FDA approved GH genes out of a total of {len(target_genes)} FDA "
           f"approved genes.")
     features["target"] = 0
