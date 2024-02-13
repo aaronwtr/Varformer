@@ -106,15 +106,18 @@ class GeneCharacterisationPreprocessor:
         self.data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
 
         # Get test data
-        # TODO: Fix this
-        acmg_test_genes = self.ensg_ids[self.ensg_ids.isin(self.acmg_genes)]
-        self.acmg_data = self.data.loc[self.data.index.isin(acmg_test_genes)]
-        self.pfam_data = self.data.loc[self.data.index.isin(self.pfam_genes)]
+        # get the ensg_ids that are in acmg_genes and pfam_genes
+        acmg_ids = self.ensg_ids[self.ensg_ids.isin(self.acmg_genes)]
+        pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.pfam_genes)]
+
+        self.acmg_data = self.data[self.data.index.isin(acmg_ids.index)]
+        self.pfam_data = self.data[self.data.index.isin(pfam_ids.index)]
 
         # Remove test genes from training data
-        self.data = self.data.loc[~self.data.index.isin(self.acmg_genes)]
-        self.data = self.data.loc[~self.data.index.isin(self.pfam_genes)]
-        print('joe')
+        self.data = self.data[~self.data.index.isin(acmg_ids.index)]
+        self.data = self.data[~self.data.index.isin(pfam_ids.index)]
+
+        print('break')
         # Explore the data
         # plot.umap(self.data)
 
