@@ -58,12 +58,12 @@ class ModuleDataProcessor:
 
 
 class DrugTargetData(Dataset):
-    def __init__(self, data, labels, gene_names, test_source=None):
+    def __init__(self, data, labels, gene_names, test_source=False):
         self.data = data
         self.labels = labels
         self.gene_names = gene_names
-        if test_source:
-            self.test_source = test_source
+
+        self.test_source = test_source
 
         x = self.data
         y = self.labels
@@ -72,7 +72,7 @@ class DrugTargetData(Dataset):
         self.labels = torch.tensor(y, dtype=torch.float32)
 
     def __getitem__(self, index):
-        if not self.test_source:
+        if self.test_source is False:
             return self.features[index], self.labels[index]
         else:
             return self.features[index], self.labels[index], self.test_source
