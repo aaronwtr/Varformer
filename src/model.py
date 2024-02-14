@@ -86,11 +86,13 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
         labels = (labels > float(self.config['threshold'])).float()
 
         loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
+
         self.log('train_loss', loss)
         self.log('train_acc', self.model.acc(bin_preds, labels))
         self.log('train_auroc', self.model.auroc(bin_preds, labels))
         self.log('train_spearman', self.model.spearman(probas, labels.float()))
         self.log('train_precision', self.model.precision(bin_preds, labels))
+
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -109,6 +111,7 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
         features, labels, test_source = batch
         logits, probas, bin_preds = self(features)
         labels = (labels > float(self.config['threshold'])).float()
+        test_source = test_source[0]
 
         self.log(f'test_acc_{test_source}', self.model.acc(bin_preds, labels))
         self.log(f'test_auroc_{test_source}', self.model.auroc(bin_preds, labels))
