@@ -25,11 +25,18 @@ if __name__ == "__main__":
 
     # TODO:
     #  MLP model
-    #  [X] Fix preprocessing into three modules
-    #      [X] Global gene characterisation module
-    #      [X] Protein variant and structure module
-    #      [X] Gene ontology module
+    #  [X] Fix preprocessing into four modules
+    #      [X] Gene characterisation module
+    #      [ ] Gene ontology module
+    #      [ ] Protein structure characterisation module
+    #      [ ] Population variant characterisation module
+    #  -
     #  [ ] Train and test each module separately
+    #      [ ] Gene characterisation module
+    #      [ ] Gene ontology module
+    #      [ ] Protein structure characterisation module
+    #      [ ] Population variant characterisation module
+    #  -
     #  Note: Each module should output a data object that can be used to train the model
     #  [ ] Setup feature loading for pathogenicity features from training.py to preprocessing.py
     #  [ ] Test the feature preprocessing pipeline
