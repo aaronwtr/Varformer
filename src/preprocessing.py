@@ -117,7 +117,6 @@ class GeneCharacterisationPreprocessor:
         self.data = self.data[~self.data.index.isin(acmg_ids.index)]
         self.data = self.data[~self.data.index.isin(pfam_ids.index)]
 
-        print('break')
         # Explore the data
         # plot.umap(self.data)
 
