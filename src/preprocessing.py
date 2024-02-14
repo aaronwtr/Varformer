@@ -48,7 +48,6 @@ class GeneCharacterisationPreprocessor:
         self.gene_essentiality_features = None
         self.ppi_features = None
 
-
         # TODO: Make this shared in utils.py or testing.py
         self.acmg_genes = None
         self.pfam_genes = None
@@ -107,15 +106,15 @@ class GeneCharacterisationPreprocessor:
 
         # Get test data
         # get the ensg_ids that are in acmg_genes and pfam_genes
-        acmg_ids = self.ensg_ids[self.ensg_ids.isin(self.acmg_genes)]
-        pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.pfam_genes)]
+        self.acmg_ids = self.ensg_ids[self.ensg_ids.isin(self.acmg_genes)]
+        self.pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.pfam_genes)]
 
-        self.acmg_data = self.data[self.data.index.isin(acmg_ids.index)]
-        self.pfam_data = self.data[self.data.index.isin(pfam_ids.index)]
+        self.acmg_data = self.data[self.data.index.isin(self.acmg_ids.index)]
+        self.pfam_data = self.data[self.data.index.isin(self.pfam_ids.index)]
 
         # Remove test genes from training data
-        self.data = self.data[~self.data.index.isin(acmg_ids.index)]
-        self.data = self.data[~self.data.index.isin(pfam_ids.index)]
+        self.data = self.data[~self.data.index.isin(self.acmg_ids.index)]
+        self.data = self.data[~self.data.index.isin(self.pfam_ids.index)]
 
         # Explore the data
         # plot.umap(self.data)
