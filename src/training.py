@@ -108,22 +108,22 @@ def normalise_data(train_raw, val_raw, acmg_data, pfam_data, config, model_type=
     )
 
     acmg_gene_names = acmg_data.iloc[:, 0].values
-    acmg_data = acmg_data.iloc[:, 1:].values
-    acmg_data = scaler.transform(acmg_data)
+    acmg_norm = acmg_data.iloc[:, 1:].values
+    acmg_norm = scaler.transform(acmg_norm)
     acmg_test = DataLoader(
-        DrugTargetData(data=acmg_data, labels=acmg_data.iloc[:, -1].values, gene_names=acmg_gene_names,
+        DrugTargetData(data=acmg_norm, labels=acmg_data.iloc[:, -1].values, gene_names=acmg_gene_names,
                        test_source='acmg'),
         batch_size=int(hparams[model_type]['batch_size']),
         shuffle=False
     )
 
     pfam_gene_names = pfam_data.iloc[:, 0].values
-    pfam_data = pfam_data.iloc[:, 1:].values
-    pfam_data = scaler.transform(pfam_data)
+    pfam_norm = pfam_data.iloc[:, 1:].values
+    pfam_norm = scaler.transform(pfam_norm)
     pfam_test = DataLoader(
-        DrugTargetData(data=pfam_data, labels=pfam_data.iloc[:, -1].values, gene_names=pfam_gene_names,
+        DrugTargetData(data=pfam_norm, labels=pfam_data.iloc[:, -1].values, gene_names=pfam_gene_names,
                        test_source='pfam'),
-        batch_size=int(hparams[model_type]['batch_size']), test_source='pfam',
+        batch_size=int(hparams[model_type]['batch_size']),
         shuffle=False
     )
 
@@ -279,7 +279,7 @@ def kfold_train(data: pd.DataFrame, acmg_data: pd.DataFrame, pfam_data: pd.DataF
 
         utils.set_seed(42)
         trainer = pl.Trainer(
-            max_epochs=int(config['mlp']['epochs']),
+            max_epochs=int(config['hyperparameters']['mlp']['epochs']),
             accelerator=accelerator,
             enable_progress_bar=True,
             log_every_n_steps=1,
