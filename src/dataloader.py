@@ -2,13 +2,11 @@ import torch
 import yaml
 
 import torch.nn as nn
+import src.preprocessing as preprocessing
 import torch.nn.functional as F
 import pandas as pd
 
 from torch.utils.data import Dataset
-
-from src.autoencoders.autoencoder import AutoencoderTrainer
-from src.preprocessing import GeneCharacterisationPreprocessor, VariantAndStructurePreprocessor
 
 
 class ModuleDataProcessor:
@@ -27,8 +25,7 @@ class ModuleDataProcessor:
         if self.gc:
             data['gc'] = self.open_gc_data()
         if self.go:
-            # TODO: Implement and call the corresponding method for 'go'
-            pass
+            data['go'] = self.open_go_data()
         if self.pvc:
             data['pvc'] = self.open_pvc_data()
         if self.psc:
@@ -37,12 +34,17 @@ class ModuleDataProcessor:
         return data
 
     def open_gc_data(self):
-        gcp = GeneCharacterisationPreprocessor(config=self.config)
+        gcp = preprocessing.GeneCharacterisationPreprocessor(config=self.config)
         print("Gene characterisation features preprocessed!\n")
         return gcp
 
+    def open_go_data(self):
+        gop = preprocessing.GeneOntologyPreprocessor(config=self.config)
+        print("Gene ontology features preprocessed!\n")
+        return gop
+
     def open_pvc_data(self):
-        vgep = VariantAndStructurePreprocessor(config=self.config)
+        vgep = preprocessing.VariantAndStructurePreprocessor(config=self.config)
         print("Variant-to-gene embeddings preprocessed!\n")
 
         pathcty_embds = vgep.pathogenicity_embeddings
