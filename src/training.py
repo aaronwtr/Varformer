@@ -5,15 +5,13 @@ import optuna
 import wandb
 
 import utils
-import plot
 
 import lightning as pl
 import pandas as pd
 import numpy as np
 
 from pytorch_lightning.loggers import WandbLogger
-from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
-from preprocessing import GeneCharacterisationPreprocessor, VariantAndStructurePreprocessor
+from lightning.pytorch.callbacks import ModelCheckpoint
 from dataloader import DrugTargetData, ModuleDataProcessor
 from model import BaseTargetIdentifier, BaseLightningTargetIdentifier
 from puupl import training as puupl_training
@@ -278,10 +276,10 @@ def kfold_train(data: pd.DataFrame, genes: pd.DataFrame, test_genes: Dict[str, p
 
         run_name = wandb.run.name
         checkpoint_callback = ModelCheckpoint(
-            monitor='val_auroc',
+            monitor='epoch',
             dirpath=f'checkpoints/{group}',
             filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}-' + f'fold{fold}',
-            save_last=True,
+            save_top_k=1,
             mode='max'
         )
 
