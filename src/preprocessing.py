@@ -508,11 +508,15 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         if not gcp:
             super().__init__(config)
             self.gcp_data = self.data
+            self.gcp_acmg = self.acmg_data
+            self.gcp_pfam = self.pfam_data
         else:
             self.gcp = gcp
             self.gh_data = gcp.gh_data
             self.target = gcp.target
             self.gcp_data = gcp.data
+            self.gcp_acmg = gcp.acmg_data
+            self.gcp_pfam = gcp.pfam_data
 
         print("Gene Ontology Preprocessor booting up...")
         self.config = config
@@ -529,14 +533,24 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         self.combine_features()
 
         self.data = self.gene_ontology_features
+
+        self.acmg_data = self.data[self.data['ENSG'].isin(self.acmg_ids)]
+        self.acmg_data = self.acmg_data.drop(columns=['ENSG'])
+        self.acmg_data = self.acmg_data.set_index(self.gcp_acmg.index)
+        self.acmg_data['target'] = self.gcp_acmg['target']
+
+        self.pfam_data = self.data[self.data['ENSG'].isin(self.pfam_ids)]
+        self.pfam_data = self.pfam_data.drop(columns=['ENSG'])
+        self.pfam_data = self.pfam_data.set_index(self.gcp_pfam.index)
+        self.pfam_data['target'] = self.gcp_pfam['target']
+
+        self.data = self.data[~self.data['ENSG'].isin(self.acmg_ids)]
+        self.data = self.data[~self.data['ENSG'].isin(self.pfam_ids)]
+        self.data = self.data.drop(columns=['ENSG'])
+        self.data = self.data.set_index(self.gcp_data.index)
         self.data['target'] = self.gcp_data['target']
 
-        # TODO: Fix this bug. Shouldn't remove by index, rather by ENSG
-        self.data = self.data[~self.data.index.isin(self.acmg_ids.index)]
-        self.data = self.data[~self.data.index.isin(self.pfam_ids.index)]
-        self.data = self.data.drop(columns=['ENSG'])
-
-        print('joe')
+        self.num_features = len(self.data.columns) - 1  # subtract 1 for the target column
 
     def protein_atlas_feature_extractor(self):
         protein_atlas_features = pd.read_csv(self.config['paths']['PROTEIN_ATLAS_FEATURES'], sep='\t')
