@@ -234,3 +234,5 @@ plots/
 src/autoencoders/checkpoints/variant_pathogenicity_encoder/
 
 *.ckpt
+
+notebooks/
