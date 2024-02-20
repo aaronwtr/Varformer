@@ -21,13 +21,13 @@ class ModuleDataProcessor:
             self.config = yaml.safe_load(stream)
 
     def process(self):
-        data = {}
+        data = {'gc': None, 'go': None, 'pvc': None, 'psc': None}
         if self.gc:
             data['gc'] = self.open_gc_data()
         if self.go:
-            data['go'] = self.open_go_data()
+            data['go'] = self.open_go_data(data['gc'])
         if self.pvc:
-            data['pvc'] = self.open_pvc_data()
+            data['pvc'] = self.open_pvc_data(data['gc'])
         if self.psc:
             # TODO: Implement and call the corresponding method for 'psc'
             pass
@@ -38,13 +38,13 @@ class ModuleDataProcessor:
         print("Gene characterisation features preprocessed!\n")
         return gcp
 
-    def open_go_data(self):
-        gop = preprocessing.GeneOntologyPreprocessor(config=self.config)
+    def open_go_data(self, gc_data):
+        gop = preprocessing.GeneOntologyPreprocessor(config=self.config, gcp=gc_data)
         print("Gene ontology features preprocessed!\n")
         return gop
 
-    def open_pvc_data(self):
-        vgep = preprocessing.VariantAndStructurePreprocessor(config=self.config)
+    def open_pvc_data(self, gc_data):
+        vgep = preprocessing.PopulationVariantPreprocessor(config=self.config, gcp=gc_data)
         print("Variant-to-gene embeddings preprocessed!\n")
 
         pathcty_embds = vgep.pathogenicity_embeddings
