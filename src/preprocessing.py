@@ -726,20 +726,26 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         self.gene_ontology_features = feature_matrix.fillna(0)
 
 
-class VariantAndStructurePreprocessor:
+class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
     """
     This class processes protein variant information, specifically it obtains and processes amino acid sequence embeddings
     and missense variant pathogenicity embeddings, and it processes protein structure confidence scores, in particular
     it generates and processes embeddings of AlphaFold's residue-wise pLDDT score.
     """
 
-    def __init__(self, config, gcp):
-        print("Variant and Structure Preprocessor booting up...")
-        self.config = config
-        self.gcp = gcp
-        self.gh_data = gcp.gh_data
-        self.target = gcp.target
-        self.data = gcp.data
+    def __init__(self, config, gcp=None):
+        if not gcp:
+            super().__init__(config)
+            self.gcp_data = self.data
+            self.gcp_acmg = self.acmg_data
+            self.gcp_pfam = self.pfam_data
+        else:
+            self.gcp = gcp
+            self.gh_data = gcp.gh_data
+            self.target = gcp.target
+            self.gcp_data = gcp.data
+            self.gcp_acmg = gcp.acmg_data
+            self.gcp_pfam = gcp.pfam_data
 
         print("Getting variant-to-gene embeddings...")
         self.pathogenicity_embeddings = None
@@ -750,6 +756,11 @@ class VariantAndStructurePreprocessor:
             self.pathogenicity_feature_extractor()
         self.variant_pathogenicity_embedder()
         self.pathogenicity_features = self.pathogenicity_train_data()
+
+        # TODO:
+        #  - Combine pathogenicity features with gcp data backbone and fill genes for which we have no AM data with
+        #   zeros.
+        #  - Also try filling with the mean embedding per embedding dimension for the missing genes
 
         print("Processing AlphaFold protein structure prediction confidence data...")
         self.alphafold_features = None
