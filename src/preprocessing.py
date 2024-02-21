@@ -758,9 +758,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.pathogenicity_features = self.pathogenicity_train_data()
 
         # TODO:
-        #  - Combine pathogenicity features with gcp data backbone and fill genes for which we have no AM data with
-        #   zeros.
-        #  - Also try filling with the mean embedding per embedding dimension for the missing genes
+        #  - Train a model with the pathogenicity embeddings
 
         print("Processing AlphaFold protein structure prediction confidence data...")
         self.alphafold_features = None
@@ -919,6 +917,23 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
     def pathogenicity_train_data(self):
         combined_data = pd.DataFrame.from_dict(self.pathogenicity_embeddings, orient='index')
         combined_data = combined_data.reset_index().rename(columns={'index': 'Gene'})
+
+        path_genes = list(combined_data['Gene'])
+        gh_genes = list(self.ensg_ids)
+        missing_genes = list(set(gh_genes) - set(path_genes))
+
+        emb_vals = combined_data.iloc[:, 1:].values
+        mean_embs = emb_vals.mean(axis=0)
+        mean_embs_dict = dict(zip(combined_data.columns[1:], mean_embs))
+        missing_genes_df = pd.DataFrame(index=missing_genes, columns=combined_data.columns[1:])
+        missing_genes_df = missing_genes_df.fillna(mean_embs_dict)
+
+        missing_genes_df['Gene'] = missing_genes_df.index
+        missing_genes_df = missing_genes_df.reset_index(drop=True)
+        missing_genes_df = missing_genes_df[['Gene'] + [col for col in missing_genes_df.columns if col != 'Gene']]
+
+        combined_data = pd.concat([combined_data, missing_genes_df], axis=0)
+
         target = self.target
         target['target'] = 1
         target = target.drop(['Gene'], axis=1)
