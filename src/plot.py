@@ -323,3 +323,25 @@ def plot_kde(pseudo_labels):
     plt.xlabel("Pseudo-label value")
     plt.ylabel("Density")
     # plt.savefig("../plots/pseudolabel_distribution.pdf")
+
+
+def plot_embedding_distribution(embeddings: pd.DataFrame) -> None:
+    """
+    Plots a boxplot of the embeddings
+    """
+    random_columns = np.random.choice(embeddings.columns, 3, replace=False)
+
+    # Create a figure and a set of subplots
+    fig, axes = plt.subplots(1, 3, sharey=True, figsize=(15, 5))
+
+    # For each subplot, plot a boxplot of one of the random columns
+    for ax, column in zip(axes, random_columns):
+        ax.boxplot(embeddings[column])
+        ax.set_title(column)
+        ax.set_xticks([])
+
+    # Set common labels
+    fig.text(0.5, 0.04, 'Latent dimension', ha='center', va='center')
+    fig.text(0.06, 0.5, 'Embedding value', ha='center', va='center', rotation='vertical')
+
+    plt.savefig("../plots/transformer_autoencoder_embedding_distribution_1.pdf", dpi=300)
