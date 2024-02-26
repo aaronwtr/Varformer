@@ -12,13 +12,15 @@ import numpy as np
 
 from pytorch_lightning.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
-from dataloader import DrugTargetData, ModuleDataProcessor
-from model import BaseTargetIdentifier, BaseLightningTargetIdentifier
-from puupl import training as puupl_training
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import MinMaxScaler
 from typing import Dict, Union
+
+from dataloader import DrugTargetData, ModuleDataProcessor
+from model import BaseTargetIdentifier, BaseLightningTargetIdentifier
+from puupl import training as puupl_training
+from plot import umap
 
 
 def tune():
@@ -79,61 +81,99 @@ def objective(trial: optuna.trial.Trial) -> float:
     return trainer.callback_metrics["val_auroc"].item()
 
 
-def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, acmg_data, pfam_data, config,
+def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, acmg_raw, pfam_raw, config, norm,
                    model_type="mlp"):
     hparams = config['hyperparameters']
 
-    val_norm = val_raw.iloc[:, :-1].values
+    if norm:
+        val_norm = val_raw.iloc[:, :-1].values
 
-    gene_names_train = train_genes
-    train_norm = train_raw.iloc[:, :-1].values
+        gene_names_train = train_genes
+        train_norm = train_raw.iloc[:, :-1].values
 
-    scaler = MinMaxScaler()
-    train_norm = scaler.fit_transform(train_norm)
+        scaler = MinMaxScaler()
+        train_norm = scaler.fit_transform(train_norm)
 
-    _train = DataLoader(
-        DrugTargetData(data=train_norm, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train),
-        batch_size=int(hparams[model_type]['batch_size']),
-        shuffle=True,
-        num_workers=int(hparams[model_type]['num_workers'])
-    )
+        _train = DataLoader(
+            DrugTargetData(data=train_norm, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train),
+            batch_size=int(hparams[model_type]['batch_size']),
+            shuffle=True,
+            num_workers=int(hparams[model_type]['num_workers'])
+        )
 
-    gene_names_val = val_genes
-    val_norm = scaler.transform(val_norm)
-    val = DataLoader(
-        DrugTargetData(data=val_norm, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_val),
-        batch_size=int(hparams[model_type]['batch_size']),
-        shuffle=False
-    )
+        gene_names_val = val_genes
+        val_norm = scaler.transform(val_norm)
+        val = DataLoader(
+            DrugTargetData(data=val_norm, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_val),
+            batch_size=int(hparams[model_type]['batch_size']),
+            shuffle=False
+        )
 
-    acmg_gene_names = test_genes['acmg']
-    acmg_norm = acmg_data.iloc[:, :-1].values
-    acmg_norm = scaler.transform(acmg_norm)
-    acmg_test = DataLoader(
-        DrugTargetData(data=acmg_norm, labels=acmg_data.iloc[:, -1].values, gene_names=acmg_gene_names,
-                       test_source='acmg'),
-        batch_size=len(acmg_data),
-        shuffle=False
-    )
+        acmg_gene_names = test_genes['acmg']
+        acmg_norm = acmg_raw.iloc[:, :-1].values
+        acmg_norm = scaler.transform(acmg_norm)
+        acmg_test = DataLoader(
+            DrugTargetData(data=acmg_norm, labels=acmg_raw.iloc[:, -1].values, gene_names=acmg_gene_names,
+                           test_source='acmg'),
+            batch_size=len(acmg_raw),
+            shuffle=False
+        )
 
-    pfam_gene_names = test_genes['pfam']
-    pfam_norm = pfam_data.iloc[:, :-1].values
-    pfam_norm = scaler.transform(pfam_norm)
-    pfam_test = DataLoader(
-        DrugTargetData(data=pfam_norm, labels=pfam_data.iloc[:, -1].values, gene_names=pfam_gene_names,
-                       test_source='pfam'),
-        batch_size=len(pfam_data),
-        shuffle=False
-    )
+        pfam_gene_names = test_genes['pfam']
+        pfam_norm = pfam_raw.iloc[:, :-1].values
+        pfam_norm = scaler.transform(pfam_norm)
+        pfam_test = DataLoader(
+            DrugTargetData(data=pfam_norm, labels=pfam_raw.iloc[:, -1].values, gene_names=pfam_gene_names,
+                           test_source='pfam'),
+            batch_size=len(pfam_raw),
+            shuffle=False
+        )
+    else:
+        val_data = val_raw.iloc[:, :-1].values
+        gene_names_train = train_genes
+        train_data = train_raw.iloc[:, :-1].values
+
+        _train = DataLoader(
+            DrugTargetData(data=train_data, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train),
+            batch_size=int(hparams[model_type]['batch_size']),
+            shuffle=True,
+            num_workers=int(hparams[model_type]['num_workers'])
+        )
+
+        gene_names_val = val_genes
+        val = DataLoader(
+            DrugTargetData(data=val_data, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_val),
+            batch_size=int(hparams[model_type]['batch_size']),
+            shuffle=False
+        )
+
+        acmg_gene_names = test_genes['acmg']
+        acmg_data = acmg_raw.iloc[:, :-1].values
+        acmg_test = DataLoader(
+            DrugTargetData(data=acmg_data, labels=acmg_raw.iloc[:, -1].values, gene_names=acmg_gene_names,
+                           test_source='acmg'),
+            batch_size=len(acmg_data),
+            shuffle=False
+        )
+
+        pfam_gene_names = test_genes['pfam']
+        pfam_data = pfam_raw.iloc[:, :-1].values
+        pfam_test = DataLoader(
+            DrugTargetData(data=pfam_data, labels=pfam_raw.iloc[:, -1].values, gene_names=pfam_gene_names,
+                           test_source='pfam'),
+            batch_size=len(pfam_data),
+            shuffle=False
+        )
+
 
     return _train, val, acmg_test, pfam_test
 
 
 def initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, acmg_data, pfam_data, num_features,
-                     config):
+                     config, norm):
     hyperparams = config['hyperparameters']
     _train, val, acmg_test, pfam_test = normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes,
-                                                       acmg_data, pfam_data, config)
+                                                       acmg_data, pfam_data, config, norm)
 
     train_imbalance = 1 / float(_train.dataset.label_imbalance().item())  # calculate inverse class frequency
 
@@ -230,7 +270,7 @@ def train(tag="Training"):
 
 def kfold_train(data: pd.DataFrame, genes: pd.DataFrame, test_genes: Dict[str, pd.DataFrame], acmg_data: pd.DataFrame,
                 pfam_data: pd.DataFrame, num_features: int, config: dict, model_type: str,
-                modules: Union[str, Dict[str, bool]]):
+                modules: Union[str, Dict[str, bool]], norm: bool = True):
     num_splits = 5
     kfold = KFold(n_splits=num_splits, shuffle=True, random_state=42)
 
@@ -264,7 +304,7 @@ def kfold_train(data: pd.DataFrame, genes: pd.DataFrame, test_genes: Dict[str, p
 
         mlp_lightning, _train, val, acmg_test, pfam_test, hyperparameters, accelerator = (
             initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, acmg_data, pfam_data, num_features,
-                             config)
+                             config, norm)
         )
 
         run = wandb.init(
