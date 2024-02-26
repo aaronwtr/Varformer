@@ -755,9 +755,28 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         if not os.path.exists("../data/alphamissense/gh_am_data.pkl"):
             self.pathogenicity_feature_extractor()
         self.variant_pathogenicity_embedder()
-        self.pathogenicity_features = self.pathogenicity_train_data()
+        self.data = self.pathogenicity_train_data()
+
+        self.acmg_data = self.data[self.data['ENSG'].isin(self.acmg_ids)]
+        self.acmg_data = self.acmg_data.drop(columns=['ENSG'])
+        self.acmg_data = self.acmg_data.set_index(self.gcp_acmg.index)
+        self.acmg_data['target'] = self.gcp_acmg['target']
+
+        self.pfam_data = self.data[self.data['ENSG'].isin(self.pfam_ids)]
+        self.pfam_data = self.pfam_data.drop(columns=['ENSG'])
+        self.pfam_data = self.pfam_data.set_index(self.gcp_pfam.index)
+        self.pfam_data['target'] = self.gcp_pfam['target']
+
+        self.data = self.data[~self.data['ENSG'].isin(self.acmg_ids)]
+        self.data = self.data[~self.data['ENSG'].isin(self.pfam_ids)]
+        self.data = self.data.drop(columns=['ENSG'])
+        self.data = self.data.set_index(self.gcp_data.index)
+
+        self.num_features = len(self.data.columns) - 1
+        self.norm = False
 
         # TODO:
+        #  - Separate test data from the features
         #  - Train a model with the pathogenicity embeddings
 
         print("Processing AlphaFold protein structure prediction confidence data...")
@@ -916,9 +935,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
     def pathogenicity_train_data(self):
         combined_data = pd.DataFrame.from_dict(self.pathogenicity_embeddings, orient='index')
-        combined_data = combined_data.reset_index().rename(columns={'index': 'Gene'})
+        combined_data = combined_data.reset_index().rename(columns={'index': 'ENSG'})
 
-        path_genes = list(combined_data['Gene'])
+        path_genes = list(combined_data['ENSG'])
         gh_genes = list(self.ensg_ids)
         missing_genes = list(set(gh_genes) - set(path_genes))
 
@@ -928,20 +947,24 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         missing_genes_df = pd.DataFrame(index=missing_genes, columns=combined_data.columns[1:])
         missing_genes_df = missing_genes_df.fillna(mean_embs_dict)
 
-        missing_genes_df['Gene'] = missing_genes_df.index
+        missing_genes_df['ENSG'] = missing_genes_df.index
         missing_genes_df = missing_genes_df.reset_index(drop=True)
-        missing_genes_df = missing_genes_df[['Gene'] + [col for col in missing_genes_df.columns if col != 'Gene']]
+        missing_genes_df = missing_genes_df[['ENSG'] + [col for col in missing_genes_df.columns if col != 'ENSG']]
 
         combined_data = pd.concat([combined_data, missing_genes_df], axis=0)
 
         target = self.target
         target['target'] = 1
         target = target.drop(['Gene'], axis=1)
-        target = target.rename(columns={'Ensembl': 'Gene'})
-        combined_data = combined_data.merge(target, on='Gene', how='left')
-        combined_data = combined_data.drop([0], axis=1)
-        combined_data = combined_data.sort_values(by=['target'], ascending=False)
+        target = target.rename(columns={'Ensembl': 'ENSG'})
+        target_genes = list(target['ENSG'])
+        target_genes = list(set(target_genes) & set(gh_genes))
+        target_genes = pd.DataFrame(target_genes, columns=['ENSG'])
+        target_genes['target'] = 1
+
+        combined_data = combined_data.merge(target_genes, on='ENSG', how='left')
         combined_data = combined_data.fillna(0)
+
         return combined_data
 
     def plddt_embedder(self):
