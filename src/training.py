@@ -321,20 +321,23 @@ def kfold_teacher(ensemble=False, **modules):
 
     if not ensemble:
         for module, preprocessor in data.items():
-            train_df = preprocessor.data
-            genes = preprocessor.ensg_ids
-            num_features = preprocessor.num_features
-            config = preprocessor.config
-            acmg_data = preprocessor.acmg_data
-            pfam_data = preprocessor.pfam_data
-            acmg_genes = preprocessor.acmg_ids
-            pfam_genes = preprocessor.pfam_ids
-            test_genes = {
-                "acmg": acmg_genes,
-                "pfam": pfam_genes
-            }
-            kfold_train(train_df, genes, test_genes, acmg_data, pfam_data, num_features, config, model_type="teacher",
-                        modules=module)
+            if modules[module]:
+                train_df = preprocessor.data
+                umap(train_df)
+                genes = preprocessor.ensg_ids
+                num_features = preprocessor.num_features
+                norm = preprocessor.norm
+                config = preprocessor.config
+                acmg_data = preprocessor.acmg_data
+                pfam_data = preprocessor.pfam_data
+                acmg_genes = preprocessor.acmg_ids
+                pfam_genes = preprocessor.pfam_ids
+                test_genes = {
+                    "acmg": acmg_genes,
+                    "pfam": pfam_genes
+                }
+                kfold_train(train_df, genes, test_genes, acmg_data, pfam_data, num_features, config,
+                            model_type="teacher", modules=module, norm=norm)
     else:
         # TODO: Implement ensemble training
         pass
