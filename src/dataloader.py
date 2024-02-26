@@ -44,19 +44,19 @@ class ModuleDataProcessor:
         return gop
 
     def open_pvc_data(self, gc_data):
-        vgep = preprocessing.PopulationVariantPreprocessor(config=self.config, gcp=gc_data)
-        print("Variant-to-gene embeddings preprocessed!\n")
+        pvc = preprocessing.PopulationVariantPreprocessor(config=self.config, gcp=gc_data)
+        print("Population variants preprocessed!\n")
 
-        pathcty_embds = vgep.pathogenicity_embeddings
+        # pathcty_embds = vgep.pathogenicity_embeddings
+        #
+        # pthcty_df = pd.DataFrame.from_dict(pathcty_embds, orient='index')
+        #
+        # pthcty_df = pthcty_df.reset_index()
+        # pthcty_df = pthcty_df.rename(columns={'index': 'ENSG'})
+        #
+        # pthcty_df = pthcty_df.rename(columns={i: f"pathogenicity_{i}" for i in range(0, pthcty_df.shape[1] - 1)})
 
-        pthcty_df = pd.DataFrame.from_dict(pathcty_embds, orient='index')
-
-        pthcty_df = pthcty_df.reset_index()
-        pthcty_df = pthcty_df.rename(columns={'index': 'ENSG'})
-
-        pthcty_df = pthcty_df.rename(columns={i: f"pathogenicity_{i}" for i in range(0, pthcty_df.shape[1] - 1)})
-
-        return pthcty_df
+        return pvc
 
 
 class DrugTargetData(Dataset):
