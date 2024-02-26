@@ -295,25 +295,25 @@ def correlation_heatmap(df):
 
 
 def umap(df):
-    df_target_0 = df[df['target'] == 0]
-    df_target_1 = df[df['target'] == 1]
+    features = df.iloc[:, :-1]  # Select all columns except the last one (target)
+    target = df['target']
 
-    df_target_0_downsampled = df_target_0.sample(n=len(df_target_1), random_state=42)
+    # Create the UMAP reducer object
+    reducer = UMAP()
 
-    df_downsampled = pd.concat([df_target_0_downsampled, df_target_1])
-    features = df_downsampled.iloc[:, 1:-1]
-    target = df_downsampled.iloc[:, -1]
-    gene_names = df_downsampled.iloc[:, 0]
+    # Fit and transform the data into a lower-dimensional UMAP embedding
+    embedding = reducer.fit_transform(features)
 
-    umap_model = UMAP(n_components=2, n_neighbors=100, min_dist=0.01)
-    umap_results = umap_model.fit_transform(features)
-    umap_df = pd.DataFrame(umap_results, columns=['UMAP1', 'UMAP2'])
-    umap_df['Target'] = target
-    umap_df['Gene'] = gene_names
+    # Create the scatter plot
+    plt.figure(figsize=(10, 8))
 
-    sns.scatterplot(x='UMAP1', y='UMAP2',  hue='Target', data=umap_df, palette='Paired')
-    plt.xlabel('UMAP1')
-    plt.ylabel('UMAP2')
+    # Use a dictionary to map target values to specific colors
+    color_map = {0: 'tab:blue', 1: 'tab:orange'}
+    colors = [color_map[t] for t in target]
+
+    plt.scatter(embedding[:, 0], embedding[:, 1], c=colors, s=5)
+    plt.xlabel('UMAP 1')
+    plt.ylabel('UMAP 2')
     plt.show()
 
 
