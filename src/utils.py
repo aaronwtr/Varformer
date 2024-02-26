@@ -88,15 +88,6 @@ def find_error_files(path):
     print(len(missing_files))
 
 
-# def run_shell_script(script_path, file_path):
-#     try:
-#         subprocess.run(["bash", script_path, file_path], check=True)
-#     except subprocess.CalledProcessError as e:
-#         print(f"Error while running the shell script: {e}")
-#     else:
-#         print("Shell script executed successfully!")
-
-
 def run_shell_script(script_path, *file_paths):
     try:
         subprocess.run(["bash", script_path] + list(file_paths), check=True)
