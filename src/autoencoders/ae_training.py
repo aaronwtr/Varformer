@@ -1,15 +1,14 @@
 import wandb
-import torch
 
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
-from src.autoencoders.autoencoder import AutoencoderTrainer
+from src.autoencoders.ae import AutoencoderTrainer
 from torch.utils.data import DataLoader
-from torch import nn
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 import src.dataloader as dl
-import torch.nn.functional as F
+
+from src.utils import padding
 
 
 def train(data_dict, config):
@@ -42,29 +41,3 @@ def train(data_dict, config):
 
     trainer = Trainer(max_epochs=hparams['max_epochs'], logger=wandb_logger, callbacks=[checkpoint_callback])
     trainer.fit(model, variant_pathogenicity)
-
-
-def padding(batch):
-    X = []
-    for x, reduct_dim in batch:
-        current_dimension = x.size(-1)
-        if current_dimension == reduct_dim:
-            X.append(x)
-        elif current_dimension < reduct_dim:
-            padding_left = (reduct_dim - current_dimension) // 2
-            padding_right = reduct_dim - current_dimension - padding_left
-            padded_x = F.pad(x, (padding_left, padding_right), value=0)
-            X.append(padded_x)
-        else:
-            pooled_x = pooling(x, reduct_dim)
-            pooled_x = pooled_x.squeeze(0)
-            X.append(pooled_x)
-    X = torch.stack(X)
-    return X
-
-
-def pooling(x, reduct_dim):
-    x = x.unsqueeze(0)
-    pool = nn.AdaptiveAvgPool1d(reduct_dim)
-    pooled_x = pool(x)
-    return pooled_x
