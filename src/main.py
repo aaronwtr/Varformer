@@ -10,7 +10,7 @@ def main(mode="training"):
     elif mode == "tuning":
         training.tune()
     elif mode == "kfold_teacher":
-        training.kfold_teacher(go=True)
+        training.kfold_teacher(pvc=True)
     elif mode == "kfold_student":
         training.kfold_student()
     elif mode == "testing":
@@ -27,18 +27,20 @@ if __name__ == "__main__":
     #  MLP model
     #  [X] Fix preprocessing into four modules
     #      [X] Gene characterisation module
-    #      [ ] Gene ontology module
-    #      [ ] Protein structure characterisation module
+    #      [X] Gene ontology module
     #      [ ] Population variant characterisation module
+    #           [ ] Implement VAE
+    #           [ ] Make VAE training end-to-end with teacher model in order to do hyperparameter tuning
+    #      [ ] Protein structure characterisation module
     #  -
     #  [ ] Train and test each module separately
-    #      [ ] Gene characterisation module
-    #      [ ] Gene ontology module
+    #      [X] Gene characterisation module
+    #      [X] Gene ontology module
     #      [ ] Protein structure characterisation module
     #      [ ] Population variant characterisation module
     #  -
     #  Note: Each module should output a data object that can be used to train the model
-    #  [ ] Setup feature loading for pathogenicity features from training.py to preprocessing.py
+    #  [X] Setup feature loading for pathogenicity features from training.py to preprocessing.py
     #  [ ] Test the feature preprocessing pipeline
     #  [ ] Get baseline evaluation metrics at train time and test time for each module
     #  [ ] Combine modules into ensemble model and evaluate
