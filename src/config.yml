@@ -31,7 +31,8 @@ hyperparameters:
     dropout: 0.5
     num_workers: 0
     weight_decay: 0.1
-  pathogenicity_autoencoder: # TODO: set hyperparams from AIAYN paper
+    ae: "vae" # choose from "vae" or "ae"
+  pathogenicity_autoencoder:
     usage: True
     input_dim: 1024
     latent_dim: 256
