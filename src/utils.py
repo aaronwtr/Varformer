@@ -3,7 +3,6 @@ import subprocess
 import re
 import csv
 import glob
-from typing import Tuple, Any
 
 import biorosetta as br
 import warnings
@@ -18,6 +17,8 @@ import pickle as pkl
 
 from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_score, confusion_matrix, roc_curve, auc
 from Bio import Seq, SeqIO, Entrez
+from torch import nn
+from typing import Tuple, Any
 
 
 class random_seed_context:
@@ -533,7 +534,38 @@ def combine_features_and_labels(gene_names: pd.DataFrame, features: pd.DataFrame
     return features
 
 
+def padding(batch):
+    """
+    Pads the input data to the same length.
+    :param batch:
+    :return:
+    """
+    X = []
+    for x, reduct_dim in batch:
+        current_dimension = x.size(-1)
+        if current_dimension == reduct_dim:
+            X.append(x)
+        elif current_dimension < reduct_dim:
+            padding_left = (reduct_dim - current_dimension) // 2
+            padding_right = reduct_dim - current_dimension - padding_left
+            padded_x = F.pad(x, (padding_left, padding_right), value=0)
+            X.append(padded_x)
+        else:
+            pooled_x = pooling(x, reduct_dim)
+            pooled_x = pooled_x.squeeze(0)
+            X.append(pooled_x)
+    X = torch.stack(X)
+    return X
+
+
+def pooling(x, reduct_dim):
+    x = x.unsqueeze(0)
+    pool = nn.AdaptiveAvgPool1d(reduct_dim)
+    pooled_x = pool(x)
+    return pooled_x
+
 #################################### ARCHIVE ####################################
+
 
 def apply_convert_to_dense_on_dict(dict_obj, shape):
     for key, value in dict_obj.items():
