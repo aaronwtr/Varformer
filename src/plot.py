@@ -308,13 +308,14 @@ def umap(df):
     plt.figure(figsize=(10, 8))
 
     # Use a dictionary to map target values to specific colors
-    color_map = {0: 'tab:blue', 1: 'tab:orange'}
+    color_map = {0: 'tab:blue', 1: 'tab:red'}
     colors = [color_map[t] for t in target]
 
     plt.scatter(embedding[:, 0], embedding[:, 1], c=colors, s=5)
     plt.xlabel('UMAP 1')
     plt.ylabel('UMAP 2')
-    plt.show()
+    plt.savefig('../plots/umap_transformer_autoencoder_h256_io1024.pdf', dpi=300)
+    # plt.show()
 
 
 def plot_kde(pseudo_labels):
@@ -336,7 +337,7 @@ def plot_embedding_distribution(embeddings: pd.DataFrame) -> None:
 
     # For each subplot, plot a boxplot of one of the random columns
     for ax, column in zip(axes, random_columns):
-        ax.boxplot(embeddings[column])
+        ax.violinplot(embeddings[column])
         ax.set_title(column)
         ax.set_xticks([])
 
@@ -344,4 +345,5 @@ def plot_embedding_distribution(embeddings: pd.DataFrame) -> None:
     fig.text(0.5, 0.04, 'Latent dimension', ha='center', va='center')
     fig.text(0.06, 0.5, 'Embedding value', ha='center', va='center', rotation='vertical')
 
-    plt.savefig("../plots/transformer_autoencoder_embedding_distribution_1.pdf", dpi=300)
+    # plt.show()
+    plt.savefig("../plots/transformer_autoencoder_embedding_distribution_2.pdf", dpi=300)
