@@ -19,7 +19,7 @@ from sklearn.model_selection import train_test_split
 from Bio import SeqIO
 from torch.utils.data import DataLoader
 
-from autoencoders.autoencoder import AutoencoderTrainer
+from autoencoders.ae import AutoencoderTrainer
 from src.autoencoders import ae_training
 from src.utils import featurise, load_fda_labels, combine_features_and_labels
 
