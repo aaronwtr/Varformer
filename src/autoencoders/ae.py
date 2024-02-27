@@ -1,7 +1,6 @@
 import torch
 from torch import nn
 from torch.nn import TransformerEncoder, TransformerEncoderLayer, TransformerDecoder, TransformerDecoderLayer
-import torch.nn.functional as F
 import pytorch_lightning as pl
 import math
 
