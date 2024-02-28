@@ -31,18 +31,16 @@ hyperparameters:
     dropout: 0.5
     num_workers: 0
     weight_decay: 0.1
-    ae: "vae" # choose from "vae" or "ae"
   pathogenicity_autoencoder:
     usage: True
-    input_dim: 1024
-    latent_dim: 256
-    output_dim: 1024
+    io_dim: 1024  # standard 1024
+    latent_dim: 512 # standard 256
+    reduction: "padding" # choose from "padding" or "pooling"
+    batch_size: 128 # standard 128
+    max_epochs: 100 # standard 20
+    ae_type: "vae" # choose from "vae" or "ae"
     num_layers: 2 # tunable hyperparam
     nhead: 2 # tunable hyperparam
-    reduction: "padding" # choose from "padding" or "pooling"
-    epochs: 100
-    batch_size: 128
-    max_epochs: 20
   plddt_autoencoder:
     usage: None
   puupl:
