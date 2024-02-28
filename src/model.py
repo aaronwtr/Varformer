@@ -61,13 +61,13 @@ class BaseTargetIdentifier(torch.nn.Module):
         return initial_weights
 
     def forward(self, x):
-        #logits = self.layers(x).squeeze()
-        print("\nInput:", x)
-        for i, layer in enumerate(self.layers):
-            x = layer(x)
-            print(f"Output of layer {i}:", x)
-
-        logits = x.squeeze()
+        logits = self.layers(x).squeeze()
+        # print("\nInput:", x)
+        # for i, layer in enumerate(self.layers):
+        #     x = layer(x)
+        #     print(f"Output of layer {i}:", x)
+        #
+        # logits = x.squeeze()
         sigmoid = torch.nn.Sigmoid()
         probabilities = sigmoid(logits)
         binary_predictions = (probabilities > float(self.config['threshold'])).float()
