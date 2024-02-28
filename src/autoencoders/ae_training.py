@@ -24,7 +24,7 @@ def train(data_dict, config):
         shuffle=True
     )
 
-    model = AutoencoderTrainer(input_dim=hparams['input_dim'], output_dim=hparams['output_dim'],
+    model = AutoencoderTrainer(input_dim=hparams['io_dim'],
                                encoding_dim=hparams['latent_dim'], num_layers=hparams['num_layers'],
                                nhead=hparams['nhead'], reduction_type=hparams['reduction'])
 

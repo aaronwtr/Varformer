@@ -6,7 +6,7 @@ import math
 
 
 class PathogenicityAutoencoder(nn.Module):
-    def __init__(self, input_dim, output_dim, encoding_dim, num_layers, nhead, reduction_type):
+    def __init__(self, input_dim, encoding_dim, num_layers, nhead, reduction_type):
         super(PathogenicityAutoencoder, self).__init__()
 
         self.reduction_type = reduction_type
@@ -16,7 +16,7 @@ class PathogenicityAutoencoder(nn.Module):
         self.encoder = TransformerEncoder(encoder_layers, num_layers)
 
         # Define the decoder
-        decoder_layers = TransformerDecoderLayer(d_model=output_dim, nhead=nhead, dim_feedforward=encoding_dim)
+        decoder_layers = TransformerDecoderLayer(d_model=input_dim, nhead=nhead, dim_feedforward=encoding_dim)
         self.decoder = TransformerDecoder(decoder_layers, num_layers)
 
     def forward(self, x):
@@ -27,12 +27,11 @@ class PathogenicityAutoencoder(nn.Module):
 
 
 class AutoencoderTrainer(pl.LightningModule):
-    def __init__(self, input_dim, output_dim, encoding_dim, num_layers, nhead, reduction_type):
+    def __init__(self, input_dim, encoding_dim, num_layers, nhead, reduction_type):
         super().__init__()
-        self.autoencoder = PathogenicityAutoencoder(input_dim, output_dim, encoding_dim, num_layers, nhead,
+        self.autoencoder = PathogenicityAutoencoder(input_dim, encoding_dim, num_layers, nhead,
                                                     reduction_type)
         self.reduction_type = reduction_type
-        self.output_dim = output_dim
 
         self.loss_fn = torch.nn.MSELoss()
 
