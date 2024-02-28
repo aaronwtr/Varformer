@@ -314,6 +314,8 @@ def umap(df):
     plt.scatter(embedding[:, 0], embedding[:, 1], c=colors, s=5)
     plt.xlabel('UMAP 1')
     plt.ylabel('UMAP 2')
+    plt.xticks([])
+    plt.yticks([])
     plt.savefig('../plots/umap_transformer_autoencoder_h256_io1024.pdf', dpi=300)
     # plt.show()
 
@@ -346,4 +348,4 @@ def plot_embedding_distribution(embeddings: pd.DataFrame) -> None:
     fig.text(0.06, 0.5, 'Embedding value', ha='center', va='center', rotation='vertical')
 
     # plt.show()
-    plt.savefig("../plots/transformer_autoencoder_embedding_distribution_2.pdf", dpi=300)
+    plt.savefig("../plots/transformer_autoencoder_embedding_distribution_3.pdf", dpi=300)
