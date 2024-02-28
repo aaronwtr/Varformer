@@ -25,17 +25,6 @@ class VAE(nn.Module):
             nn.Sigmoid()  # To keep output values between 0 and 1
         )
 
-    def forward(self, x):
-        # Encoding
-        mu, logvar = torch.chunk(self.encoder(x), 2, dim=1)
-
-        # Reparameterization trick (sample from the distribution)
-        z = self.reparameterize(mu, logvar)
-
-        # Decoding
-        reconstruction = self.decoder(z)
-        return reconstruction, mu, logvar
-
     @staticmethod
     def reparameterize(mu, logvar):
         std = torch.exp(0.5 * logvar)
@@ -58,17 +47,28 @@ class VAETrainer(pl.LightningModule):
         super().__init__()
         self.vae = VAE(input_dim, latent_dim)
 
+    def forward(self, x):
+        # Encoding
+        mu, logvar = torch.chunk(self.vae.encoder(x), 2, dim=1)
+
+        # Reparameterization trick (sample from the distribution)
+        z = self.vae.reparameterize(mu, logvar)
+
+        # Decoding
+        reconstruction = self.vae.decoder(z)
+        return reconstruction, mu, logvar, z
+
     def training_step(self, batch, batch_idx):
-        x, _ = batch
-        x_hat, mu, logvar = self(x)
-        loss = self.loss_function(x_hat, x, mu, logvar)
-        self.log('train_loss', loss)
+        x = batch
+        x_hat, mu, logvar, _ = self(x)
+        loss = self.vae.loss_function(x_hat, x, mu, logvar)
+        self.log('reconstruction_loss', loss)
         return loss
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        x, _ = batch
-        x_hat, mu, logvar = self(x)
-        return x_hat
+        x = batch
+        x_hat, mu, logvar, z = self(x)
+        return z
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters())
