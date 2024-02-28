@@ -20,7 +20,8 @@ from Bio import SeqIO
 from torch.utils.data import DataLoader
 
 from autoencoders.ae import AutoencoderTrainer
-from src.autoencoders import ae_training
+from autoencoders.vae import VAETrainer
+from src.autoencoders import ae_training, vae_training
 from src.utils import featurise, load_fda_labels, combine_features_and_labels
 
 
@@ -184,7 +185,7 @@ class GeneCharacterisationPreprocessor:
         """
         Load the Genes & Health variant data.
         """
-        variant_data = pd.read_csv(self.config['paths']['MIVA_PATH'], sep="\t")
+        variant_data = pd.read_csv(self.config['paths']['MIVA_PATH'], sep="\t", low_memory=False)
         variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
         return variant_data
 
@@ -776,8 +777,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.norm = False
 
         # TODO:
-        #  - Separate test data from the features
-        #  - Train a model with the pathogenicity embeddings
+        #  - Implement vae
 
         print("Processing AlphaFold protein structure prediction confidence data...")
         self.alphafold_features = None
@@ -875,51 +875,92 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         else:
             variant_am_features = pd.read_pickle('../data/alphamissense/variant_am_features.pkl')
 
-        if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_encoder'):
-            # if no pre-trained model exists, train one
-            print('Pre-training pathogenicity autoencoder...')
+        if self.config['hyperparameters']['pathogenicity_autoencoder']['ae_type'] == "ae":
+            if not os.path.exists('autoencoders/checkpoints/variant_pathogenicity_encoder'):
+                os.mkdir('autoencoders/checkpoints/variant_pathogenicity_encoder')
+            if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_encoder'):
+                # if no pre-trained model exists, train one
+                print('Pre-training pathogenicity autoencoder...')
 
-            ae_training.train(variant_am_features, self.config)
-            print('Pathogenicity autoencoder trained!')
-            print('Embedding pathogenicity data from variant to gene level...')
-            if not os.path.exists('../data/alphamissense/embeddings.pkl'):
-                embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-                with open('../data/alphamissense/embeddings.pkl', 'wb') as fp:
-                    pkl.dump(embeddings, fp)
+                ae_training.train(variant_am_features, self.config)
+                print('Pathogenicity autoencoder trained!')
+                print('Embedding pathogenicity data from variant to gene level...')
+                if not os.path.exists('../data/alphamissense/embeddings_ae.pkl'):
+                    embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+                    with open('../data/alphamissense/embeddings_ae.pkl', 'wb') as fp:
+                        pkl.dump(embeddings, fp)
+                else:
+                    with open('../data/alphamissense/embeddings_ae.pkl', 'rb') as fp:
+                        embeddings = pkl.load(fp)
+                self.pathogenicity_embeddings = embeddings
             else:
-                with open('../data/alphamissense/embeddings.pkl', 'rb') as fp:
-                    embeddings = pkl.load(fp)
-            self.pathogenicity_embeddings = embeddings
+                # if pre-trained model exists, load it
+                print('Pretrained autoencoder found. Loading pathogenicity embeddings...')
+                if not os.path.exists('../data/alphamissense/embeddings_ae.pkl'):
+                    embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+                    with open('../data/alphamissense/embeddings_ae.pkl', 'wb') as fp:
+                        pkl.dump(embeddings, fp)
+                else:
+                    with open('../data/alphamissense/embeddings_ae.pkl', 'rb') as fp:
+                        embeddings = pkl.load(fp)
+                self.pathogenicity_embeddings = embeddings
         else:
-            # if pre-trained model exists, load it
-            print('Loading pathogenicity autoencoder...')
-            if not os.path.exists('../data/alphamissense/embeddings.pkl'):
-                embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-                with open('../data/alphamissense/embeddings.pkl', 'wb') as fp:
-                    pkl.dump(embeddings, fp)
+            if not os.path.exists('autoencoders/checkpoints/variant_pathogenicity_vae'):
+                os.mkdir('autoencoders/checkpoints/variant_pathogenicity_vae')
+            if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_vae'):
+                print('Pre-training pathogenicity VAE...')
+
+                vae_training.train(variant_am_features, self.config)
+                print('Pathogenicity VAE trained!')
+                print('Embedding pathogenicity data from variant to gene level...')
+                if not os.path.exists('../data/alphamissense/embeddings_vae.pkl'):
+                    embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+                    with open('../data/alphamissense/embeddings_vae.pkl', 'wb') as fp:
+                        pkl.dump(embeddings, fp)
+                else:
+                    with open('../data/alphamissense/embeddings_vae.pkl', 'rb') as fp:
+                        embeddings = pkl.load(fp)
+                self.pathogenicity_embeddings = embeddings
             else:
-                with open('../data/alphamissense/embeddings.pkl', 'rb') as fp:
-                    embeddings = pkl.load(fp)
-            self.pathogenicity_embeddings = embeddings
+                # if pre-trained model exists, load it
+                print('Pretrained VAE found. Loading pathogenicity embeddings...')
+                if not os.path.exists('../data/alphamissense/embeddings_vae.pkl'):
+                    embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+                    with open('../data/alphamissense/embeddings_vae.pkl', 'wb') as fp:
+                        pkl.dump(embeddings, fp)
+                else:
+                    with open('../data/alphamissense/embeddings_vae.pkl', 'rb') as fp:
+                        embeddings = pkl.load(fp)
+                self.pathogenicity_embeddings = embeddings
 
     def fetch_pathogenicity_embeddings(self, variant_am_features):
         hparams = self.config['hyperparameters']['pathogenicity_autoencoder']
-        model_dir = 'autoencoders/checkpoints/variant_pathogenicity_encoder'
-        model_files = os.listdir(model_dir)
-        assert len(model_files) == 1
-        model_file = model_files[0]
-        model = AutoencoderTrainer.load_from_checkpoint(
-            model_dir + '/' + model_file, input_dim=hparams['input_dim'],
-            output_dim=hparams['output_dim'],
-            encoding_dim=hparams['latent_dim'],
-            num_layers=hparams['num_layers'], nhead=hparams['nhead'],
-            reduction_type=hparams['reduction']
-        )
+        if hparams['ae_type'] == "ae":
+            model_dir = 'autoencoders/checkpoints/variant_pathogenicity_encoder'
+            model_files = os.listdir(model_dir)
+            assert len(model_files) == 1
+            model_file = model_files[0]
+            model = AutoencoderTrainer.load_from_checkpoint(
+                model_dir + '/' + model_file, input_dim=hparams['io_dim'],
+                encoding_dim=hparams['latent_dim'],
+                num_layers=hparams['num_layers'], nhead=hparams['nhead'],
+                reduction_type=hparams['reduction']
+            )
+        else:
+            model_dir = 'autoencoders/checkpoints/variant_pathogenicity_vae'
+            model_files = os.listdir(model_dir)
+            assert len(model_files) == 1
+            model_file = model_files[0]
+            model = VAETrainer.load_from_checkpoint(
+                model_dir + '/' + model_file, input_dim=hparams['io_dim'],
+                latent_dim=hparams['latent_dim']
+            )
+
         model.eval()
 
         with torch.no_grad():
             variant_pathogenicity = DataLoader(
-                dl.VariantPathogenicityData(data_dict=variant_am_features, reduct_dim=hparams['input_dim'],
+                dl.VariantPathogenicityData(data_dict=variant_am_features, reduct_dim=hparams['io_dim'],
                                             reduction_type=hparams['reduction']),
                 collate_fn=ae_training.padding,
                 shuffle=False
@@ -931,6 +972,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             trainer = pl.Trainer()
             embeddings = trainer.predict(model, dataloaders=variant_pathogenicity)
             embeddings = {gene: embedding.tolist()[0] for gene, embedding in zip(gene_names, embeddings)}
+
         return embeddings
 
     def pathogenicity_train_data(self):
