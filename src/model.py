@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import xgboost as xgb
 
-from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef, Precision
+from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef, F1Score
 from sklearn.metrics import accuracy_score, roc_auc_score
 from scipy.stats import spearmanr
 from sklearn.model_selection import train_test_split
@@ -32,9 +32,9 @@ class BaseTargetIdentifier(torch.nn.Module):
 
         self.init_weights = self.initialise_weights()
 
-        self.acc = Accuracy(task="binary")
+        self.acc = Accuracy(task="binary", threshold=config['hyperparameters'][model_type]['threshold'])
         self.auroc = AUROC(task="binary")
-        self.precision = Precision(task="binary")
+        self.f1 = F1Score(task="binary", threshold=config['hyperparameters'][model_type]['threshold'])
         self.spearman = SpearmanCorrCoef()
 
     def initialise_weights(self, seed=None):
@@ -95,9 +95,9 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
 
         self.log('train_loss', loss)
         self.log('train_acc', self.model.acc(bin_preds, labels))
-        self.log('train_auroc', self.model.auroc(bin_preds, labels))
+        self.log('train_auroc', self.model.auroc(bin_preds, labels.int()))
         self.log('train_spearman', self.model.spearman(probas, labels.float()))
-        self.log('train_precision', self.model.precision(bin_preds, labels))
+        self.log('train_f1', self.model.f1(bin_preds, labels.long()))
 
         return loss
 
@@ -109,9 +109,9 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
 
         self.log('val_loss', loss)
         self.log('val_acc', self.model.acc(bin_preds, labels))
-        self.log('val_auroc', self.model.auroc(bin_preds, labels))
+        self.log('val_auroc', self.model.auroc(bin_preds, labels.int()))
         self.log('val_spearman', self.model.spearman(probas, labels.float()))
-        self.log('val_precision', self.model.precision(bin_preds, labels))
+        self.log('val_f1', self.model.f1(bin_preds, labels.long()))
 
     def test_step(self, batch, batch_idx):
         features, labels, test_source = batch
@@ -120,9 +120,9 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
         test_source = test_source[0]
 
         self.log(f'test_acc_{test_source}', self.model.acc(bin_preds, labels))
-        self.log(f'test_auroc_{test_source}', self.model.auroc(bin_preds, labels))
+        self.log(f'test_auroc_{test_source}', self.model.auroc(bin_preds, labels.int()))
         self.log(f'test_spearman_{test_source}', self.model.spearman(probas, labels.float()))
-        self.log(f'test_precision_{test_source}', self.model.precision(bin_preds, labels))
+        self.log(f'test_f1_{test_source}', self.model.f1(bin_preds, labels.long()))
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         features = batch
