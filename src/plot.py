@@ -307,11 +307,16 @@ def umap(df):
     # Create the scatter plot
     plt.figure(figsize=(10, 8))
 
-    # Use a dictionary to map target values to specific colors
-    color_map = {0: 'tab:blue', 1: 'tab:red'}
-    colors = [color_map[t] for t in target]
+    # Separate the embeddings based on the target
+    embedding_0 = embedding[target == 0]
+    embedding_1 = embedding[target == 1]
 
-    plt.scatter(embedding[:, 0], embedding[:, 1], c=colors, s=5)
+    # Plot the points labeled as 0
+    plt.scatter(embedding_0[:, 0], embedding_0[:, 1], c='tab:blue', s=5)
+
+    # Plot the points labeled as 1
+    plt.scatter(embedding_1[:, 0], embedding_1[:, 1], c='tab:red', s=5)
+
     plt.xlabel('UMAP 1')
     plt.ylabel('UMAP 2')
     plt.xticks([])
