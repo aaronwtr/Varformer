@@ -22,7 +22,7 @@ from torch.utils.data import DataLoader
 from autoencoders.ae import AutoencoderTrainer
 from autoencoders.vae import VAETrainer
 from src.autoencoders import ae_training, vae_training
-from src.utils import featurise, load_fda_labels, combine_features_and_labels
+from src.utils import featurise, load_combined_labels, combine_features_and_labels
 
 
 class GeneCharacterisationPreprocessor:
@@ -98,9 +98,10 @@ class GeneCharacterisationPreprocessor:
 
         self.features, self.ensg_ids, self.uniprot_ids = featurise(ensg_features)
         self.num_features = len(self.features.columns)
+        self.norm = True
 
         # Ground truth
-        self.target = load_fda_labels()
+        self.target = load_combined_labels()
 
         # Combine features and target
         self.data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
