@@ -524,6 +524,15 @@ def load_fda_labels() -> pd.DataFrame:
     return pd.read_excel("../data/FDA_approved_drug_targets_2023_Q3.xlsx")
 
 
+def load_combined_labels() -> pd.DataFrame:
+    """
+    Load the HPA/manual FDA and citeline labels pkl file
+    """
+    with open("../data/labels/citeline_manual_labels.pkl", "rb") as f:
+        labels = pkl.load(f)
+    return labels
+
+
 def combine_features_and_labels(gene_names: pd.DataFrame, features: pd.DataFrame, target: pd.DataFrame) -> pd.DataFrame:
     target_genes = list(target["Ensembl"])
     target_genes_in_features = [gene for gene in target_genes if gene in list(gene_names)]
