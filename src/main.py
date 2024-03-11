@@ -10,7 +10,7 @@ def main(mode="training"):
     elif mode == "tuning":
         training.tune()
     elif mode == "kfold_teacher":
-        training.kfold_teacher(pvc=True)
+        training.kfold_teacher(gc=True)
     elif mode == "kfold_student":
         training.kfold_student()
     elif mode == "testing":
@@ -34,23 +34,24 @@ if __name__ == "__main__":
     #           [X] Try predicting with homogenised mvp features without embedding
     #           [X] Remove precision as metric
     #      [ ] Protein structure characterisation module
-    #  [ ] Incorporate citeline data and make label distribution plot
+    #  [X] Incorporate citeline data and make label distribution plot
+    #  [ ] Swap out GH datafreeze for all the GH data and make sure to handle LoF and Missense properly
+    #  [ ] Implement all the test datasets
     #  -
     #  [ ] Train and test each module separately
-    #      [X] Gene characterisation module
-    #      [X] Gene ontology module
+    #      [ ] Gene characterisation module
+    #      [ ] Gene ontology module
     #      [ ] Protein structure characterisation module
     #      [ ] Population variant characterisation module
     #  -
     #  Note: Each module should output a data object that can be used to train the model
     #  [X] Setup feature loading for pathogenicity features from training.py to preprocessing.py
-    #  [ ] Test the feature preprocessing pipeline
+    #  [X] Test the feature preprocessing pipeline
     #  [ ] Get baseline evaluation metrics at train time and test time for each module
     #  [ ] Combine modules into ensemble model and evaluate
     #  -
     #  XGBoost baseline:
     #  [ ] Set up training loops
-    #  [ ] Hyperparameter tuning
     #  [ ] Set up cross validation
     #  [ ] Make training data different degrees of class imbalance and evaluate. Keep val data as is
     #  [ ] Train final model
