@@ -29,11 +29,14 @@ if __name__ == "__main__":
     #      [X] Gene characterisation module
     #      [X] Gene ontology module
     #      [ ] Population variant characterisation module
-    #           [X] Implement VAE
-    #           [X] Make VAE training end-to-end with teacher model in order to do hyperparameter tuning
-    #           [X] Try predicting with homogenised mvp features without embedding
-    #           [X] Remove precision as metric
+    #           [X] Generate AM embeddings
+    #           [X] Evaluate AM embeddings
+    #           [ ] Generate ESM AA seq embeddings
+    #           [ ] Evaluate ESM AA seq embeddings
+    #           [ ] Evaluate PVC embeddings (AM + ESM)
     #      [ ] Protein structure characterisation module
+    #           [ ] Generate AF protein structure embeddings
+    #           [ ] Evaluate AF protein structure embeddings
     #  [X] Incorporate citeline data and make label distribution plot
     #  [ ] Swap out GH datafreeze for all the GH data and make sure to handle LoF and Missense properly
     #  [ ] Implement all the test datasets
