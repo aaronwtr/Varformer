@@ -39,6 +39,8 @@ if __name__ == "__main__":
     #           [ ] Evaluate AF protein structure embeddings
     #  [X] Incorporate citeline data and make label distribution plot
     #  [ ] Swap out GH datafreeze for all the GH data and make sure to handle LoF and Missense properly
+    #       [ ] Go through data peculiarities and select columns to keep.
+    #       [ ] Check if current data parsing works for all data (make unit tests for all columns)
     #  [ ] Implement all the test datasets
     #  -
     #  [ ] Train and test each module separately
