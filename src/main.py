@@ -41,6 +41,10 @@ if __name__ == "__main__":
     #  [ ] Swap out GH datafreeze for all the GH data and make sure to handle LoF and Missense properly
     #       [ ] Go through data peculiarities and select columns to keep.
     #       [ ] Check if current data parsing works for all data (make unit tests for all columns)
+    #  [ ] Implement usage of genotype information
+    #       [ ] Prepare AaronWenteler data on the TRE
+    #       [ ] Check if allele freqs are calculated using GH genotype data (this might be what we can use)
+    #       [ ] Individualise predictions based on genotype data during inference time
     #  [ ] Implement all the test datasets
     #  -
     #  [ ] Train and test each module separately
