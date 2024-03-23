@@ -59,14 +59,16 @@ class GeneCharacterisationPreprocessor:
         # Load Genes & Health South-Asian Population exome data
         self.gh_data = self.load_gh_data()
 
-        # TODO: Continue preprocessing full GH data from here!
-
         self.gh_data["UNIPROT"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
         self.gh_data = self.gh_data.drop(["SWISSPROT", "TREMBL"], axis=1)
+        self.gh_data['variant_id'] = self.gh_data['CHROM'].astype(str) + '_' + self.gh_data['POS'].astype(str) + '_' + \
+                                     self.gh_data['REF'].astype(str) + '_' + self.gh_data['ALT'].astype(str)
 
-        feature_matrix = self.gh_data[["Gene", "UNIPROT"]]
+        feature_matrix = self.gh_data[["Gene", "UNIPROT", "variant_id"]]
         feature_matrix = feature_matrix.rename(columns={"Gene": "ENSG"})
-        feature_matrix = feature_matrix.drop_duplicates(subset=['ENSG'])
+        # feature_matrix = feature_matrix.drop_duplicates(subset=['variant_id'])
+
+        # TODO: Handle feature matrix generation and deal with different consequences of variants
 
         if not os.path.exists('../data/features/raw_feature_matrix.pkl'):
             feature_matrix.to_pickle('../data/features/raw_feature_matrix.pkl')
@@ -1285,7 +1287,7 @@ class __MissenseVariantPreprocessor:
             self.elgh_path = self.config['paths']['ALL_GH'].strip("\n")
         self.genome_path = self.config['paths']['GENOME_PATH']
         self.variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "Gene", "HGVSp", "AF_ELGH", "UNIPARC",
-                            "SWISSPROT", "TREMBL", "Protein_position", "Amino_acids"]
+                             "SWISSPROT", "TREMBL", "Protein_position", "Amino_acids"]
         self.variant_data = self.load_gh_data()
         self.variant_data = self.variant_data.rename(columns={'Allele': 'ALT'})
         self.variant_data["uniprot_id"] = self.variant_data["SWISSPROT"].fillna(self.variant_data["TREMBL"])
