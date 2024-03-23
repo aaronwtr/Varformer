@@ -59,6 +59,8 @@ class GeneCharacterisationPreprocessor:
         # Load Genes & Health South-Asian Population exome data
         self.gh_data = self.load_gh_data()
 
+        # TODO: Continue preprocessing full GH data from here!
+
         self.gh_data["UNIPROT"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
         self.gh_data = self.gh_data.drop(["SWISSPROT", "TREMBL"], axis=1)
 
@@ -186,7 +188,12 @@ class GeneCharacterisationPreprocessor:
         """
         Load the Genes & Health variant data.
         """
-        variant_data = pd.read_csv(self.config['paths']['MIVA_PATH'], sep="\t", low_memory=False)
+        # read in pickle file as dataframe
+        # check the file type of the data path
+        if 'pkl' in self.config['paths']['ALL_GH']:
+            variant_data = pd.read_pickle(self.config['paths']['ALL_GH'])
+        else:
+            variant_data = pd.read_csv(self.config['paths']['ALL_GH'], sep="\t", low_memory=False)
         variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
         return variant_data
 
@@ -1271,16 +1278,14 @@ class __MissenseVariantPreprocessor:
         self.config = config
         parser = argparse.ArgumentParser(description='Script to process variants')
         parser.add_argument('--data', type=str)
-        parser.add_argument('--varipred_input', type=str)
         self.args = parser.parse_args()
         if self.args.data is not None:
             self.elgh_path = self.args.data
         else:
-            self.elgh_path = self.config['paths']['MIVA_PATH'].strip("\n")
+            self.elgh_path = self.config['paths']['ALL_GH'].strip("\n")
         self.genome_path = self.config['paths']['GENOME_PATH']
         self.variant_cols = ["#CHROM", "POS", "REF", "Allele", "SYMBOL", "Gene", "HGVSp", "AF_ELGH", "UNIPARC",
-                             "SWISSPROT", "TREMBL", "Protein_position", "Amino_acids", "SIFT", "PolyPhen",
-                             "varipred_id"]
+                            "SWISSPROT", "TREMBL", "Protein_position", "Amino_acids"]
         self.variant_data = self.load_gh_data()
         self.variant_data = self.variant_data.rename(columns={'Allele': 'ALT'})
         self.variant_data["uniprot_id"] = self.variant_data["SWISSPROT"].fillna(self.variant_data["TREMBL"])
