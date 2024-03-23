@@ -1,4 +1,5 @@
 paths:
+  ALL_GH: "../data/elgh/gh_parts/processed_gh_data/filtered_csqs.pkl"
   MIVA_PATH: "../data/elgh/all_functional.gatk_PASS.FS_30.DP_0.GQ_20.AB_0.01.functional.missingness_lt_0.genotype_counts.present_in_ELGH.n_transcripts_corrected.txt"
   GENOME_PATH: "../data/hg38.fasta"
   VP_INFERENCE_PATH: "../models/VariPred/VariPred/predict.sh"
