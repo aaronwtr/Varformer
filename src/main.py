@@ -39,10 +39,12 @@ if __name__ == "__main__":
     #           [ ] Evaluate AF protein structure embeddings
     #  [X] Incorporate citeline data and make label distribution plot
     #  [ ] Swap out GH datafreeze for all the GH data and make sure to handle LoF and Missense properly
-    #       [ ] Go through data peculiarities and select columns to keep.
+    #       [X] Go through data peculiarities and select columns to keep.
     #       [ ] Check if current data parsing works for all data (make unit tests for all columns)
     #  [ ] Implement usage of genotype information
     #       [ ] Prepare AaronWenteler data on the TRE
+    #       [ ] Select samples for analysis on TRE
+    #       [ ] Upload results for the variants associated with samples to TRE
     #       [ ] Check if allele freqs are calculated using GH genotype data (this might be what we can use)
     #       [ ] Individualise predictions based on genotype data during inference time
     #  [ ] Implement all the test datasets
