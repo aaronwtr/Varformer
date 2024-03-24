@@ -500,7 +500,8 @@ def _convert_to_dense(indices, shape):
 
 
 def featurise(features: dict) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    with open("../data/features/raw_feature_matrix.pkl", 'rb') as f:
+    # load missense variant feature matrix
+    with open("../data/features/raw_miva_feature_matrix.pkl", 'rb') as f:
         feature_matrix = pkl.load(f)
 
     for feature, values in features.items():
