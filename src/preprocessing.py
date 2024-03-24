@@ -64,14 +64,15 @@ class GeneCharacterisationPreprocessor:
         self.gh_data['variant_id'] = self.gh_data['CHROM'].astype(str) + '_' + self.gh_data['POS'].astype(str) + '_' + \
                                      self.gh_data['REF'].astype(str) + '_' + self.gh_data['ALT'].astype(str)
 
-        feature_matrix = self.gh_data[["Gene", "UNIPROT", "variant_id"]]
-        feature_matrix = feature_matrix.rename(columns={"Gene": "ENSG"})
-        # feature_matrix = feature_matrix.drop_duplicates(subset=['variant_id'])
-
         # TODO: Handle feature matrix generation and deal with different consequences of variants
+        #   potentially ask Dan MacArthur for advice on how to handle this?
 
-        if not os.path.exists('../data/features/raw_feature_matrix.pkl'):
-            feature_matrix.to_pickle('../data/features/raw_feature_matrix.pkl')
+        # Load raw G&H missense variant data
+        if not os.path.exists('../data/features/raw_miva_feature_matrix.pkl'):
+            miva_feature_matrix = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
+            miva_feature_matrix = miva_feature_matrix[["Gene", "UNIPROT", "variant_id"]]
+            miva_feature_matrix = miva_feature_matrix.rename(columns={"Gene": "ENSG"})
+            miva_feature_matrix.to_pickle('../data/features/raw_miva_feature_matrix.pkl')
 
         feature_extractors = {
             'chem_features.pkl': self.chem_feature_extractor,
