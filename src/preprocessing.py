@@ -113,14 +113,10 @@ class GeneCharacterisationPreprocessor:
 
         # Get test data
         # get the ensg_ids that are in acmg_genes and pfam_genes
-        self.acmg_ids = self.ensg_ids[self.ensg_ids.isin(self.acmg_genes)]
         self.pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.pfam_genes)]
 
-        self.acmg_data = self.data[self.data.index.isin(self.acmg_ids.index)]
         self.pfam_data = self.data[self.data.index.isin(self.pfam_ids.index)]
 
-        # Remove test genes from training data
-        self.data = self.data[~self.data.index.isin(self.acmg_ids.index)]
         self.data = self.data[~self.data.index.isin(self.pfam_ids.index)]
 
         # Explore the data
@@ -272,7 +268,8 @@ class GeneCharacterisationPreprocessor:
     def gnomad_feature_extractor(self):
         """
         Extract target conservation scores from gnomAD data. Note that pLI measures the probability of a gene being
-        loss-of-function intolerant. There are more potential features we can extract from the gnomAD data.
+        loss-of-function intolerant for a particular variant. There are more potential features we can extract from the
+        gnomAD data.
         """
         keys = list(self.datasets.keys())
         gnom_data = self.datasets[keys[1]]
