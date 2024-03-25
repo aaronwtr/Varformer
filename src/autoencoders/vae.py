@@ -12,7 +12,7 @@ class VAE(nn.Module):
 
         # Encoder
         self.encoder = nn.Sequential(
-            nn.Linear(self.input_dim, self.latent_dim),  # Assuming MNIST images (28*28=784)
+            nn.Linear(self.input_dim, self.latent_dim),
             nn.ReLU(),
             nn.Linear(self.latent_dim, self.latent_dim * 2)  # Output mean and variance
         )
@@ -35,6 +35,7 @@ class VAE(nn.Module):
     def loss_function(recon_x, x, mu, logvar):
         # Use MSE loss for reconstruction
         # recon_loss = nn.functional.mse_loss(recon_x, x, reduction='sum')
+
         # Use BCE loss for reconstruction
         recon_loss = nn.functional.binary_cross_entropy(recon_x, x, reduction='sum')
 
