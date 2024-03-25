@@ -25,12 +25,13 @@ if __name__ == "__main__":
 
     # TODO:
     #  MLP model
-    #  [X] Fix preprocessing into four modules
-    #      [X] Gene characterisation module
-    #      [X] Gene ontology module
+    #  [ ] Integrate variant-to-gene mapping into the model end-to-end
+    #  [ ] Fix preprocessing into four modules
+    #      [ ] Gene characterisation module (eval)
+    #      [ ] Gene ontology module (eval)
     #      [ ] Population variant characterisation module
-    #           [X] Generate AM embeddings
-    #           [X] Evaluate AM embeddings
+    #           [ ] Generate AM embeddings
+    #           [ ] Evaluate AM embeddings
     #           [ ] Generate ESM AA seq embeddings
     #           [ ] Evaluate ESM AA seq embeddings
     #           [ ] Evaluate PVC embeddings (AM + ESM)
@@ -38,16 +39,18 @@ if __name__ == "__main__":
     #           [ ] Generate AF protein structure embeddings
     #           [ ] Evaluate AF protein structure embeddings
     #  [X] Incorporate citeline data and make label distribution plot
-    #  [ ] Swap out GH datafreeze for all the GH data and make sure to handle LoF and Missense properly
+    #  [X] Swap out GH datafreeze for all the GH data and make sure to handle LoF and Missense properly
     #       [X] Go through data peculiarities and select columns to keep.
-    #       [ ] Check if current data parsing works for all data (make unit tests for all columns)
+    #       [X] Check if current data parsing works for all data (make unit tests for all columns)
     #  [ ] Implement usage of genotype information
     #       [ ] Prepare AaronWenteler data on the TRE
     #       [ ] Select samples for analysis on TRE
     #       [ ] Upload results for the variants associated with samples to TRE
     #       [ ] Check if allele freqs are calculated using GH genotype data (this might be what we can use)
     #       [ ] Individualise predictions based on genotype data during inference time
-    #  [ ] Implement all the test datasets
+    #  [ ] Generate test datasets
+    #       [ ] Get positive samples
+    #       [ ] Balance the positive samples with randomly sampled negatives [use housekeeping genes?]
     #  -
     #  [ ] Train and test each module separately
     #      [ ] Gene characterisation module
@@ -55,10 +58,6 @@ if __name__ == "__main__":
     #      [ ] Protein structure characterisation module
     #      [ ] Population variant characterisation module
     #  -
-    #  Note: Each module should output a data object that can be used to train the model
-    #  [X] Setup feature loading for pathogenicity features from training.py to preprocessing.py
-    #  [X] Test the feature preprocessing pipeline
-    #  [ ] Get baseline evaluation metrics at train time and test time for each module
     #  [ ] Combine modules into ensemble model and evaluate
     #  -
     #  XGBoost baseline:
