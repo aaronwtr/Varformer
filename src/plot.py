@@ -312,16 +312,18 @@ def umap(df):
     embedding_1 = embedding[target == 1]
 
     # Plot the points labeled as 0
-    plt.scatter(embedding_0[:, 0], embedding_0[:, 1], c='tab:blue', s=5)
+    plt.scatter(embedding_0[:, 0], embedding_0[:, 1], c='tab:gray', s=5, label='Unknown target status')
 
     # Plot the points labeled as 1
-    plt.scatter(embedding_1[:, 0], embedding_1[:, 1], c='tab:red', s=5)
+    plt.scatter(embedding_1[:, 0], embedding_1[:, 1], c='tab:blue', s=5, alpha=0.7, label='Approved drug targets')
 
     plt.xlabel('UMAP 1')
     plt.ylabel('UMAP 2')
     plt.xticks([])
     plt.yticks([])
-    plt.savefig('../plots/umap_transformer_autoencoder_h256_io1024.pdf', dpi=300)
+
+    # TODO: Use config to determine plot name
+    # plt.savefig('../plots/umap_transformer_autoencoder_h256_io1024.pdf', dpi=300)
     # plt.show()
 
 
