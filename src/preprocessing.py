@@ -115,19 +115,29 @@ class GeneCharacterisationPreprocessor:
         # Get test data and remove from train feature matrix
         self.pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.drgbl_targets_pfam)]
         self.pfam_data = self.data[self.data.index.isin(self.pfam_ids.index)]
+        num_pfam = len(self.pfam_data)
 
         self.rcnt_ids = self.ensg_ids[self.ensg_ids.isin(self.rcnt_targets_fda)]
         self.rcnt_data = self.data[self.data.index.isin(self.rcnt_ids.index)]
         self.rcnt_data['target'] = 1
+        num_rcnt = len(self.rcnt_data)
 
         self.pharos_ids = self.ensg_ids[self.ensg_ids.isin(self.chem_targets_pharos)]
         self.pharos_data = self.data[self.data.index.isin(self.pharos_ids.index)]
         self.pharos_data['target'] = 1
+        num_pharos = len(self.pharos_data)
 
         self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
 
         self.data = self.data[~self.data.index.isin(self.holdout_ids.index)]
 
+        total_holdout = num_pfam + num_rcnt + num_pharos
+        num_positives = len(self.data[self.data['target'] == 1])
+        print(f"Number of approved drug targets in the training data: {num_positives}")
+        print(f"Number of approved or putative drug targets in the holdout data: {total_holdout}")
+        print(f"\t- Pfam: {num_pfam}\n\t- Recently approved: {num_rcnt}\n\t- Pharos: {num_pharos}")
+
+        print('joe')
         # Explore the data
         # plot.umap(self.data)
 
