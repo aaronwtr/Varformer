@@ -50,10 +50,11 @@ class GeneCharacterisationPreprocessor:
         self.ppi_features = None
 
         # TODO: Make this shared in utils.py or testing.py
-        self.acmg_genes = None
-        self.pfam_genes = None
+        self.drgbl_targets_pfam = None
+        self.rcnt_targets_fda = None
+        self.chem_targets_pharos = None
 
-        # Get ACMG clinically actionable genes and PFAM genes
+        # Get all holdout_genes
         self.get_holdout_genes()
 
         # Load Genes & Health South-Asian Population exome data
@@ -111,13 +112,21 @@ class GeneCharacterisationPreprocessor:
         # Combine features and target
         self.data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
 
-        # Get test data
-        # get the ensg_ids that are in acmg_genes and pfam_genes
-        self.pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.pfam_genes)]
-
+        # Get test data and remove from train feature matrix
+        self.pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.drgbl_targets_pfam)]
         self.pfam_data = self.data[self.data.index.isin(self.pfam_ids.index)]
 
-        self.data = self.data[~self.data.index.isin(self.pfam_ids.index)]
+        self.rcnt_ids = self.ensg_ids[self.ensg_ids.isin(self.rcnt_targets_fda)]
+        self.rcnt_data = self.data[self.data.index.isin(self.rcnt_ids.index)]
+        self.rcnt_data['target'] = 1
+
+        self.pharos_ids = self.ensg_ids[self.ensg_ids.isin(self.chem_targets_pharos)]
+        self.pharos_data = self.data[self.data.index.isin(self.pharos_ids.index)]
+        self.pharos_data['target'] = 1
+
+        self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
+
+        self.data = self.data[~self.data.index.isin(self.holdout_ids.index)]
 
         # Explore the data
         # plot.umap(self.data)
@@ -204,36 +213,40 @@ class GeneCharacterisationPreprocessor:
 
     def get_holdout_genes(self):
         # ACMG actionable genes
-        columns = ['disease', 'gene']
-        acmg_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name=0)  # sheet 0 is acmg genes
-        acmg_raw.columns = columns
-        acmg_raw['gene'] = acmg_raw['gene'].apply(lambda x: x.replace(u'\xa0', u' '))
-        genes = acmg_raw['gene'].tolist()
-        genes = [gene.split(' ')[0] for gene in genes]
-        ensg_gene_map = utils.map_gene_names(genes, 'symb', 'ensg')
-        ensg_genes = list(ensg_gene_map.values())
-        ensg_genes = list(set(ensg_genes))
-        self.acmg_genes = ensg_genes
+        # columns = ['disease', 'gene']
+        # acmg_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name=0)  # sheet 0 is acmg genes
+        # acmg_raw.columns = columns
+        # acmg_raw['gene'] = acmg_raw['gene'].apply(lambda x: x.replace(u'\xa0', u' '))
+        # genes = acmg_raw['gene'].tolist()
+        # genes = [gene.split(' ')[0] for gene in genes]
+        # ensg_gene_map = utils.map_gene_names(genes, 'symb', 'ensg')
+        # ensg_genes = list(ensg_gene_map.values())
+        # ensg_genes = list(set(ensg_genes))
+        # self.acmg_genes = ensg_genes
 
-        # Pfam genes
-        pfam_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name=1)  # sheet 1 is manually curated
-        # pfam genes
+        # Pfam targets
+        pfam_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name='pfam_drgbl')
+
         ensg_pfam = pfam_raw['ENSG'].tolist()
-        self.pfam_genes = ensg_pfam
+        self.drgbl_targets_pfam = ensg_pfam
 
         # Check held out test set for common essential genes
-        common_essentials = pd.read_csv(self.config['paths']['COMMON_ESSENTIALS_PATH'])
-        common_essentials = common_essentials.rename(columns={common_essentials.columns[0]: 'gene_name'})
-        common_essentials['gene_name'] = common_essentials['gene_name'].str.split(' ').str[0]
-        common_essentials_acmg = common_essentials[common_essentials['gene_name'].isin(ensg_genes)]
-        common_essentials_pfam = common_essentials[common_essentials['gene_name'].isin(ensg_pfam)]
+        # common_essentials = pd.read_csv(self.config['paths']['COMMON_ESSENTIALS_PATH'])
+        # common_essentials = common_essentials.rename(columns={common_essentials.columns[0]: 'gene_name'})
+        # common_essentials['gene_name'] = common_essentials['gene_name'].str.split(' ').str[0]
+        # common_essentials_pfam = common_essentials[common_essentials['gene_name'].isin(ensg_pfam)]
+        # print(f"There are {len(common_essentials_pfam)} common essential genes in the Pfam dataset. They are: "
+        #       f"{common_essentials_pfam['gene_name'].tolist()}")
 
-        # ClinGen actionable genes
-        act_genes_adult = pd.read_csv(self.config['paths']['ADULT_ACTIONABLE_GENES_PATH'], sep='\t')
-        act_genes_pediatric = pd.read_csv(self.config['paths']['PREDIATRIC_ACTIONABLE_GENES_PATH'], sep='\t')
-        act_genes_adult = act_genes_adult[act_genes_adult['overall'].notna()]
-        act_genes_pediatric = act_genes_pediatric[act_genes_pediatric['overall'].notna()]
-        act_genes = pd.concat([act_genes_adult, act_genes_pediatric])
+        # Recently approved targets
+        rcnt_app_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name='rcnt_app')
+        rcnt_app_genes = rcnt_app_raw['ENSG'].tolist()
+        self.rcnt_targets_fda = rcnt_app_genes
+
+        # Pharos targets
+        chem_targets_pharos = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name='chem_targets')
+        chem_targets_pharos_genes = chem_targets_pharos['ENSG'].tolist()
+        self.chem_targets_pharos = chem_targets_pharos_genes
 
     def chem_feature_extractor(self):
         """
