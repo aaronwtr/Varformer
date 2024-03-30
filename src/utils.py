@@ -512,7 +512,7 @@ def featurise(features: dict) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
     ensg_ids = feature_matrix["ENSG"]
     uniprot_ids = feature_matrix["UNIPROT"]
 
-    feature_matrix.drop_duplicates(subset="ENSG", inplace=True)
+    # feature_matrix.drop_duplicates(subset="ENSG", inplace=True)
     feature_matrix.drop(["ENSG", "UNIPROT", "variant_id"], axis=1, inplace=True)
 
     # utils.count_zeros(feature_matrix)
