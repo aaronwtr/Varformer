@@ -73,6 +73,7 @@ class GeneCharacterisationPreprocessor:
             miva_feature_matrix = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
             miva_feature_matrix = miva_feature_matrix[["Gene", "UNIPROT", "variant_id"]]
             miva_feature_matrix = miva_feature_matrix.rename(columns={"Gene": "ENSG"})
+            miva_feature_matrix = miva_feature_matrix.drop_duplicates(subset="ENSG")
             miva_feature_matrix.to_pickle('../data/features/raw_miva_feature_matrix.pkl')
 
         feature_extractors = {
@@ -119,12 +120,12 @@ class GeneCharacterisationPreprocessor:
 
         self.rcnt_ids = self.ensg_ids[self.ensg_ids.isin(self.rcnt_targets_fda)]
         self.rcnt_data = self.data[self.data.index.isin(self.rcnt_ids.index)]
-        self.rcnt_data['target'] = 1
+        self.rcnt_data.loc[:, 'target'] = 1
         num_rcnt = len(self.rcnt_data)
 
         self.pharos_ids = self.ensg_ids[self.ensg_ids.isin(self.chem_targets_pharos)]
         self.pharos_data = self.data[self.data.index.isin(self.pharos_ids.index)]
-        self.pharos_data['target'] = 1
+        self.pharos_data.loc[:, 'target'] = 1
         num_pharos = len(self.pharos_data)
 
         self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
@@ -137,7 +138,6 @@ class GeneCharacterisationPreprocessor:
         print(f"Number of approved or putative drug targets in the holdout data: {total_holdout}")
         print(f"\t- Pfam: {num_pfam}\n\t- Recently approved: {num_rcnt}\n\t- Pharos: {num_pharos}")
 
-        print('joe')
         # Explore the data
         # plot.umap(self.data)
 
@@ -540,15 +540,19 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         if not gcp:
             super().__init__(config)
             self.gcp_data = self.data
-            self.gcp_acmg = self.acmg_data
             self.gcp_pfam = self.pfam_data
+            self.gcp_rcnt = self.rcnt_data
+            self.gcp_pharos = self.pharos_data
+            # self.gcp_acmg = gcp.acmg_data
         else:
             self.gcp = gcp
             self.gh_data = gcp.gh_data
             self.target = gcp.target
             self.gcp_data = gcp.data
-            self.gcp_acmg = gcp.acmg_data
             self.gcp_pfam = gcp.pfam_data
+            self.gcp_rcnt = gcp.rcnt_data
+            self.gcp_pharos = gcp.pharos_data
+            # self.gcp_acmg = gcp.acmg_data
 
         print("Gene Ontology Preprocessor booting up...")
         self.config = config
@@ -562,22 +566,34 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
 
         print("Combining gene ontology features...")
         self.gene_ontology_features = None
-        self.combine_features()
+        self.combine_go_features()
 
         self.data = self.gene_ontology_features
 
-        self.acmg_data = self.data[self.data['ENSG'].isin(self.acmg_ids)]
-        self.acmg_data = self.acmg_data.drop(columns=['ENSG'])
-        self.acmg_data = self.acmg_data.set_index(self.gcp_acmg.index)
-        self.acmg_data['target'] = self.gcp_acmg['target']
+        # self.acmg_data = self.data[self.data['ENSG'].isin(self.acmg_ids)]
+        # self.acmg_data = self.acmg_data.drop(columns=['ENSG'])
+        # self.acmg_data = self.acmg_data.set_index(self.gcp_acmg.index)
+        # self.acmg_data['target'] = self.gcp_acmg['target']
 
         self.pfam_data = self.data[self.data['ENSG'].isin(self.pfam_ids)]
         self.pfam_data = self.pfam_data.drop(columns=['ENSG'])
         self.pfam_data = self.pfam_data.set_index(self.gcp_pfam.index)
         self.pfam_data['target'] = self.gcp_pfam['target']
 
-        self.data = self.data[~self.data['ENSG'].isin(self.acmg_ids)]
+        self.rcnt_data = self.data[self.data['ENSG'].isin(self.rcnt_ids)]
+        self.rcnt_data = self.rcnt_data.drop(columns=['ENSG'])
+        self.rcnt_data = self.rcnt_data.set_index(self.gcp_rcnt.index)
+        self.rcnt_data['target'] = self.gcp_rcnt['target']
+
+        self.pharos_data = self.data[self.data['ENSG'].isin(self.pharos_ids)]
+        self.pharos_data = self.pharos_data.drop(columns=['ENSG'])
+        self.pharos_data = self.pharos_data.set_index(self.gcp_pharos.index)
+        self.pharos_data['target'] = self.gcp_pharos['target']
+
+        # self.data = self.data[~self.data['ENSG'].isin(self.acmg_ids)]
         self.data = self.data[~self.data['ENSG'].isin(self.pfam_ids)]
+        self.data = self.data[~self.data['ENSG'].isin(self.rcnt_ids)]
+        self.data = self.data[~self.data['ENSG'].isin(self.pharos_ids)]
         self.data = self.data.drop(columns=['ENSG'])
         self.data = self.data.set_index(self.gcp_data.index)
         self.data['target'] = self.gcp_data['target']
@@ -676,7 +692,7 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
             with open('../data/features/tissue_specificity_features.pkl', 'wb') as f:
                 pkl.dump(gene_tissue_dict, f)
 
-    def combine_features(self):
+    def combine_go_features(self):
         ensg_features = {
             "tissue_specificity": self.tissue_specificity_features,
             "biological_processes": self.protein_atlas_features['biological_processes'],
@@ -684,13 +700,14 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
             "subcellular_locations": self.protein_atlas_features['subcellular_locations']
         }
 
-        with open('../data/features/raw_feature_matrix.pkl', 'rb') as f:
+        with open('../data/features/raw_miva_feature_matrix.pkl', 'rb') as f:
             feature_matrix = pkl.load(f)
 
         for feature, values in ensg_features.items():
             feature_matrix[feature] = feature_matrix["ENSG"].map(values)
 
         feature_matrix = feature_matrix.drop(["UNIPROT"], axis=1)
+        feature_matrix = feature_matrix.drop(["variant_id"], axis=1)
 
         sub_df = feature_matrix.copy()
         sub_df = sub_df.iloc[:, -3:]
