@@ -81,79 +81,52 @@ def objective(trial: optuna.trial.Trial) -> float:
     return trainer.callback_metrics["val_auroc"].item()
 
 
-def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, pfam_raw, config, norm,
+def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_raw, config, norm,
                    model_type="mlp"):
     hparams = config['hyperparameters']
 
-    if norm:
-        val_norm = val_raw.iloc[:, :-1].values
+    val_norm = val_raw.iloc[:, :-1].values
 
-        gene_names_train = train_genes
-        train_norm = train_raw.iloc[:, :-1].values
+    gene_names_train = train_genes
+    train_norm = train_raw.iloc[:, :-1].values
 
-        scaler = MinMaxScaler()
-        train_norm = scaler.fit_transform(train_norm)
+    scaler = MinMaxScaler()
+    train_norm = scaler.fit_transform(train_norm)
 
-        _train = DataLoader(
-            DrugTargetData(data=train_norm, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train),
-            batch_size=int(hparams[model_type]['batch_size']),
-            shuffle=True,
-            num_workers=int(hparams[model_type]['num_workers'])
-        )
+    _train = DataLoader(
+        DrugTargetData(data=train_norm, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train),
+        batch_size=int(hparams[model_type]['batch_size']),
+        shuffle=True,
+        num_workers=int(hparams[model_type]['num_workers'])
+    )
 
-        gene_names_val = val_genes
-        val_norm = scaler.transform(val_norm)
-        val = DataLoader(
-            DrugTargetData(data=val_norm, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_val),
-            batch_size=int(hparams[model_type]['batch_size']),
+    gene_names_val = val_genes
+    val_norm = scaler.transform(val_norm)
+    val = DataLoader(
+        DrugTargetData(data=val_norm, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_val),
+        batch_size=int(hparams[model_type]['batch_size']),
+        shuffle=False
+    )
+
+    test = {}
+    for key, raw in test_raw.items():
+        gene_names = test_genes[key]
+        normed = raw.iloc[:, :-1].values
+        normed = scaler.transform(normed)
+        normed_test = DataLoader(
+            DrugTargetData(data=normed, labels=raw.iloc[:, -1].values, gene_names=gene_names,
+                           test_source=key),
+            batch_size=len(raw),
             shuffle=False
         )
+        test[key] = normed_test
 
-        pfam_gene_names = test_genes['pfam']
-        pfam_norm = pfam_raw.iloc[:, :-1].values
-        pfam_norm = scaler.transform(pfam_norm)
-        pfam_test = DataLoader(
-            DrugTargetData(data=pfam_norm, labels=pfam_raw.iloc[:, -1].values, gene_names=pfam_gene_names,
-                           test_source='pfam'),
-            batch_size=len(pfam_raw),
-            shuffle=False
-        )
-    else:
-        val_data = val_raw.iloc[:, :-1].values
-        gene_names_train = train_genes
-        train_data = train_raw.iloc[:, :-1].values
-
-        _train = DataLoader(
-            DrugTargetData(data=train_data, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train),
-            batch_size=int(hparams[model_type]['batch_size']),
-            shuffle=True,
-            num_workers=int(hparams[model_type]['num_workers'])
-        )
-
-        gene_names_val = val_genes
-        val = DataLoader(
-            DrugTargetData(data=val_data, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_val),
-            batch_size=int(hparams[model_type]['batch_size']),
-            shuffle=False
-        )
-
-        pfam_gene_names = test_genes['pfam']
-        pfam_data = pfam_raw.iloc[:, :-1].values
-        pfam_test = DataLoader(
-            DrugTargetData(data=pfam_data, labels=pfam_raw.iloc[:, -1].values, gene_names=pfam_gene_names,
-                           test_source='pfam'),
-            batch_size=len(pfam_data),
-            shuffle=False
-        )
-
-    return _train, val, pfam_test
+    return _train, val, test
 
 
-def initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, pfam_data, num_features,
-                     config, norm):
+def initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, test, num_features, config, norm):
     hyperparams = config['hyperparameters']
-    _train, val, pfam_test = normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes,
-                                            pfam_data, config, norm)
+    _train, val, test = normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test, config, norm)
 
     train_imbalance = 1 / float(_train.dataset.label_imbalance().item())  # calculate inverse class frequency
 
@@ -178,7 +151,7 @@ def initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, pfa
         weight_decay=hyperparams['mlp']['weight_decay'],
     )
 
-    return mlp_lightning, _train, val, pfam_test, hyperparameters, accelerator
+    return mlp_lightning, _train, val, test, hyperparameters, accelerator
 
 
 def train(tag="Training"):
@@ -247,9 +220,17 @@ def train(tag="Training"):
         raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
 
 
-def kfold_train(data: pd.DataFrame, genes: pd.DataFrame, test_genes: Dict[str, pd.DataFrame], pfam_data: pd.DataFrame,
-                num_features: int, config: dict, model_type: str, modules: Union[str, Dict[str, bool]],
-                norm: bool = True):
+def kfold_train(
+        data: pd.DataFrame,
+        genes: pd.DataFrame,
+        test_genes: Dict[str, pd.DataFrame],
+        test_data: Dict[str, pd.DataFrame],
+        num_features: int,
+        config: dict,
+        model_type: str,
+        modules: Union[str, Dict[str, bool]],
+        norm: bool = True
+):
     num_splits = 5
     kfold = KFold(n_splits=num_splits, shuffle=True, random_state=42)
 
@@ -281,9 +262,16 @@ def kfold_train(data: pd.DataFrame, genes: pd.DataFrame, test_genes: Dict[str, p
         train_genes = genes.iloc[train_indices]
         val_genes = genes.iloc[val_indices]
 
-        mlp_lightning, _train, val, pfam_test, hyperparameters, accelerator = (
-            initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, pfam_data, num_features,
-                             config, norm)
+        mlp_lightning, _train, val, test, hyperparameters, accelerator = initialise_model(
+            train_raw,
+            val_raw,
+            train_genes,
+            val_genes,
+            test_genes,
+            test_data,
+            num_features,
+            config,
+            norm
         )
 
         run = wandb.init(
@@ -313,12 +301,16 @@ def kfold_train(data: pd.DataFrame, genes: pd.DataFrame, test_genes: Dict[str, p
         )
 
         trainer.fit(mlp_lightning, _train, val)
-        trainer.test(ckpt_path="best", dataloaders=pfam_test)
+        trainer.test(ckpt_path="best", dataloaders=test["pfam"])
+        trainer.test(ckpt_path="best", dataloaders=test["rcnt"])
+        trainer.test(ckpt_path="best", dataloaders=test["pharos"])
 
         run.finish()
 
 
 def kfold_teacher(ensemble=False, **modules):
+    pl.seed_everything(42)
+
     print("Training teacher model...\n")
 
     gc = modules.get('gc', False)
@@ -348,11 +340,22 @@ def kfold_teacher(ensemble=False, **modules):
                 config = preprocessor.config
                 pfam_data = preprocessor.pfam_data
                 pfam_genes = preprocessor.pfam_ids
-                test_genes = {
-                    "pfam-drgbl": pfam_genes
+                rcnt_data = preprocessor.rcnt_data
+                rcnt_genes = preprocessor.rcnt_ids
+                pharos_data = preprocessor.pharos_data
+                pharos_genes = preprocessor.pharos_ids
+                test_data = {
+                    "pfam": pfam_data,
+                    "rcnt": rcnt_data,
+                    "pharos": pharos_data
                 }
-                kfold_train(train_df, genes, test_genes, pfam_data, num_features, config,
-                            model_type="teacher", modules=module, norm=norm)
+                test_genes = {
+                    "pfam": pfam_genes,
+                    "rcnt": rcnt_genes,
+                    "pharos": pharos_genes
+                }
+                kfold_train(train_df, genes, test_genes, test_data, num_features, config, model_type="teacher",
+                            modules=module, norm=norm)
     else:
         # TODO: Implement ensemble training
         pass
@@ -366,6 +369,7 @@ def kfold_student(ensemble=False, **modules):
     Firstly, we will run inference over the unlabelled data using the teacher model to define the pseudolabels. Then,
     we add the pseudolabels to the training data and train the student model on the combined dataset.
     """
+    # TODO: Connect this to the teacher to learn end-to-end
     print("Training student model by distillation from teacher model...\n")
 
     gc = modules.get('gc', False)
