@@ -10,7 +10,7 @@ def main(mode="training"):
     elif mode == "tuning":
         training.tune()
     elif mode == "kfold_teacher":
-        training.kfold_teacher(gc=True)
+        training.kfold_teacher(go=True)
     elif mode == "kfold_student":
         training.kfold_student()
     elif mode == "testing":
@@ -49,8 +49,8 @@ if __name__ == "__main__":
     #       [ ] Check if allele freqs are calculated using GH genotype data (this might be what we can use)
     #       [ ] Individualise predictions based on genotype data during inference time
     #  [ ] Generate test datasets
-    #       [ ] Get positive samples
-    #       [ ] Balance the positive samples with randomly sampled negatives [use housekeeping genes?]
+    #       [X] Get positive samples
+    #       [ ] ! Balance the positive samples with randomly sampled negatives [use housekeeping genes?]
     #  -
     #  [ ] Train and test each module separately
     #      [ ] Gene characterisation module
