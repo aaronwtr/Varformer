@@ -67,6 +67,8 @@ class GeneCharacterisationPreprocessor:
 
         # TODO: Handle feature matrix generation and deal with different consequences of variants
         #   potentially ask Dan MacArthur for advice on how to handle this?
+        #   Another question we should ask him is how to define some negatives for the test datasets (LoF/constraint
+        #   would be argued against by his paper on evaluating drug targets through human loss-of-function)
 
         # Load raw G&H missense variant data
         if not os.path.exists('../data/features/raw_miva_feature_matrix.pkl'):
@@ -130,14 +132,37 @@ class GeneCharacterisationPreprocessor:
 
         self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
 
-        self.data = self.data[~self.data.index.isin(self.holdout_ids.index)]
+        self.data_neg = self.data[~self.data.index.isin(self.holdout_ids.index)]
 
-        total_holdout = num_pfam + num_rcnt + num_pharos
+        common_essentials = self.data_neg[self.data_neg['common_essentials'] == 1]
+        common_essentials = common_essentials[common_essentials['target'] == 0]
+        common_essentials = common_essentials[common_essentials['pli_lof_constraint'] > 0.9]
+        negative_test_balance = common_essentials.sample(n=len(self.holdout_ids), random_state=42)
+        negative_test_ids = self.ensg_ids[self.ensg_ids.index.isin(negative_test_balance.index)]
+        num_negs = len(negative_test_ids)
+
+        pfam_negs = negative_test_ids.sample(n=num_pfam, random_state=42)
+        negative_test_ids = negative_test_ids.drop(pfam_negs.index)
+
+        rcnt_negs = negative_test_ids.sample(n=num_rcnt, random_state=42)
+        negative_test_ids = negative_test_ids.drop(rcnt_negs.index)
+
+        pharos_negs = negative_test_ids.sample(n=num_pharos, random_state=42)
+
+        self.pfam_ids = pd.concat([self.pfam_ids, pfam_negs]).sample(frac=1)
+        self.rcnt_ids = pd.concat([self.rcnt_ids, rcnt_negs]).sample(frac=1)
+        self.pharos_ids = pd.concat([self.pharos_ids, pharos_negs]).sample(frac=1)
+
+        self.pharos_data = self.data[self.data.index.isin(self.pharos_ids.index)]
+        self.rcnt_data = self.data[self.data.index.isin(self.rcnt_ids.index)]
+        self.pfam_data = self.data[self.data.index.isin(self.pfam_ids.index)]
+
+        total_holdout = num_pfam + num_rcnt + num_pharos + num_negs
         num_positives = len(self.data[self.data['target'] == 1])
         print(f"Number of approved drug targets in the training data: {num_positives}")
-        print(f"Number of approved or putative drug targets in the holdout data: {total_holdout}")
-        print(f"\t- Pfam: {num_pfam}\n\t- Recently approved: {num_rcnt}\n\t- Pharos: {num_pharos}")
-
+        print(f"Number of approved or putative drug targets in the holdout data: {total_holdout}\n")
+        print(f"Num positives and negatives:\n\t- Pfam: {num_pfam}\n\t- Recently approved: {num_rcnt}\n\t- Pharos: "
+              f"{num_pharos}")
         # Explore the data
         # plot.umap(self.data)
 
