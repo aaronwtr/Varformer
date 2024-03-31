@@ -50,7 +50,7 @@ if __name__ == "__main__":
     #       [ ] Individualise predictions based on genotype data during inference time
     #  [ ] Generate test datasets
     #       [X] Get positive samples
-    #       [ ] ! Balance the positive samples with randomly sampled negatives [use housekeeping genes?]
+    #       [ ] ! Balance the positive samples with randomly sampled negatives. Make sure this works in all modalities
     #  -
     #  [ ] Train and test each module separately
     #      [ ] Gene characterisation module
