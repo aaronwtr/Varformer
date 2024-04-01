@@ -117,18 +117,18 @@ class GeneCharacterisationPreprocessor:
 
         # Get test data and remove from train feature matrix
         self.pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.drgbl_targets_pfam)]
-        self.pfam_data = self.data[self.data.index.isin(self.pfam_ids.index)]
-        num_pfam = len(self.pfam_data)
+        self.pfam_pos_data = self.data[self.data.index.isin(self.pfam_ids.index)]
+        num_pfam_pos = len(self.pfam_pos_data)
 
         self.rcnt_ids = self.ensg_ids[self.ensg_ids.isin(self.rcnt_targets_fda)]
-        self.rcnt_data = self.data[self.data.index.isin(self.rcnt_ids.index)]
-        self.rcnt_data.loc[:, 'target'] = 1
-        num_rcnt = len(self.rcnt_data)
+        self.rcnt_pos_data = self.data[self.data.index.isin(self.rcnt_ids.index)]
+        self.rcnt_pos_data.loc[:, 'target'] = 1
+        num_rcnt_pos = len(self.rcnt_pos_data)
 
         self.pharos_ids = self.ensg_ids[self.ensg_ids.isin(self.chem_targets_pharos)]
-        self.pharos_data = self.data[self.data.index.isin(self.pharos_ids.index)]
-        self.pharos_data.loc[:, 'target'] = 1
-        num_pharos = len(self.pharos_data)
+        self.pharos_pos_data = self.data[self.data.index.isin(self.pharos_ids.index)]
+        self.pharos_pos_data.loc[:, 'target'] = 1
+        num_pharos_pos = len(self.pharos_pos_data)
 
         self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
 
@@ -141,28 +141,39 @@ class GeneCharacterisationPreprocessor:
         negative_test_ids = self.ensg_ids[self.ensg_ids.index.isin(negative_test_balance.index)]
         num_negs = len(negative_test_ids)
 
-        pfam_negs = negative_test_ids.sample(n=num_pfam, random_state=42)
-        negative_test_ids = negative_test_ids.drop(pfam_negs.index)
+        self.pfam_negs = negative_test_ids.sample(n=num_pfam_pos, random_state=42)
+        negative_test_ids = negative_test_ids.drop(self.pfam_negs.index)
 
-        rcnt_negs = negative_test_ids.sample(n=num_rcnt, random_state=42)
-        negative_test_ids = negative_test_ids.drop(rcnt_negs.index)
+        self.rcnt_negs = negative_test_ids.sample(n=num_rcnt_pos, random_state=42)
+        negative_test_ids = negative_test_ids.drop(self.rcnt_negs.index)
 
-        pharos_negs = negative_test_ids.sample(n=num_pharos, random_state=42)
+        self.pharos_negs = negative_test_ids.sample(n=num_pharos_pos, random_state=42)
 
-        self.pfam_ids = pd.concat([self.pfam_ids, pfam_negs]).sample(frac=1)
-        self.rcnt_ids = pd.concat([self.rcnt_ids, rcnt_negs]).sample(frac=1)
-        self.pharos_ids = pd.concat([self.pharos_ids, pharos_negs]).sample(frac=1)
+        self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs]).sample(frac=1)
+        self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs]).sample(frac=1)
+        self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs]).sample(frac=1)
 
-        self.pharos_data = self.data[self.data.index.isin(self.pharos_ids.index)]
-        self.rcnt_data = self.data[self.data.index.isin(self.rcnt_ids.index)]
-        self.pfam_data = self.data[self.data.index.isin(self.pfam_ids.index)]
+        self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
 
-        total_holdout = num_pfam + num_rcnt + num_pharos + num_negs
+        self.pfam_neg_data = self.data[self.data.index.isin(self.pfam_negs.index)]
+        self.rcnt_neg_data = self.data[self.data.index.isin(self.rcnt_negs.index)]
+        self.pharos_neg_data = self.data[self.data.index.isin(self.pharos_negs.index)]
+
+        self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
+        self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
+        self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
+
+        total_holdout = num_pfam_pos + num_rcnt_pos + num_pharos_pos + num_negs
+
         num_positives = len(self.data[self.data['target'] == 1])
         print(f"Number of approved drug targets in the training data: {num_positives}")
         print(f"Number of approved or putative drug targets in the holdout data: {total_holdout}\n")
-        print(f"Num positives and negatives:\n\t- Pfam: {num_pfam}\n\t- Recently approved: {num_rcnt}\n\t- Pharos: "
-              f"{num_pharos}")
+        print(f"Num positives and negatives:\n\t- Pfam: {num_pfam_pos}\n\t- Recently approved: {num_rcnt_pos}\n\t- "
+              f"Pharos: {num_pharos_pos}")
+
+        # Remove holdout data from training data
+        self.data = self.data[~self.data.index.isin(self.all_test_ids.index)]
+
         # Explore the data
         # plot.umap(self.data)
 
@@ -565,22 +576,33 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         if not gcp:
             super().__init__(config)
             self.gcp_data = self.data
-            self.gcp_pfam = self.pfam_data
-            self.gcp_rcnt = self.rcnt_data
-            self.gcp_pharos = self.pharos_data
+            self.gcp_pfam_pos = self.pfam_pos_data
+            self.gcp_rcnt_pos = self.rcnt_pos_data
+            self.gcp_pharos_pos = self.pharos_pos_data
+            self.gcp_pfam_neg = self.pfam_neg_data
+            self.gcp_rcnt_neg = self.rcnt_neg_data
+            self.gcp_pharos_neg = self.pharos_neg_data
             # self.gcp_acmg = gcp.acmg_data
         else:
             self.gcp = gcp
             self.gh_data = gcp.gh_data
             self.target = gcp.target
             self.gcp_data = gcp.data
-            self.gcp_pfam = gcp.pfam_data
-            self.gcp_rcnt = gcp.rcnt_data
-            self.gcp_pharos = gcp.pharos_data
+            self.gcp_pfam_pos = gcp.pfam_pos_data
+            self.gcp_rcnt_pos = gcp.rcnt_pos_data
+            self.gcp_pharos_pos = gcp.pharos_pos_data
+            self.gcp_pfam_neg = self.pfam_neg_data
+            self.gcp_rcnt_neg = self.rcnt_neg_data
+            self.gcp_pharos_neg = self.pharos_neg_data
             # self.gcp_acmg = gcp.acmg_data
 
         print("Gene Ontology Preprocessor booting up...")
         self.config = config
+
+        # reset data variables
+        self.pfam_data = None
+        self.rcnt_data = None
+        self.pharos_data = None
 
         print("Extracting protein atlas features...")
         self.protein_atlas_features = None
@@ -602,18 +624,24 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
 
         self.pfam_data = self.data[self.data['ENSG'].isin(self.pfam_ids)]
         self.pfam_data = self.pfam_data.drop(columns=['ENSG'])
-        self.pfam_data = self.pfam_data.set_index(self.gcp_pfam.index)
-        self.pfam_data['target'] = self.gcp_pfam['target']
+        self.pfam_pos_data = self.pfam_data.set_index(self.gcp_pfam_pos.index)
+        self.pfam_pos_data['target'] = self.gcp_pfam_pos['target']
 
         self.rcnt_data = self.data[self.data['ENSG'].isin(self.rcnt_ids)]
         self.rcnt_data = self.rcnt_data.drop(columns=['ENSG'])
-        self.rcnt_data = self.rcnt_data.set_index(self.gcp_rcnt.index)
-        self.rcnt_data['target'] = self.gcp_rcnt['target']
+        self.rcnt_pos_data = self.rcnt_data.set_index(self.gcp_rcnt_pos.index)
+        self.rcnt_pos_data['target'] = self.gcp_rcnt_pos['target']
 
         self.pharos_data = self.data[self.data['ENSG'].isin(self.pharos_ids)]
         self.pharos_data = self.pharos_data.drop(columns=['ENSG'])
-        self.pharos_data = self.pharos_data.set_index(self.gcp_pharos.index)
-        self.pharos_data['target'] = self.gcp_pharos['target']
+        self.pharos_pos_data = self.pharos_data.set_index(self.gcp_pharos_pos.index)
+        self.pharos_pos_data['target'] = self.gcp_pharos_pos['target']
+
+        self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
+        self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
+        self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
+
+        # TODO: fix this
 
         # self.data = self.data[~self.data['ENSG'].isin(self.acmg_ids)]
         self.data = self.data[~self.data['ENSG'].isin(self.pfam_ids)]
