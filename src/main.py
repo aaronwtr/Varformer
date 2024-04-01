@@ -27,10 +27,10 @@ if __name__ == "__main__":
     #  MLP model
     #  [ ] Integrate variant-to-gene mapping into the model end-to-end
     #  [ ] Fix preprocessing into four modules
-    #      [ ] Gene characterisation module (eval)
-    #      [ ] Gene ontology module (eval)
+    #      [X] Gene characterisation module (eval)
+    #      [X] Gene ontology module (eval)
     #      [ ] Population variant characterisation module
-    #           [ ] Generate AM embeddings
+    #           [ ] ! Generate AM embeddings (make end-to-end)
     #           [ ] Evaluate AM embeddings
     #           [ ] Generate ESM AA seq embeddings
     #           [ ] Evaluate ESM AA seq embeddings
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     #       [ ] Individualise predictions based on genotype data during inference time
     #  [ ] Generate test datasets
     #       [X] Get positive samples
-    #       [ ] ! Balance the positive samples with randomly sampled negatives. Make sure this works in all modalities
+    #       [X] Balance the positive samples with randomly sampled negatives. Make sure this works in all modalities
     #  -
     #  [ ] Train and test each module separately
     #      [ ] Gene characterisation module
