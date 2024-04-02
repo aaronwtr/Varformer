@@ -113,26 +113,26 @@ class GeneCharacterisationPreprocessor:
         self.target = load_combined_labels()
 
         # Combine features and target
-        self.data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
+        self.full_data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
 
         # Get test data and remove from train feature matrix
         self.pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.drgbl_targets_pfam)]
-        self.pfam_pos_data = self.data[self.data.index.isin(self.pfam_ids.index)]
+        self.pfam_pos_data = self.full_data[self.full_data.index.isin(self.pfam_ids.index)]
         num_pfam_pos = len(self.pfam_pos_data)
 
         self.rcnt_ids = self.ensg_ids[self.ensg_ids.isin(self.rcnt_targets_fda)]
-        self.rcnt_pos_data = self.data[self.data.index.isin(self.rcnt_ids.index)]
+        self.rcnt_pos_data = self.full_data[self.full_data.index.isin(self.rcnt_ids.index)]
         self.rcnt_pos_data.loc[:, 'target'] = 1
         num_rcnt_pos = len(self.rcnt_pos_data)
 
         self.pharos_ids = self.ensg_ids[self.ensg_ids.isin(self.chem_targets_pharos)]
-        self.pharos_pos_data = self.data[self.data.index.isin(self.pharos_ids.index)]
+        self.pharos_pos_data = self.full_data[self.full_data.index.isin(self.pharos_ids.index)]
         self.pharos_pos_data.loc[:, 'target'] = 1
         num_pharos_pos = len(self.pharos_pos_data)
 
         self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
 
-        self.data_neg = self.data[~self.data.index.isin(self.holdout_ids.index)]
+        self.data_neg = self.full_data[~self.full_data.index.isin(self.holdout_ids.index)]
 
         common_essentials = self.data_neg[self.data_neg['common_essentials'] == 1]
         common_essentials = common_essentials[common_essentials['target'] == 0]
@@ -155,9 +155,9 @@ class GeneCharacterisationPreprocessor:
 
         self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
 
-        self.pfam_neg_data = self.data[self.data.index.isin(self.pfam_negs.index)]
-        self.rcnt_neg_data = self.data[self.data.index.isin(self.rcnt_negs.index)]
-        self.pharos_neg_data = self.data[self.data.index.isin(self.pharos_negs.index)]
+        self.pfam_neg_data = self.full_data[self.full_data.index.isin(self.pfam_negs.index)]
+        self.rcnt_neg_data = self.full_data[self.full_data.index.isin(self.rcnt_negs.index)]
+        self.pharos_neg_data = self.full_data[self.full_data.index.isin(self.pharos_negs.index)]
 
         self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
         self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
@@ -165,14 +165,14 @@ class GeneCharacterisationPreprocessor:
 
         total_holdout = num_pfam_pos + num_rcnt_pos + num_pharos_pos + num_negs
 
-        num_positives = len(self.data[self.data['target'] == 1])
+        num_positives = len(self.full_data[self.full_data['target'] == 1])
         print(f"Number of approved drug targets in the training data: {num_positives}")
         print(f"Number of approved or putative drug targets in the holdout data: {total_holdout}\n")
         print(f"Num positives and negatives:\n\t- Pfam: {num_pfam_pos}\n\t- Recently approved: {num_rcnt_pos}\n\t- "
               f"Pharos: {num_pharos_pos}")
 
         # Remove holdout data from training data
-        self.data = self.data[~self.data.index.isin(self.all_test_ids.index)]
+        self.data = self.full_data[~self.full_data.index.isin(self.all_test_ids.index)]
 
         # Explore the data
         # plot.umap(self.data)
@@ -576,6 +576,7 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         if not gcp:
             super().__init__(config)
             self.gcp_data = self.data
+            self.full_gcp_data = self.full_data
             self.gcp_pfam_pos = self.pfam_pos_data
             self.gcp_rcnt_pos = self.rcnt_pos_data
             self.gcp_pharos_pos = self.pharos_pos_data
@@ -588,12 +589,13 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
             self.gh_data = gcp.gh_data
             self.target = gcp.target
             self.gcp_data = gcp.data
+            self.full_gcp_data = gcp.full_data
             self.gcp_pfam_pos = gcp.pfam_pos_data
             self.gcp_rcnt_pos = gcp.rcnt_pos_data
             self.gcp_pharos_pos = gcp.pharos_pos_data
-            self.gcp_pfam_neg = self.pfam_neg_data
-            self.gcp_rcnt_neg = self.rcnt_neg_data
-            self.gcp_pharos_neg = self.pharos_neg_data
+            self.gcp_pfam_neg = gcp.pfam_neg_data
+            self.gcp_rcnt_neg = gcp.rcnt_neg_data
+            self.gcp_pharos_neg = gcp.pharos_neg_data
             # self.gcp_acmg = gcp.acmg_data
 
         print("Gene Ontology Preprocessor booting up...")
@@ -641,14 +643,12 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
         self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
 
-        # TODO: fix this
-
-        # self.data = self.data[~self.data['ENSG'].isin(self.acmg_ids)]
-        self.data = self.data[~self.data['ENSG'].isin(self.pfam_ids)]
-        self.data = self.data[~self.data['ENSG'].isin(self.rcnt_ids)]
-        self.data = self.data[~self.data['ENSG'].isin(self.pharos_ids)]
+        self.data = self.data.set_index(self.full_gcp_data.index)
+        self.data = self.data[~self.data.index.isin(self.pfam_ids_all.index)]
+        self.data = self.data[~self.data.index.isin(self.rcnt_ids_all.index)]
+        self.data = self.data[~self.data.index.isin(self.pharos_ids_all.index)]
         self.data = self.data.drop(columns=['ENSG'])
-        self.data = self.data.set_index(self.gcp_data.index)
+
         self.data['target'] = self.gcp_data['target']
 
         self.num_features = len(self.data.columns) - 1  # subtract 1 for the target column
