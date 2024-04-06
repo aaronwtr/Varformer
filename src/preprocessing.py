@@ -49,7 +49,6 @@ class GeneCharacterisationPreprocessor:
         self.gene_essentiality_features = None
         self.ppi_features = None
 
-        # TODO: Make this shared in utils.py or testing.py
         self.drgbl_targets_pfam = None
         self.rcnt_targets_fda = None
         self.chem_targets_pharos = None
@@ -134,7 +133,7 @@ class GeneCharacterisationPreprocessor:
 
         self.data_neg = self.full_data[~self.full_data.index.isin(self.holdout_ids.index)]
 
-        common_essentials = self.data_neg[self.data_neg['common_essentials'] == 1]
+        common_essentials = self.full_data[self.full_data['common_essentials'] == 1]
         common_essentials = common_essentials[common_essentials['target'] == 0]
         common_essentials = common_essentials[common_essentials['pli_lof_constraint'] > 0.9]
         negative_test_balance = common_essentials.sample(n=len(self.holdout_ids), random_state=42)
@@ -149,9 +148,9 @@ class GeneCharacterisationPreprocessor:
 
         self.pharos_negs = negative_test_ids.sample(n=num_pharos_pos, random_state=42)
 
-        self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs]).sample(frac=1)
-        self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs]).sample(frac=1)
-        self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs]).sample(frac=1)
+        self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs])
+        self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs])
+        self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs])
 
         self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
 
@@ -162,6 +161,20 @@ class GeneCharacterisationPreprocessor:
         self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
         self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
         self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
+
+        # # save combination of ids and data for plotting
+        # self.pfam_ids_all = self.pfam_ids_all.reindex(self.pfam_data.index)
+        # self.pfam_data = pd.concat([self.pfam_ids_all, self.pfam_data], axis=1)
+        #
+        # self.rcnt_ids_all = self.rcnt_ids_all.reindex(self.rcnt_data.index)
+        # self.rcnt_data = pd.concat([self.rcnt_ids_all, self.rcnt_data], axis=1)
+        #
+        # self.pharos_ids_all = self.pharos_ids_all.reindex(self.pharos_data.index)
+        # self.pharos_data = pd.concat([self.pharos_ids_all, self.pharos_data], axis=1)
+        #
+        # self.pfam_data.to_pickle('../data/test_data/pfam_data.pkl')
+        # self.rcnt_data.to_pickle('../data/test_data/rcnt_data.pkl')
+        # self.pharos_data.to_pickle('../data/test_data/pharos_data.pkl')
 
         total_holdout = num_pfam_pos + num_rcnt_pos + num_pharos_pos + num_negs
 
@@ -629,6 +642,8 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         self.pfam_pos_data = self.pfam_data.set_index(self.gcp_pfam_pos.index)
         self.pfam_pos_data['target'] = self.gcp_pfam_pos['target']
 
+
+
         self.rcnt_data = self.data[self.data['ENSG'].isin(self.rcnt_ids)]
         self.rcnt_data = self.rcnt_data.drop(columns=['ENSG'])
         self.rcnt_pos_data = self.rcnt_data.set_index(self.gcp_rcnt_pos.index)
@@ -639,9 +654,22 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         self.pharos_pos_data = self.pharos_data.set_index(self.gcp_pharos_pos.index)
         self.pharos_pos_data['target'] = self.gcp_pharos_pos['target']
 
-        self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
-        self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
-        self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
+        neg_data = self.data.set_index(self.full_gcp_data.index)
+        pfam_neg_data = neg_data[neg_data.index.isin(self.pfam_neg_data.index)]
+        pfam_neg_data = pfam_neg_data.drop(columns=['ENSG'])
+        pfam_neg_data['target'] = 0
+
+        rcnt_neg_data = neg_data[neg_data.index.isin(self.rcnt_neg_data.index)]
+        rcnt_neg_data = rcnt_neg_data.drop(columns=['ENSG'])
+        rcnt_neg_data['target'] = 0
+
+        pharos_neg_data = neg_data[neg_data.index.isin(self.pharos_neg_data.index)]
+        pharos_neg_data = pharos_neg_data.drop(columns=['ENSG'])
+        pharos_neg_data['target'] = 0
+
+        self.pfam_data = pd.concat([self.pfam_pos_data, pfam_neg_data]).sample(frac=1)
+        self.rcnt_data = pd.concat([self.rcnt_pos_data, rcnt_neg_data]).sample(frac=1)
+        self.pharos_data = pd.concat([self.pharos_pos_data, pharos_neg_data]).sample(frac=1)
 
         self.data = self.data.set_index(self.full_gcp_data.index)
         self.data = self.data[~self.data.index.isin(self.pfam_ids_all.index)]
@@ -834,12 +862,23 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
     and missense variant pathogenicity embeddings, and it processes protein structure confidence scores, in particular
     it generates and processes embeddings of AlphaFold's residue-wise pLDDT score.
     """
+    # TODO:
+    #  [ ] AlphaMissense pathogenicity variant data
+    #       Preprocess AlphaMissense data to get a dictionary with key each gene and values (20, 20, N_g) tensors
+    #       where 20 is the total number of possible amino acids and N_g is the length of the gene
+    #  [ ] AlphaFold protein structure prediction confidence data
+    #       Preprocess AlphaFold data to get a dictionary with key each gene and values (20, N_f) tensor where
+    #       20 is the total number of possible amino acids and N_f is the input embedding dimension that is at
+    #       least as large as the longest gene sequence and padded with zeros for shorter sequences
+    #  [ ] ESM protein sequence embeddings
+    #       Generate ESM embeddings for all genes such that wildtype and variant sequences that are (1, N_s) tensors
+    #       where N_s is the embedding dimension that is given by the ESM model. Then we subtract the wildtype
+    #       embedding from the variant embedding to get the final embedding
 
     def __init__(self, config, gcp=None):
         if not gcp:
             super().__init__(config)
             self.gcp_data = self.data
-            self.gcp_acmg = self.acmg_data
             self.gcp_pfam = self.pfam_data
         else:
             self.gcp = gcp
