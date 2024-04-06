@@ -948,13 +948,11 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             genes_sharded = selected_data['SYMBOL'].unique().tolist()
             self.gh_data.loc[:, 'Protein_pos_shard'] = self.gh_data['Protein_position'].apply(lambda x: (x - 1) % 4096 + 1)
             cols = self.gh_data.columns.tolist()
-            # find index of Protein_position col
             pp_idx = cols.index('Protein_position')
             cols = cols[:pp_idx] + [cols[-1]] + cols[pp_idx:-1]
             self.gh_data = self.gh_data[cols]
-            # check if there are genes in the sharded genes for which there exist variants of the same identity at the
-            # same position
-            self.gh_data = self.gh_data[self.gh_data['SYMBOL'].isin(genes_sharded)]
+
+            # self.gh_data = self.gh_data[self.gh_data['SYMBOL'].isin(genes_sharded)]
             self.gh_data.to_pickle('../data/elgh/gh_miva_data.pkl')
         else:
             self.gh_data = pd.read_pickle('../data/elgh/gh_miva_data.pkl')
@@ -982,12 +980,10 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             am = am[['am_pathogenicity', 'variant_id']]
             print("Combining AlphaMissense data with GH data...")
             self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
+            # TODO: filter dataset such that for variants with similar isoforms, the most canonical one is selected
             self.gh_data.to_pickle('../data/alphamissense/gh_am_data.pkl')
         else:
             self.gh_data = pd.read_pickle('../data/alphamissense/gh_am_data.pkl')
-
-        # TODO: take care of edge cases where mutation identity + sharded position is not unique. also take care of
-        #  isoforms. (pick the one with highest severity (allele freq * pathogenicity score))
 
         # if not os.path.exists("../data/alphamissense/variant_am_features.pkl"):
         #     variant_am_features = {}
