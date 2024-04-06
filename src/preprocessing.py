@@ -642,8 +642,6 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         self.pfam_pos_data = self.pfam_data.set_index(self.gcp_pfam_pos.index)
         self.pfam_pos_data['target'] = self.gcp_pfam_pos['target']
 
-
-
         self.rcnt_data = self.data[self.data['ENSG'].isin(self.rcnt_ids)]
         self.rcnt_data = self.rcnt_data.drop(columns=['ENSG'])
         self.rcnt_pos_data = self.rcnt_data.set_index(self.gcp_rcnt_pos.index)
@@ -862,6 +860,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
     and missense variant pathogenicity embeddings, and it processes protein structure confidence scores, in particular
     it generates and processes embeddings of AlphaFold's residue-wise pLDDT score.
     """
+
     # TODO:
     #  [ ] AlphaMissense pathogenicity variant data
     #       Preprocess AlphaMissense data to get a dictionary with key each gene and values (20, 20, N_g) tensors
@@ -879,23 +878,36 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         if not gcp:
             super().__init__(config)
             self.gcp_data = self.data
-            self.gcp_pfam = self.pfam_data
+            self.full_gcp_data = self.full_data
+            self.gcp_pfam_pos = self.pfam_pos_data
+            self.gcp_rcnt_pos = self.rcnt_pos_data
+            self.gcp_pharos_pos = self.pharos_pos_data
+            self.gcp_pfam_neg = self.pfam_neg_data
+            self.gcp_rcnt_neg = self.rcnt_neg_data
+            self.gcp_pharos_neg = self.pharos_neg_data
+            # self.gcp_acmg = gcp.acmg_data
         else:
             self.gcp = gcp
             self.gh_data = gcp.gh_data
             self.target = gcp.target
             self.gcp_data = gcp.data
-            self.gcp_acmg = gcp.acmg_data
-            self.gcp_pfam = gcp.pfam_data
+            self.full_gcp_data = gcp.full_data
+            self.gcp_pfam_pos = gcp.pfam_pos_data
+            self.gcp_rcnt_pos = gcp.rcnt_pos_data
+            self.gcp_pharos_pos = gcp.pharos_pos_data
+            self.gcp_pfam_neg = gcp.pfam_neg_data
+            self.gcp_rcnt_neg = gcp.rcnt_neg_data
+            self.gcp_pharos_neg = gcp.pharos_neg_data
 
         print("Getting variant-to-gene embeddings...")
         self.pathogenicity_embeddings = None
         self.variant_plddt_embeddings = None
 
         print("Processing AlphaMissense data...")
-        if not os.path.exists("../data/alphamissense/gh_am_data.pkl"):
-            self.pathogenicity_feature_extractor()
-        self.variant_pathogenicity_embedder()
+        # if not os.path.exists("../data/alphamissense/gh_am_data.pkl"):
+        #     self.pathogenicity_feature_extractor()
+        self.variant_gh_data(config['hyperparameters']['pathogenicity_embedding'])
+        self.variant_pathogenicity_input()
         self.data = self.pathogenicity_train_data()
 
         self.acmg_data = self.data[self.data['ENSG'].isin(self.acmg_ids)]
@@ -923,76 +935,50 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.alphafold_features = None
         self.plddt_embedder()
 
-    def pathogenicity_feature_extractor(self):
+    def variant_gh_data(self, config):
+        print("Preparing GH data for variant-level embeddings...")
+        if not os.path.exists("../data/elgh/gh_miva_data.pkl"):
+            self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
+            self.gh_data = self.gh_data.explode('ALT')
+            self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
+            self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
+
+            self.gh_data['Protein_position'] = self.gh_data['Protein_position'].astype(int)
+            selected_data = self.gh_data[self.gh_data['Protein_position'] > config['io_dim']]
+            genes_sharded = selected_data['SYMBOL'].unique().tolist()
+            self.gh_data.loc[:, 'Protein_pos_shard'] = self.gh_data['Protein_position'].apply(lambda x: (x - 1) % 4096 + 1)
+            cols = self.gh_data.columns.tolist()
+            # find index of Protein_position col
+            pp_idx = cols.index('Protein_position')
+            cols = cols[:pp_idx] + [cols[-1]] + cols[pp_idx:-1]
+            self.gh_data = self.gh_data[cols]
+            # check if there are genes in the sharded genes for which there exist variants of the same identity at the
+            # same position
+            self.gh_data = self.gh_data[self.gh_data['SYMBOL'].isin(genes_sharded)]
+            self.gh_data.to_pickle('../data/elgh/gh_miva_data.pkl')
+        else:
+            self.gh_data = pd.read_pickle('../data/elgh/gh_miva_data.pkl')
+
+    def variant_pathogenicity_input(self):
         """
-        Extract variant-level AlphaMissense pathogenicity score and average to gene-level using population
-        statistics.
-        """
-        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
-        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
-
-        am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
-
-        am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
-        self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
-        self.gh_data = self.gh_data.explode('ALT')
-        self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
-        self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
-        pos_list = self.gh_data['POS'].tolist()
-        chrom_list = self.gh_data['#CHROM'].tolist()
-        ref_list = self.gh_data['REF'].tolist()
-        alt_list = self.gh_data['ALT'].tolist()
-
-        pos_list = [str(pos) for pos in pos_list]
-        variant_id_list = [chrom + '_' + pos + '_' + ref + '_' + alt for chrom, pos, ref, alt in
-                           zip(chrom_list, pos_list, ref_list, alt_list)]
-        self.gh_data['variant_id'] = variant_id_list
-        am = am[['am_pathogenicity', 'variant_id']]
-
-        self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
-
-        if not os.path.exists("../data/alphamissense/gh_am_data.pkl"):
-            self.gh_data.to_pickle('../data/alphamissense/gh_am_data.pkl')
-
-        variant_am_features = {}
-        for index, row in tqdm(self.gh_data.iterrows()):
-            gene = row['Gene']
-            gh_af = row['AF_ELGH']
-            am_score = row['am_pathogenicity']
-            if gene not in variant_am_features.keys():
-                variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
-            else:
-                variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
-
-        gene_am_features = {}
-        for ensg, probs in variant_am_features.items():
-            gene_am_features[ensg] = sum(probs) / len(probs)
-
-        self.pathogenicity_features = gene_am_features
-
-    def variant_pathogenicity_embedder(self):
-        """
-        Extract variant-level AlphaMissense pathogenicity score and project to gene-level using autoencoder that was
-        pre-trained on GH South-Asian population variants.
+        Extract variant-level AlphaMissense pathogenicity score and prepare the input for embedding
         """
         # check if gh_am_data.pkl exists yet
         print("Combining AM and GH data...")
         if not os.path.exists("../data/alphamissense/gh_am_data.pkl"):
             am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
             am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
-            self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
-            self.gh_data = self.gh_data.explode('ALT')
-            self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
-            self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
-            pos_list = self.gh_data['POS'].tolist()
-            chrom_list = self.gh_data['#CHROM'].tolist()
-            ref_list = self.gh_data['REF'].tolist()
-            alt_list = self.gh_data['ALT'].tolist()
 
-            pos_list = [str(pos) for pos in pos_list]
-            variant_id_list = [chrom + '_' + pos + '_' + ref + '_' + alt for chrom, pos, ref, alt in
-                               zip(chrom_list, pos_list, ref_list, alt_list)]
-            self.gh_data['variant_id'] = variant_id_list
+            # pos_list = self.gh_data['POS'].tolist()
+            # chrom_list = self.gh_data['#CHROM'].tolist()
+            # ref_list = self.gh_data['REF'].tolist()
+            # alt_list = self.gh_data['ALT'].tolist()
+            #
+            # pos_list = [str(pos) for pos in pos_list]
+            # variant_id_list = [chrom + '_' + pos + '_' + ref + '_' + alt for chrom, pos, ref, alt in
+            #                    zip(chrom_list, pos_list, ref_list, alt_list)]
+            # self.gh_data['variant_id'] = variant_id_list
+
             am = am[['am_pathogenicity', 'variant_id']]
             print("Combining AlphaMissense data with GH data...")
             self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
@@ -1000,78 +986,81 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         else:
             self.gh_data = pd.read_pickle('../data/alphamissense/gh_am_data.pkl')
 
-        if not os.path.exists("../data/alphamissense/variant_am_features.pkl"):
-            variant_am_features = {}
-            for index, row in tqdm(self.gh_data.iterrows()):
-                gene = row['Gene']
-                gh_af = row['AF_ELGH']
-                am_score = row['am_pathogenicity']
-                if gene not in variant_am_features.keys():
-                    variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
-                else:
-                    variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
-            with open('../data/alphamissense/variant_am_features.pkl', 'wb') as fp:
-                pkl.dump(variant_am_features, fp)
-        else:
-            variant_am_features = pd.read_pickle('../data/alphamissense/variant_am_features.pkl')
+        # TODO: take care of edge cases where mutation identity + sharded position is not unique. also take care of
+        #  isoforms. (pick the one with highest severity (allele freq * pathogenicity score))
 
-        if self.config['hyperparameters']['pathogenicity_autoencoder']['ae_type'] == "ae":
-            if not os.path.exists('autoencoders/checkpoints/variant_pathogenicity_encoder'):
-                os.mkdir('autoencoders/checkpoints/variant_pathogenicity_encoder')
-            if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_encoder'):
-                # if no pre-trained model exists, train one
-                print('Pre-training pathogenicity autoencoder...')
-
-                ae_training.train(variant_am_features, self.config)
-                print('Pathogenicity autoencoder trained!')
-                print('Embedding pathogenicity data from variant to gene level...')
-                if not os.path.exists('../data/alphamissense/embeddings_ae.pkl'):
-                    embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-                    with open('../data/alphamissense/embeddings_ae.pkl', 'wb') as fp:
-                        pkl.dump(embeddings, fp)
-                else:
-                    with open('../data/alphamissense/embeddings_ae.pkl', 'rb') as fp:
-                        embeddings = pkl.load(fp)
-                self.pathogenicity_embeddings = embeddings
-            else:
-                # if pre-trained model exists, load it
-                print('Pretrained autoencoder found. Loading pathogenicity embeddings...')
-                if not os.path.exists('../data/alphamissense/embeddings_ae.pkl'):
-                    embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-                    with open('../data/alphamissense/embeddings_ae.pkl', 'wb') as fp:
-                        pkl.dump(embeddings, fp)
-                else:
-                    with open('../data/alphamissense/embeddings_ae.pkl', 'rb') as fp:
-                        embeddings = pkl.load(fp)
-                self.pathogenicity_embeddings = embeddings
-        else:
-            if not os.path.exists('autoencoders/checkpoints/variant_pathogenicity_vae'):
-                os.mkdir('autoencoders/checkpoints/variant_pathogenicity_vae')
-            if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_vae'):
-                print('Pre-training pathogenicity VAE...')
-
-                vae_training.train(variant_am_features, self.config)
-                print('Pathogenicity VAE trained!')
-                print('Embedding pathogenicity data from variant to gene level...')
-                if not os.path.exists('../data/alphamissense/embeddings_vae.pkl'):
-                    embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-                    with open('../data/alphamissense/embeddings_vae.pkl', 'wb') as fp:
-                        pkl.dump(embeddings, fp)
-                else:
-                    with open('../data/alphamissense/embeddings_vae.pkl', 'rb') as fp:
-                        embeddings = pkl.load(fp)
-                self.pathogenicity_embeddings = embeddings
-            else:
-                # if pre-trained model exists, load it
-                print('Pretrained VAE found. Loading pathogenicity embeddings...')
-                if not os.path.exists('../data/alphamissense/embeddings_vae.pkl'):
-                    embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-                    with open('../data/alphamissense/embeddings_vae.pkl', 'wb') as fp:
-                        pkl.dump(embeddings, fp)
-                else:
-                    with open('../data/alphamissense/embeddings_vae.pkl', 'rb') as fp:
-                        embeddings = pkl.load(fp)
-                self.pathogenicity_embeddings = embeddings
+        # if not os.path.exists("../data/alphamissense/variant_am_features.pkl"):
+        #     variant_am_features = {}
+        #     for index, row in tqdm(self.gh_data.iterrows()):
+        #         gene = row['Gene']
+        #         gh_af = row['AF_ELGH']
+        #         am_score = row['am_pathogenicity']
+        #         if gene not in variant_am_features.keys():
+        #             variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
+        #         else:
+        #             variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
+        #     with open('../data/alphamissense/variant_am_features.pkl', 'wb') as fp:
+        #         pkl.dump(variant_am_features, fp)
+        # else:
+        #     variant_am_features = pd.read_pickle('../data/alphamissense/variant_am_features.pkl')
+        #
+        # if self.config['hyperparameters']['pathogenicity_autoencoder']['ae_type'] == "ae":
+        #     if not os.path.exists('autoencoders/checkpoints/variant_pathogenicity_encoder'):
+        #         os.mkdir('autoencoders/checkpoints/variant_pathogenicity_encoder')
+        #     if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_encoder'):
+        #         # if no pre-trained model exists, train one
+        #         print('Pre-training pathogenicity autoencoder...')
+        #
+        #         ae_training.train(variant_am_features, self.config)
+        #         print('Pathogenicity autoencoder trained!')
+        #         print('Embedding pathogenicity data from variant to gene level...')
+        #         if not os.path.exists('../data/alphamissense/embeddings_ae.pkl'):
+        #             embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+        #             with open('../data/alphamissense/embeddings_ae.pkl', 'wb') as fp:
+        #                 pkl.dump(embeddings, fp)
+        #         else:
+        #             with open('../data/alphamissense/embeddings_ae.pkl', 'rb') as fp:
+        #                 embeddings = pkl.load(fp)
+        #         self.pathogenicity_embeddings = embeddings
+        #     else:
+        #         # if pre-trained model exists, load it
+        #         print('Pretrained autoencoder found. Loading pathogenicity embeddings...')
+        #         if not os.path.exists('../data/alphamissense/embeddings_ae.pkl'):
+        #             embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+        #             with open('../data/alphamissense/embeddings_ae.pkl', 'wb') as fp:
+        #                 pkl.dump(embeddings, fp)
+        #         else:
+        #             with open('../data/alphamissense/embeddings_ae.pkl', 'rb') as fp:
+        #                 embeddings = pkl.load(fp)
+        #         self.pathogenicity_embeddings = embeddings
+        # else:
+        #     if not os.path.exists('autoencoders/checkpoints/variant_pathogenicity_vae'):
+        #         os.mkdir('autoencoders/checkpoints/variant_pathogenicity_vae')
+        #     if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_vae'):
+        #         print('Pre-training pathogenicity VAE...')
+        #
+        #         vae_training.train(variant_am_features, self.config)
+        #         print('Pathogenicity VAE trained!')
+        #         print('Embedding pathogenicity data from variant to gene level...')
+        #         if not os.path.exists('../data/alphamissense/embeddings_vae.pkl'):
+        #             embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+        #             with open('../data/alphamissense/embeddings_vae.pkl', 'wb') as fp:
+        #                 pkl.dump(embeddings, fp)
+        #         else:
+        #             with open('../data/alphamissense/embeddings_vae.pkl', 'rb') as fp:
+        #                 embeddings = pkl.load(fp)
+        #         self.pathogenicity_embeddings = embeddings
+        #     else:
+        #         # if pre-trained model exists, load it
+        #         print('Pretrained VAE found. Loading pathogenicity embeddings...')
+        #         if not os.path.exists('../data/alphamissense/embeddings_vae.pkl'):
+        #             embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
+        #             with open('../data/alphamissense/embeddings_vae.pkl', 'wb') as fp:
+        #                 pkl.dump(embeddings, fp)
+        #         else:
+        #             with open('../data/alphamissense/embeddings_vae.pkl', 'rb') as fp:
+        #                 embeddings = pkl.load(fp)
+        #         self.pathogenicity_embeddings = embeddings
 
     def fetch_pathogenicity_embeddings(self, variant_am_features):
         hparams = self.config['hyperparameters']['pathogenicity_autoencoder']
@@ -1271,6 +1260,55 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             response = requests.get(file_url)
             with open(os.path.join(folder, file_name), "wb") as f:
                 f.write(response.content)
+
+    # DEPRECATED
+
+    def __pathogenicity_feature_extractor(self):
+        """
+        Extract variant-level AlphaMissense pathogenicity score and average to gene-level using population
+        statistics.
+        """
+        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
+        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
+
+        am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
+
+        am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
+        self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
+        self.gh_data = self.gh_data.explode('ALT')
+        self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
+        self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
+        pos_list = self.gh_data['POS'].tolist()
+        chrom_list = self.gh_data['#CHROM'].tolist()
+        ref_list = self.gh_data['REF'].tolist()
+        alt_list = self.gh_data['ALT'].tolist()
+
+        pos_list = [str(pos) for pos in pos_list]
+        variant_id_list = [chrom + '_' + pos + '_' + ref + '_' + alt for chrom, pos, ref, alt in
+                           zip(chrom_list, pos_list, ref_list, alt_list)]
+        self.gh_data['variant_id'] = variant_id_list
+        am = am[['am_pathogenicity', 'variant_id']]
+
+        self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
+
+        if not os.path.exists("../data/alphamissense/gh_am_data.pkl"):
+            self.gh_data.to_pickle('../data/alphamissense/gh_am_data.pkl')
+
+        variant_am_features = {}
+        for index, row in tqdm(self.gh_data.iterrows()):
+            gene = row['Gene']
+            gh_af = row['AF_ELGH']
+            am_score = row['am_pathogenicity']
+            if gene not in variant_am_features.keys():
+                variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
+            else:
+                variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
+
+        gene_am_features = {}
+        for ensg, probs in variant_am_features.items():
+            gene_am_features[ensg] = sum(probs) / len(probs)
+
+        self.pathogenicity_features = gene_am_features
 
 
 class __WildtypeLoader:
