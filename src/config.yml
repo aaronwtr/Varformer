@@ -32,9 +32,9 @@ hyperparameters:
     dropout: 0.5
     num_workers: 0
     weight_decay: 0.1
-  pathogenicity_autoencoder:
+  pathogenicity_embedding:
     usage: True
-    io_dim: 1024  # standard 1024
+    io_dim: 4096  # standard 1024
     latent_dim: 512 # standard 256
     reduction: "padding" # choose from "padding" or "pooling"
     batch_size: 128 # standard 128
