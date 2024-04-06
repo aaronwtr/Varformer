@@ -163,11 +163,6 @@ def train(tag="Training"):
     acmg_data = gcp.acmg_data
     pfam_data = gcp.pfam_data
 
-    # Note: Validation samples are clinically actionable genes as defined by the ACMG (see:
-    # https://www.coriell.org/1/NIGMS/Collections/ACMG-73-Genes). We also have a broader set of clinically actionable
-    # genes - with scores - from ClinGen. These are currently loaded in `get_actionable_genes` in `preprocessing.py`.
-    # These need NOT yet have FDA-approved drugs.
-
     train_raw, val_raw = train_test_split(data, test_size=0.2, random_state=42)
 
     mlp_lightning, _train, val, pfam_test, hyperparameters, accelerator = (
