@@ -10,7 +10,7 @@ def main(mode="training"):
     elif mode == "tuning":
         training.tune()
     elif mode == "kfold_teacher":
-        training.kfold_teacher(go=True)
+        training.kfold_teacher(gc=True)
     elif mode == "kfold_student":
         training.kfold_student()
     elif mode == "testing":
