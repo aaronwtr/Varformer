@@ -22,7 +22,7 @@ from torch.utils.data import DataLoader
 from autoencoders.ae import AutoencoderTrainer
 from autoencoders.vae import VAETrainer
 from src.autoencoders import ae_training, vae_training
-from src.utils import featurise, load_combined_labels, combine_features_and_labels
+from src.utils import featurise, load_combined_labels, combine_features_and_labels, aa_to_idx
 
 
 class GeneCharacterisationPreprocessor:
@@ -904,10 +904,11 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.variant_plddt_embeddings = None
 
         print("Processing AlphaMissense data...")
-        # if not os.path.exists("../data/alphamissense/gh_am_data.pkl"):
-        #     self.pathogenicity_feature_extractor()
+
         self.variant_gh_data(config['hyperparameters']['pathogenicity_embedding'])
-        self.variant_pathogenicity_input()
+
+        self.var_pat_features = self.variant_pathogenicity_input()
+
         self.data = self.pathogenicity_train_data()
 
         self.acmg_data = self.data[self.data['ENSG'].isin(self.acmg_ids)]
@@ -967,23 +968,43 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
             am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
 
-            # pos_list = self.gh_data['POS'].tolist()
-            # chrom_list = self.gh_data['#CHROM'].tolist()
-            # ref_list = self.gh_data['REF'].tolist()
-            # alt_list = self.gh_data['ALT'].tolist()
-            #
-            # pos_list = [str(pos) for pos in pos_list]
-            # variant_id_list = [chrom + '_' + pos + '_' + ref + '_' + alt for chrom, pos, ref, alt in
-            #                    zip(chrom_list, pos_list, ref_list, alt_list)]
-            # self.gh_data['variant_id'] = variant_id_list
-
             am = am[['am_pathogenicity', 'variant_id']]
             print("Combining AlphaMissense data with GH data...")
             self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
-            # TODO: filter dataset such that for variants with similar isoforms, the most canonical one is selected
-            self.gh_data.to_pickle('../data/alphamissense/gh_am_data.pkl')
+
+            sym_list = self.gh_data['SYMBOL'].tolist()
+            prot_pos = self.gh_data['Protein_pos_shard'].tolist()
+            aas = self.gh_data['Amino_acids'].tolist()
+            hgvsp = self.gh_data['HGVSp'].tolist()
+            prot_pos = [str(pos) for pos in prot_pos]
+            hgvsp = [str(hgvsp.split('.')[1].split(':')[0]) for hgvsp in hgvsp]
+            isoform_id_list = [f"{sym}_{prot_pos}_{aas.split('/')[0]}_{aas.split('/')[1]}_{hgvsp}" for
+                                  sym, prot_pos, aas, hgvsp in zip(sym_list, prot_pos, aas, hgvsp)]
+            self.gh_data['isoform'] = isoform_id_list
+
+            components = self.gh_data['isoform'].str.extract(
+                r'(?P<gene_symbol>\w+)_(?P<prot_position>\d+)_(?P<ref_aa>\w+)_(?P<alt_aa>\w+)_(?P<isoform>\d+)')
+            combined = components['gene_symbol'] + '_' + components['prot_position'].astype(str) + '_' + components[
+                'ref_aa'] + '_' + components['alt_aa']
+            self.gh_data['combined'] = combined
+            self.gh_data['AA_ref']  = components['ref_aa']
+            self.gh_data['AA_alt'] = components['alt_aa']
+            self.gh_data = self.gh_data.loc[components['isoform'] == '1'].drop_duplicates(subset=['combined'])
+            self.gh_data = self.gh_data.drop(columns=['combined'])
+
+            var_pat_matrix = np.zeros((20, 20, 4096))
+            for index, row in tqdm(self.gh_data.iterrows(), total=self.gh_data.shape[0]):
+                ref_aa = row['AA_ref']
+                alt_aa = row['AA_alt']
+                ref_idx = aa_to_idx(ref_aa)
+                alt_idx = aa_to_idx(alt_aa)
+                pos = row['Protein_pos_shard']
+                var_pat_matrix[ref_idx, alt_idx, pos] = row['am_pathogenicity'] * row['AF']
+            with open('../data/features/var_pat_features.pkl', 'wb') as f:
+                pkl.dump(var_pat_matrix, f)
+            return var_pat_matrix
         else:
-            self.gh_data = pd.read_pickle('../data/alphamissense/gh_am_data.pkl')
+            return pd.read_pickle('../data/features/var_pat_features.pkl')
 
         # if not os.path.exists("../data/alphamissense/variant_am_features.pkl"):
         #     variant_am_features = {}
