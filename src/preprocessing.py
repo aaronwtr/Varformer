@@ -899,15 +899,14 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             self.gcp_rcnt_neg = gcp.rcnt_neg_data
             self.gcp_pharos_neg = gcp.pharos_neg_data
 
-        print("Getting variant-to-gene embeddings...")
-        self.pathogenicity_embeddings = None
-        self.variant_plddt_embeddings = None
-
-        print("Processing AlphaMissense data...")
-
+        print("Preparing variant features...")
         self.variant_gh_data(config['hyperparameters']['pathogenicity_embedding'])
 
+        print("Processing AlphaMissense data...")
         self.var_pat_features = self.variant_pathogenicity_input()
+        self.var_stc_features = self.variant_structure_input()
+        # pLDDT input datax
+        # ESM-2 amino acid sequence embeddings
 
         self.data = self.pathogenicity_train_data()
 
@@ -987,19 +986,24 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             combined = components['gene_symbol'] + '_' + components['prot_position'].astype(str) + '_' + components[
                 'ref_aa'] + '_' + components['alt_aa']
             self.gh_data['combined'] = combined
-            self.gh_data['AA_ref']  = components['ref_aa']
+            self.gh_data['AA_ref'] = components['ref_aa']
             self.gh_data['AA_alt'] = components['alt_aa']
             self.gh_data = self.gh_data.loc[components['isoform'] == '1'].drop_duplicates(subset=['combined'])
             self.gh_data = self.gh_data.drop(columns=['combined'])
 
-            var_pat_matrix = np.zeros((20, 20, 4096))
+            var_pat_matrix = np.zeros((21, 21, 4096))
             for index, row in tqdm(self.gh_data.iterrows(), total=self.gh_data.shape[0]):
                 ref_aa = row['AA_ref']
                 alt_aa = row['AA_alt']
                 ref_idx = aa_to_idx(ref_aa)
                 alt_idx = aa_to_idx(alt_aa)
                 pos = row['Protein_pos_shard']
-                var_pat_matrix[ref_idx, alt_idx, pos] = row['am_pathogenicity'] * row['AF']
+                value = row['am_pathogenicity'] * row['AF']
+                var_pat_matrix[ref_idx, alt_idx, pos - 1] = row['am_pathogenicity'] * row['AF']
+            num_nans = np.sum(np.isnan(var_pat_matrix))
+            nan_frac = num_nans / (21 * 21 * 4096)
+            print("Fraction of data that was found to be nans: " + str(nan_frac))
+            var_pat_matrix = np.nan_to_num(var_pat_matrix)
             with open('../data/features/var_pat_features.pkl', 'wb') as f:
                 pkl.dump(var_pat_matrix, f)
             return var_pat_matrix
@@ -1078,6 +1082,10 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         #             with open('../data/alphamissense/embeddings_vae.pkl', 'rb') as fp:
         #                 embeddings = pkl.load(fp)
         #         self.pathogenicity_embeddings = embeddings
+
+    def variant_structure_input(self):
+        plddt_scores = self.alphafold_plddt_extractor()
+        print('joe')
 
     def fetch_pathogenicity_embeddings(self, variant_am_features):
         hparams = self.config['hyperparameters']['pathogenicity_autoencoder']
@@ -1168,7 +1176,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         return 0
 
-    def alphafold_feature_extractor(self):
+    def alphafold_plddt_extractor(self):
         """
         Extract AlphaFold features from the AlphaFold API. Specifically, we get the average pLDDT score for the proteins
         in our dataset
@@ -1256,7 +1264,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 with open('../data/features/alphafold_features.pkl', 'wb') as fp:
                     pkl.dump(extracted_values, fp)
 
-            self.alphafold_features = extracted_values
+            return extracted_values
 
     def download_af_cifs(self):
         uniprot_ids = self.gh_data["UNIPROT"].unique().tolist()
