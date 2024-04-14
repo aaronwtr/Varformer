@@ -583,6 +583,35 @@ def aa_to_idx(aa: str) -> int:
     }
     return aa_to_idx_map[aa]
 
+
+def aa1_to_aa3(single_code):
+    amino_acids = {
+        'A': 'ALA',
+        'R': 'ARG',
+        'N': 'ASN',
+        'D': 'ASP',
+        'C': 'CYS',
+        'E': 'GLU',
+        'Q': 'GLN',
+        'G': 'GLY',
+        'H': 'HIS',
+        'I': 'ILE',
+        'L': 'LEU',
+        'K': 'LYS',
+        'M': 'MET',
+        'F': 'PHE',
+        'P': 'PRO',
+        'S': 'SER',
+        'T': 'THR',
+        'W': 'TRP',
+        'Y': 'TYR',
+        'V': 'VAL'
+    }
+
+    # Convert input to uppercase
+    single_code = single_code.upper()
+    return amino_acids.get(single_code, 'Unknown')
+
 #################################### ARCHIVE ####################################
 
 
