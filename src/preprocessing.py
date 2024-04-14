@@ -22,7 +22,7 @@ from torch.utils.data import DataLoader
 from autoencoders.ae import AutoencoderTrainer
 from autoencoders.vae import VAETrainer
 from src.autoencoders import ae_training, vae_training
-from src.utils import featurise, load_combined_labels, combine_features_and_labels, aa_to_idx
+from src.utils import featurise, load_combined_labels, combine_features_and_labels, aa_to_idx, aa1_to_aa3
 
 
 class GeneCharacterisationPreprocessor:
@@ -946,7 +946,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             self.gh_data['Protein_position'] = self.gh_data['Protein_position'].astype(int)
             selected_data = self.gh_data[self.gh_data['Protein_position'] > config['io_dim']]
             genes_sharded = selected_data['SYMBOL'].unique().tolist()
-            self.gh_data.loc[:, 'Protein_pos_shard'] = self.gh_data['Protein_position'].apply(lambda x: (x - 1) % 4096 + 1)
+            self.gh_data.loc[:, 'Protein_pos_shard'] = self.gh_data['Protein_position'].apply(
+                lambda x: (x - 1) % 4096 + 1)
             cols = self.gh_data.columns.tolist()
             pp_idx = cols.index('Protein_position')
             cols = cols[:pp_idx] + [cols[-1]] + cols[pp_idx:-1]
@@ -963,7 +964,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         """
         # check if gh_am_data.pkl exists yet
         print("Combining AM and GH data...")
-        if not os.path.exists("../data/alphamissense/gh_am_data.pkl"):
+        if not os.path.exists("../data/features/var_pat_features.pkl"):
             am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
             am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
 
@@ -978,7 +979,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             prot_pos = [str(pos) for pos in prot_pos]
             hgvsp = [str(hgvsp.split('.')[1].split(':')[0]) for hgvsp in hgvsp]
             isoform_id_list = [f"{sym}_{prot_pos}_{aas.split('/')[0]}_{aas.split('/')[1]}_{hgvsp}" for
-                                  sym, prot_pos, aas, hgvsp in zip(sym_list, prot_pos, aas, hgvsp)]
+                               sym, prot_pos, aas, hgvsp in zip(sym_list, prot_pos, aas, hgvsp)]
             self.gh_data['isoform'] = isoform_id_list
 
             components = self.gh_data['isoform'].str.extract(
@@ -1084,7 +1085,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         #         self.pathogenicity_embeddings = embeddings
 
     def variant_structure_input(self):
-        plddt_scores = self.alphafold_plddt_extractor()
+        af_data = self.alphafold_extractor()
+        # process the af_data
         print('joe')
 
     def fetch_pathogenicity_embeddings(self, variant_am_features):
@@ -1176,16 +1178,22 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         return 0
 
-    def alphafold_plddt_extractor(self):
+    def alphafold_extractor(self):
         """
         Extract AlphaFold features from the AlphaFold API. Specifically, we get the average pLDDT score for the proteins
         in our dataset
         """
+        uniprot_ids = self.gh_data["UNIPROT"].unique().tolist()
+        uniprot_ids = [uni for uni in uniprot_ids if str(uni) != 'nan']
+        uniprot_ids = [uni.split('.')[0] for uni in uniprot_ids]
         if not os.path.exists('../data/cache/uniprot_ids.pkl'):
             uni_to_gene = {}
             for index, row in self.gh_data.iterrows():
                 gene = row['Gene']
                 uni = row['UNIPROT']
+                if type(uni) == float:
+                    continue
+                uni = uni.split('.')[0]
                 uni_to_gene[uni] = gene
 
             # write the uniprot ids to a pkl file
@@ -1195,27 +1203,26 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             with open('../data/cache/uniprot_ids.pkl', 'rb') as fp:
                 uni_to_gene = pkl.load(fp)
 
-        uniprot_ids = self.gh_data["UNIPROT"].unique().tolist()
-
         if not os.path.exists('../data/alphafold/alphafold_cifs'):
             self.download_af_cifs()
         extracted_values = {}
         if os.path.exists('../data/features/alphafold_features.pkl'):
             with open('../data/features/alphafold_features.pkl', 'rb') as fp:
                 features = pkl.load(fp)
-                self.alphafold_features = features
+                return features
         else:
-            if os.path.exists('../data/alphafold/af_plddt_features_non_normalized.pkl'):
-                with open('../data/alphafold/af_plddt_features_non_normalized.pkl', 'rb') as fp:
+            if os.path.exists('../data/alphafold/alphafold_features_temp.pkl'):
+                with open('../data/alphafold/alphafold_features_temp.pkl', 'rb') as fp:
                     extracted_values = pkl.load(fp)
             else:
                 for qualifier in tqdm(uniprot_ids):
                     extracted_values[qualifier] = {}
-                    cif_file_path = f"{self.config['paths']['AF_PATH']}AF-{qualifier}-F1-model_v4.cif"
                     target_format_mean = "_ma_qa_metric_global.metric_value"
                     target_format_max = "_ma_qa_metric_local.ordinal_id"
                     extract = True
                     values_list = []
+                    aas = []
+                    cif_file_path = f"{self.config['paths']['AF_PATH']}AF-{qualifier}-F1-model_v4.cif"
                     try:
                         with open(cif_file_path, "r") as cif_file:
                             for line in cif_file:
@@ -1239,10 +1246,13 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                                     elif len(parts) >= 5:
                                         plddt = float(parts[4])
                                         values_list.append(plddt)
+                                        aas.append(parts[1])
+
                             if len(values_list) != 0:
                                 protein_len = len(values_list)
                                 max_value = max(values_list)
                                 extracted_values[qualifier]['max'] = max_value
+                                extracted_values[qualifier]['sequence'] = aas
                                 extracted_values[qualifier]['res_plddt'] = values_list
                                 # we extract the len for later experiments
                                 extracted_values[qualifier]['protein_len'] = protein_len
@@ -1251,23 +1261,52 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                                 extracted_values[qualifier]['mean'] = 0.0
                                 extracted_values[qualifier]['max'] = 0.0
                                 extracted_values[qualifier]['protein_len'] = np.nan
+                                extracted_values[qualifier]['sequence'] = []
                                 extracted_values[qualifier]['res_plddt'] = []
+                                extracted_values[qualifier]['coordinates'] = []
+                        cif_file.close()
                     except FileNotFoundError as e:
                         print(f"\nError: Unable to fetch data for {qualifier}. Inserting 0.0.")
                         extracted_values[qualifier]['mean'] = 0.0
                         extracted_values[qualifier]['max'] = 0.0
                         extracted_values[qualifier]['protein_len'] = np.nan
+                        extracted_values[qualifier]['sequence'] = []
                         extracted_values[qualifier]['res_plddt'] = []
+                        extracted_values[qualifier]['coordinates'] = []
 
-                # map uniprot ids to gene names
-                extracted_values = {uni_to_gene[uniprot]: values for uniprot, values in extracted_values.items()}
-                with open('../data/features/alphafold_features.pkl', 'wb') as fp:
+                # write the extracted values to a pkl file
+                with open('../data/alphafold/temp_extracted_values.pkl', 'wb') as fp:
                     pkl.dump(extracted_values, fp)
 
+                for uni, info in tqdm(extracted_values.items(), total=len(extracted_values)):
+                    seq = info['sequence']
+                    if not seq:
+                        continue
+                    cif_file_path = f"../data/alphafold/alphafold_cifs/AF-{uni}-F1-model_v4.cif"
+                    coords = []
+                    curr_aa_id = 1
+                    with open(cif_file_path, "r") as cif_file:
+                        for line in cif_file:
+                            if line.startswith('ATOM'):
+                                aa_id = int(line.split()[23])
+                                atom_type = line.split()[3]
+                                if aa_id == curr_aa_id and atom_type == 'CA':
+                                    x = float(line.split()[10])
+                                    y = float(line.split()[11])
+                                    z = float(line.split()[12])
+                                    coords.append((x, y, z))
+                                    curr_aa_id += 1
+                    extracted_values[uni]['coordinates'] = coords
+
+            extracted_values = {uni_to_gene[uniprot]: values for uniprot, values in extracted_values.items()}
+            with open('../data/features/alphafold_features.pkl', 'wb') as fp:
+                pkl.dump(extracted_values, fp)
             return extracted_values
 
     def download_af_cifs(self):
         uniprot_ids = self.gh_data["UNIPROT"].unique().tolist()
+        uniprot_ids = [uni for uni in uniprot_ids if str(uni) != 'nan']
+        uniprot_ids = [uni.split('.')[0] for uni in uniprot_ids]
 
         url = "https://alphafold.ebi.ac.uk/files/AF-{id}-F1-model_v4.cif"
 
