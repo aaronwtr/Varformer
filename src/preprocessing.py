@@ -992,22 +992,39 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             self.gh_data = self.gh_data.loc[components['isoform'] == '1'].drop_duplicates(subset=['combined'])
             self.gh_data = self.gh_data.drop(columns=['combined'])
 
-            var_pat_matrix = np.zeros((21, 21, 4096))
+            var_pat_features = {}
             for index, row in tqdm(self.gh_data.iterrows(), total=self.gh_data.shape[0]):
+                gene = row['Gene']
                 ref_aa = row['AA_ref']
                 alt_aa = row['AA_alt']
                 ref_idx = aa_to_idx(ref_aa)
                 alt_idx = aa_to_idx(alt_aa)
                 pos = row['Protein_pos_shard']
                 value = row['am_pathogenicity'] * row['AF']
-                var_pat_matrix[ref_idx, alt_idx, pos - 1] = row['am_pathogenicity'] * row['AF']
-            num_nans = np.sum(np.isnan(var_pat_matrix))
-            nan_frac = num_nans / (21 * 21 * 4096)
+                if gene not in var_pat_features.keys():
+                    var_pat_matrix = np.zeros((21, 21, 4096))
+                    var_pat_matrix[ref_idx, alt_idx, pos - 1] = value
+                    var_pat_features[gene] = var_pat_matrix
+                else:
+                    var_pat_matrix = var_pat_features[gene]
+                    if var_pat_matrix[ref_idx, alt_idx, pos - 1] != 0:
+                        print(f"Warning: Overwriting value at position {pos} for gene {gene}")
+                    var_pat_matrix[ref_idx, alt_idx, pos - 1] = value
+                    var_pat_features[gene] = var_pat_matrix
+
+            num_nans = 0
+            num_genes = len(list(var_pat_features.keys()))
+            # todo: fix memory issue here
+            for gene, matrix in var_pat_features.items():
+                num_nans += np.sum(np.isnan(matrix))
+                var_pat_features[gene] = np.nan_to_num(matrix)
+
+            nan_frac = num_nans / (num_genes * 21 * 21 * 4096)
             print("Fraction of data that was found to be nans: " + str(nan_frac))
-            var_pat_matrix = np.nan_to_num(var_pat_matrix)
+
             with open('../data/features/var_pat_features.pkl', 'wb') as f:
-                pkl.dump(var_pat_matrix, f)
-            return var_pat_matrix
+                pkl.dump(var_pat_features, f)
+            return var_pat_features
         else:
             return pd.read_pickle('../data/features/var_pat_features.pkl')
 
@@ -1086,7 +1103,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
     def variant_structure_input(self):
         af_data = self.alphafold_extractor()
-        # process the af_data
+        # todo: check the largest protein in the sequence
         print('joe')
 
     def fetch_pathogenicity_embeddings(self, variant_am_features):
