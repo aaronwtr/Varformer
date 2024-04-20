@@ -8,6 +8,8 @@ import utils
 
 import pytorch_lightning as pl
 import pickle as pkl
+import gzip
+import scipy.sparse as sparse
 import pandas as pd
 import numpy as np
 import src.dataloader as dl
@@ -905,6 +907,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         print("Processing AlphaMissense data...")
         self.var_pat_features = self.variant_pathogenicity_input()
         self.var_stc_features = self.variant_structure_input()
+
         # pLDDT input datax
         # ESM-2 amino acid sequence embeddings
 
@@ -964,7 +967,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         """
         # check if gh_am_data.pkl exists yet
         print("Combining AM and GH data...")
-        if not os.path.exists("../data/features/var_pat_features.pkl"):
+        if not os.path.exists("../data/features/var_pat_features.pkl.gz"):
             am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
             am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
 
@@ -1001,32 +1004,31 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 alt_idx = aa_to_idx(alt_aa)
                 pos = row['Protein_pos_shard']
                 value = row['am_pathogenicity'] * row['AF']
+
                 if gene not in var_pat_features.keys():
-                    var_pat_matrix = np.zeros((21, 21, 4096))
-                    var_pat_matrix[ref_idx, alt_idx, pos - 1] = value
+                    matrix_shape = (21 * 21, 4096)
+                    var_pat_matrix = sparse.lil_matrix(matrix_shape, dtype=np.float32)
+                    matrix_index = ref_idx * 21 + alt_idx
+                    var_pat_matrix[matrix_index, pos - 1] = value
                     var_pat_features[gene] = var_pat_matrix
                 else:
                     var_pat_matrix = var_pat_features[gene]
-                    if var_pat_matrix[ref_idx, alt_idx, pos - 1] != 0:
+                    matrix_index = ref_idx * 21 + alt_idx
+                    if var_pat_matrix[matrix_index, pos - 1] != 0:
                         print(f"Warning: Overwriting value at position {pos} for gene {gene}")
-                    var_pat_matrix[ref_idx, alt_idx, pos - 1] = value
+                    var_pat_matrix[matrix_index, pos - 1] = value
                     var_pat_features[gene] = var_pat_matrix
 
-            num_nans = 0
-            num_genes = len(list(var_pat_features.keys()))
-            # todo: fix memory issue here
-            for gene, matrix in var_pat_features.items():
-                num_nans += np.sum(np.isnan(matrix))
-                var_pat_features[gene] = np.nan_to_num(matrix)
+            # Convert all sparse matrices to CSR format
+            for gene, var_pat_matrix in var_pat_features.items():
+                var_pat_features[gene] = var_pat_matrix.tocsr()
 
-            nan_frac = num_nans / (num_genes * 21 * 21 * 4096)
-            print("Fraction of data that was found to be nans: " + str(nan_frac))
-
-            with open('../data/features/var_pat_features.pkl', 'wb') as f:
+            with gzip.open('../data/features/var_pat_features.pkl.gz', 'wb') as f:
                 pkl.dump(var_pat_features, f)
             return var_pat_features
         else:
-            return pd.read_pickle('../data/features/var_pat_features.pkl')
+            with gzip.open('../data/features/var_pat_features.pkl.gz', 'rb') as f:
+                return pkl.load(f)
 
         # if not os.path.exists("../data/alphamissense/variant_am_features.pkl"):
         #     variant_am_features = {}
