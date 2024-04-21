@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader
 from autoencoders.ae import AutoencoderTrainer
 from autoencoders.vae import VAETrainer
 from src.autoencoders import ae_training, vae_training
-from src.utils import featurise, load_combined_labels, combine_features_and_labels, aa_to_idx, aa1_to_aa3
+from src.utils import featurise, load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx
 
 
 class GeneCharacterisationPreprocessor:
@@ -907,6 +907,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         print("Processing AlphaMissense data...")
         self.var_pat_features = self.variant_pathogenicity_input()
         self.var_stc_features = self.variant_structure_input()
+        print('joe')
 
         # pLDDT input datax
         # ESM-2 amino acid sequence embeddings
@@ -1105,8 +1106,38 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
     def variant_structure_input(self):
         af_data = self.alphafold_extractor()
-        # todo: check the largest protein in the sequence
-        print('joe')
+
+        if not os.path.exists('../data/features/var_stc_features.pkl.gz'):
+            var_stc_features = {}
+
+            num_genes = len(af_data)
+
+            for gene, gene_data in tqdm(af_data.items(), total=num_genes):
+                coords = gene_data['coordinates']
+                plddt = gene_data['res_plddt']
+                sequence = gene_data['sequence']
+                seq_length = gene_data['protein_len']
+                matrix = sparse.lil_matrix((4 * 20, 4096), dtype=np.float32)
+
+                for i, (coords, c, amino_acid) in enumerate(zip(coords, plddt, sequence)):
+                    amino_acid_idx = three_letter_aa_to_idx(amino_acid)
+                    x, y, z = coords
+                    values = [x, y, z, c]
+
+                    for row_num in range(4):
+                        matrix_index = 4 * amino_acid_idx + row_num
+                        matrix[matrix_index, i] = values[row_num]
+
+                    matrix[:, seq_length:] = 0.0
+                var_stc_features[gene] = matrix.tocsr()
+
+            with gzip.open('../data/features/var_stc_features.pkl.gz', 'wb') as f:
+                pkl.dump(var_stc_features, f)
+            return var_stc_features
+
+        else:
+            with gzip.open('../data/features/var_stc_features.pkl.gz', 'rb') as f:
+                return pkl.load(f)
 
     def fetch_pathogenicity_embeddings(self, variant_am_features):
         hparams = self.config['hyperparameters']['pathogenicity_autoencoder']
