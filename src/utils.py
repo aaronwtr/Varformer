@@ -575,13 +575,27 @@ def pooling(x, reduct_dim):
 
 def aa_to_idx(aa: str) -> int:
     """
-    Convert amino acid to index.
+    Convert single-letter amino acid codes to index.
     """
     aa_to_idx_map = {
         'A': 0, 'C': 1, 'D': 2, 'E': 3, 'F': 4, 'G': 5, 'H': 6, 'I': 7, 'K': 8, 'L': 9, 'M': 10, 'N': 11,
         'P': 12, 'Q': 13, 'R': 14, 'S': 15, 'T': 16, 'U': 17, 'V': 18, 'W': 19, 'Y': 20
     }
     return aa_to_idx_map[aa]
+
+
+def three_letter_aa_to_idx(aa: str) -> int:
+    """
+    Convert three-letter amino acid code to index.
+    """
+    three_letter_aa_to_idx_map = {
+        'ALA': 0, 'ARG': 1, 'ASN': 2, 'ASP': 3, 'CYS': 4,
+        'GLN': 5, 'GLU': 6, 'GLY': 7, 'HIS': 8, 'ILE': 9,
+        'LEU': 10, 'LYS': 11, 'MET': 12, 'PHE': 13, 'PRO': 14,
+        'SER': 15, 'THR': 16, 'TRP': 17, 'TYR': 18, 'VAL': 19
+    }
+    return three_letter_aa_to_idx_map[aa]
+
 
 
 def aa1_to_aa3(single_code):
