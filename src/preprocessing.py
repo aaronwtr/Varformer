@@ -12,7 +12,7 @@ import gzip
 import scipy.sparse as sparse
 import pandas as pd
 import numpy as np
-import src.dataloader as dl
+import dataloader as dl
 
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -21,10 +21,10 @@ from sklearn.model_selection import train_test_split
 from Bio import SeqIO
 from torch.utils.data import DataLoader
 
-from autoencoders.ae import AutoencoderTrainer
-from autoencoders.vae import VAETrainer
-from src.autoencoders import ae_training, vae_training
-from src.utils import featurise, load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx
+#from autoencoders.ae import AutoencoderTrainer
+#from autoencoders.vae import VAETrainer
+# from autoencoders import ae_training, vae_training
+from utils import featurise, load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx
 
 
 class GeneCharacterisationPreprocessor:
@@ -35,7 +35,7 @@ class GeneCharacterisationPreprocessor:
     def __init__(self, config):
         print("Gene Characterisation Preprocessor is booting up...")
         self.config = config
-        self.files_and_dirs = os.listdir("../data")
+        self.files_and_dirs = os.listdir("data")
         self.data_name_mapping = {
             "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
             "gnomad.exomes.v2.1.1.lof_metrics.by_gene.csv": "gnomAD Exomes Loss-of-Function Metrics",
@@ -72,12 +72,12 @@ class GeneCharacterisationPreprocessor:
         #   would be argued against by his paper on evaluating drug targets through human loss-of-function)
 
         # Load raw G&H missense variant data
-        if not os.path.exists('../data/features/raw_miva_feature_matrix.pkl'):
+        if not os.path.exists('data/features/raw_miva_feature_matrix.pkl'):
             miva_feature_matrix = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
             miva_feature_matrix = miva_feature_matrix[["Gene", "UNIPROT", "variant_id"]]
             miva_feature_matrix = miva_feature_matrix.rename(columns={"Gene": "ENSG"})
             miva_feature_matrix = miva_feature_matrix.drop_duplicates(subset="ENSG")
-            miva_feature_matrix.to_pickle('../data/features/raw_miva_feature_matrix.pkl')
+            miva_feature_matrix.to_pickle('data/features/raw_miva_feature_matrix.pkl')
 
         feature_extractors = {
             'chem_features.pkl': self.chem_feature_extractor,
@@ -88,14 +88,14 @@ class GeneCharacterisationPreprocessor:
         }
 
         for feature_file, feature_extractor in feature_extractors.items():
-            if not os.path.isfile(f'../data/features/{feature_file}'):
+            if not os.path.isfile(f'data/features/{feature_file}'):
                 print(f"Extracting {feature_file}...")
                 feature_extractor()
-                with open(f'../data/features/{feature_file}', 'wb') as fp:
+                with open(f'data/features/{feature_file}', 'wb') as fp:
                     pkl.dump(getattr(self, feature_file.split('.')[0]), fp)
             else:
                 print(f"Loading {feature_file}...")
-                with open(f'../data/features/{feature_file}', 'rb') as fp:
+                with open(f'data/features/{feature_file}', 'rb') as fp:
                     setattr(self, feature_file.split('.')[0], pkl.load(fp))
 
         ensg_features = {
@@ -201,9 +201,9 @@ class GeneCharacterisationPreprocessor:
 
         for file in self.files_and_dirs:
             if "." in file and file not in exclude:
-                files.append(f"../data/{file}")
+                files.append(f"data/{file}")
             elif file not in exclude:
-                file_path = f"../data/{file}"
+                file_path = f"data/{file}"
                 _file = self._dir_parser(file_path)
                 files.append(_file)
         return files
@@ -228,8 +228,8 @@ class GeneCharacterisationPreprocessor:
         Load the data from the files.
         """
         datasets = {}
-        if "datasets.pkl" in os.listdir('../data/'):
-            with open('../data/datasets.pkl', 'rb') as fp:
+        if "datasets.pkl" in os.listdir('data/'):
+            with open('data/datasets.pkl', 'rb') as fp:
                 datasets = pkl.load(fp)
             return datasets
         else:
@@ -249,7 +249,7 @@ class GeneCharacterisationPreprocessor:
                     else:
                         raise ValueError(
                             "The file format is not supported. Make sure data is .csv, .txt, Excel, or parquet.")
-            with open('../data/datasets.pkl', 'wb') as fp:
+            with open('data/datasets.pkl', 'wb') as fp:
                 pkl.dump(datasets, fp)
             return datasets
 
@@ -364,7 +364,7 @@ class GeneCharacterisationPreprocessor:
         Featurise PPI data, i.e. count and normalize the PPIs for each PPI that is experimentally validated.
         """
         protein_info = []  # To store the parsed data
-        with open("../data/9606.protein.links.full.v12.0.txt", "r") as file:
+        with open("data/9606.protein.links.full.v12.0.txt", "r") as file:
             for line in file:
                 fields = line.strip().split('\t')
                 protein_info.append(fields)
@@ -751,8 +751,8 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
 
     def tissue_expression_feature_extractor(self):
         # check if the tissue expression data has already been processed
-        if os.path.exists('../data/features/tissue_specificity_features.pkl'):
-            with open('../data/features/tissue_specificity_features.pkl', 'rb') as f:
+        if os.path.exists('data/features/tissue_specificity_features.pkl'):
+            with open('data/features/tissue_specificity_features.pkl', 'rb') as f:
                 self.tissue_specificity_features = pkl.load(f)
             return
         else:
@@ -770,7 +770,7 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
                     gene_tissue_dict[gene] = [tissue]
 
             self.tissue_specificity_features = gene_tissue_dict
-            with open('../data/features/tissue_specificity_features.pkl', 'wb') as f:
+            with open('data/features/tissue_specificity_features.pkl', 'wb') as f:
                 pkl.dump(gene_tissue_dict, f)
 
     def combine_go_features(self):
@@ -781,7 +781,7 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
             "subcellular_locations": self.protein_atlas_features['subcellular_locations']
         }
 
-        with open('../data/features/raw_miva_feature_matrix.pkl', 'rb') as f:
+        with open('data/features/raw_miva_feature_matrix.pkl', 'rb') as f:
             feature_matrix = pkl.load(f)
 
         for feature, values in ensg_features.items():
@@ -905,8 +905,11 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.variant_gh_data(config['hyperparameters']['pathogenicity_embedding'])
 
         print("Processing AlphaMissense data...")
-        self.var_pat_features = self.variant_pathogenicity_input()
+        #self.var_pat_features = self.variant_pathogenicity_input()
         self.var_stc_features = self.variant_structure_input()
+        # self.var_seq_features = self.variant_sequence_input()
+        import sys
+        sys.exit()
         print('joe')
 
         # pLDDT input datax
@@ -941,7 +944,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
     def variant_gh_data(self, config):
         print("Preparing GH data for variant-level embeddings...")
-        if not os.path.exists("../data/elgh/gh_miva_data.pkl"):
+        if not os.path.exists("data/elgh/gh_miva_data.pkl"):
             self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
             self.gh_data = self.gh_data.explode('ALT')
             self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
@@ -958,9 +961,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             self.gh_data = self.gh_data[cols]
 
             # self.gh_data = self.gh_data[self.gh_data['SYMBOL'].isin(genes_sharded)]
-            self.gh_data.to_pickle('../data/elgh/gh_miva_data.pkl')
+            self.gh_data.to_pickle('data/elgh/gh_miva_data.pkl')
         else:
-            self.gh_data = pd.read_pickle('../data/elgh/gh_miva_data.pkl')
+            self.gh_data = pd.read_pickle('data/elgh/gh_miva_data.pkl')
 
     def variant_pathogenicity_input(self):
         """
@@ -1107,7 +1110,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
     def variant_structure_input(self):
         af_data = self.alphafold_extractor()
 
-        if not os.path.exists('../data/features/var_stc_features.pkl.gz'):
+        if not os.path.exists('data/features/var_stc_features.pkl.gz'):
             var_stc_features = {}
 
             num_genes = len(af_data)
@@ -1116,8 +1119,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 coords = gene_data['coordinates']
                 plddt = gene_data['res_plddt']
                 sequence = gene_data['sequence']
-                seq_length = gene_data['protein_len']
-                matrix = sparse.lil_matrix((4 * 20, 4096), dtype=np.float32)
+                matrix = sparse.lil_matrix((4, 2700 * 20), dtype=np.float32)
 
                 for i, (coords, c, amino_acid) in enumerate(zip(coords, plddt, sequence)):
                     amino_acid_idx = three_letter_aa_to_idx(amino_acid)
@@ -1125,19 +1127,23 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                     values = [x, y, z, c]
 
                     for row_num in range(4):
-                        matrix_index = 4 * amino_acid_idx + row_num
-                        matrix[matrix_index, i] = values[row_num]
+                        matrix_index = i * 20 + amino_acid_idx
+                        matrix[row_num, matrix_index] = values[row_num]
 
-                    matrix[:, seq_length:] = 0.0
+                matrix[:, (matrix_index + 1):] = 0.0
+                df_matrix = pd.DataFrame(matrix.todense())
                 var_stc_features[gene] = matrix.tocsr()
 
-            with gzip.open('../data/features/var_stc_features.pkl.gz', 'wb') as f:
+            with gzip.open('data/features/var_stc_features.pkl.gz', 'wb') as f:
                 pkl.dump(var_stc_features, f)
             return var_stc_features
 
         else:
-            with gzip.open('../data/features/var_stc_features.pkl.gz', 'rb') as f:
+            with gzip.open('data/features/var_stc_features.pkl.gz', 'rb') as f:
                 return pkl.load(f)
+
+    def variant_sequence_input(self):
+        pass
 
     def fetch_pathogenicity_embeddings(self, variant_am_features):
         hparams = self.config['hyperparameters']['pathogenicity_autoencoder']
@@ -1236,7 +1242,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         uniprot_ids = self.gh_data["UNIPROT"].unique().tolist()
         uniprot_ids = [uni for uni in uniprot_ids if str(uni) != 'nan']
         uniprot_ids = [uni.split('.')[0] for uni in uniprot_ids]
-        if not os.path.exists('../data/cache/uniprot_ids.pkl'):
+        if not os.path.exists('data/cache/uniprot_ids.pkl'):
             uni_to_gene = {}
             for index, row in self.gh_data.iterrows():
                 gene = row['Gene']
@@ -1247,17 +1253,17 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 uni_to_gene[uni] = gene
 
             # write the uniprot ids to a pkl file
-            with open('../data/cache/uniprot_ids.pkl', 'wb') as fp:
+            with open('data/cache/uniprot_ids.pkl', 'wb') as fp:
                 pkl.dump(uni_to_gene, fp)
         else:
-            with open('../data/cache/uniprot_ids.pkl', 'rb') as fp:
+            with open('data/cache/uniprot_ids.pkl', 'rb') as fp:
                 uni_to_gene = pkl.load(fp)
 
-        if not os.path.exists('../data/alphafold/alphafold_cifs'):
+        if not os.path.exists('/data/scratch/bty174/danio/data/alphafold/alphafold_cifs'):
             self.download_af_cifs()
         extracted_values = {}
-        if os.path.exists('../data/features/alphafold_features.pkl'):
-            with open('../data/features/alphafold_features.pkl', 'rb') as fp:
+        if os.path.exists('/data/scratch/bty174/danio/data/features/alphafold_features.pkl'):
+            with open('/data/scratch/bty174/danio/data/features/alphafold_features.pkl', 'rb') as fp:
                 features = pkl.load(fp)
                 return features
         else:
@@ -1324,15 +1330,11 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                         extracted_values[qualifier]['res_plddt'] = []
                         extracted_values[qualifier]['coordinates'] = []
 
-                # write the extracted values to a pkl file
-                with open('../data/alphafold/temp_extracted_values.pkl', 'wb') as fp:
-                    pkl.dump(extracted_values, fp)
-
                 for uni, info in tqdm(extracted_values.items(), total=len(extracted_values)):
                     seq = info['sequence']
                     if not seq:
                         continue
-                    cif_file_path = f"../data/alphafold/alphafold_cifs/AF-{uni}-F1-model_v4.cif"
+                    cif_file_path = f"/data/scratch/bty174/danio/data/alphafold/alphafold_cifs/AF-{uni}-F1-model_v4.cif"
                     coords = []
                     curr_aa_id = 1
                     with open(cif_file_path, "r") as cif_file:
@@ -1349,7 +1351,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                     extracted_values[uni]['coordinates'] = coords
 
             extracted_values = {uni_to_gene[uniprot]: values for uniprot, values in extracted_values.items()}
-            with open('../data/features/alphafold_features.pkl', 'wb') as fp:
+            with open('/data/scratch/bty174/danio/data/features/alphafold_features.pkl', 'wb') as fp:
                 pkl.dump(extracted_values, fp)
             return extracted_values
 
@@ -1360,13 +1362,13 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         url = "https://alphafold.ebi.ac.uk/files/AF-{id}-F1-model_v4.cif"
 
-        folder = "../data/alphafold/alphafold_cifs"
+        folder = "/data/scratch/bty174/danio/data/alphafold/alphafold_cifs"
         if not os.path.exists(folder):
             os.makedirs(folder)
 
         for uni_id in tqdm(uniprot_ids):
             # check if uni_id occurs in swissprot_cif_v4 folder, if so copy it to alphafold_cifs
-            if os.path.exists(f"../data/alphafold/alphafold_cifs/AF-{uni_id}-F1-model_v4.cif"):
+            if os.path.exists(f"/data/scratch/bty174/danio/data/alphafold/alphafold_cifs/AF-{uni_id}-F1-model_v4.cif"):
                 continue
             file_url = url.format(id=uni_id)
             file_name = os.path.basename(file_url)

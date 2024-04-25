@@ -20,7 +20,7 @@ from typing import Dict, Union
 from dataloader import DrugTargetData, ModuleDataProcessor
 from model import BaseTargetIdentifier, BaseLightningTargetIdentifier
 from puupl import training as puupl_training
-from plot import umap, plot_embedding_distribution
+# from plot import umap, plot_embedding_distribution
 
 
 def tune():

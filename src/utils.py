@@ -501,7 +501,7 @@ def _convert_to_dense(indices, shape):
 
 def featurise(features: dict) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     # load missense variant feature matrix
-    with open("../data/features/raw_miva_feature_matrix.pkl", 'rb') as f:
+    with open("data/features/raw_miva_feature_matrix.pkl", 'rb') as f:
         feature_matrix = pkl.load(f)
 
     for feature, values in features.items():
@@ -523,14 +523,14 @@ def featurise(features: dict) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
 
 
 def load_fda_labels() -> pd.DataFrame:
-    return pd.read_excel("../data/FDA_approved_drug_targets_2023_Q3.xlsx")
+    return pd.read_excel("data/FDA_approved_drug_targets_2023_Q3.xlsx")
 
 
 def load_combined_labels() -> pd.DataFrame:
     """
     Load the HPA/manual FDA and citeline labels pkl file
     """
-    with open("../data/labels/citeline_manual_labels.pkl", "rb") as f:
+    with open("data/labels/citeline_manual_labels.pkl", "rb") as f:
         labels = pkl.load(f)
     return labels
 
