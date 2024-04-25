@@ -2,7 +2,7 @@ import torch
 import yaml
 
 import torch.nn as nn
-import src.preprocessing as preprocessing
+import preprocessing as preprocessing
 import torch.nn.functional as F
 import pandas as pd
 
@@ -17,7 +17,7 @@ class ModuleDataProcessor:
         self.pvc = pvc
         self.psc = psc
 
-        with open("config.yml", 'r') as stream:
+        with open("src/config.yml", 'r') as stream:
             self.config = yaml.safe_load(stream)
 
     def process(self):
