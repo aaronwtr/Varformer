@@ -1114,7 +1114,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             var_stc_features = {}
 
             num_genes = len(af_data)
-
+            matrix_index = None
             for gene, gene_data in tqdm(af_data.items(), total=num_genes):
                 coords = gene_data['coordinates']
                 plddt = gene_data['res_plddt']
@@ -1130,9 +1130,10 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                         matrix_index = i * 20 + amino_acid_idx
                         matrix[row_num, matrix_index] = values[row_num]
 
-                matrix[:, (matrix_index + 1):] = 0.0
-                # df_matrix = pd.DataFrame(matrix.todense())
-                var_stc_features[gene] = matrix.tocsr()
+                if matrix_index is not None:
+                    matrix[:, (matrix_index + 1):] = 0.0
+                    # df_matrix = pd.DataFrame(matrix.todense())
+                    var_stc_features[gene] = matrix.tocsr()
 
             with gzip.open('data/features/var_stc_features.pkl.gz', 'wb') as f:
                 pkl.dump(var_stc_features, f)
