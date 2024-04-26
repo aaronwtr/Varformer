@@ -1117,7 +1117,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 plddt = gene_data['res_plddt']
                 sequence = gene_data['sequence']
                 seq_length = gene_data['protein_len']
-                matrix = sparse.lil_matrix((4 * 20, 4096), dtype=np.float32)
+                matrix = sparse.lil_matrix((4, 2700 * 20), dtype=np.float32)
 
                 for i, (coords, c, amino_acid) in enumerate(zip(coords, plddt, sequence)):
                     amino_acid_idx = three_letter_aa_to_idx(amino_acid)
