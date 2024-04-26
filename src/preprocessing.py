@@ -1125,10 +1125,10 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                     values = [x, y, z, c]
 
                     for row_num in range(4):
-                        matrix_index = 4 * amino_acid_idx + row_num
-                        matrix[matrix_index, i] = values[row_num]
+                        matrix_index = i * 20 + amino_acid_idx
+                        matrix[row_num, matrix_index] = values[row_num]
 
-                    matrix[:, seq_length:] = 0.0
+                    matrix[:, (matrix_index + 1):] = 0.0
                 var_stc_features[gene] = matrix.tocsr()
 
             with gzip.open('../data/features/var_stc_features.pkl.gz', 'wb') as f:
