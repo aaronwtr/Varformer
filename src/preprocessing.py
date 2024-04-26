@@ -1131,7 +1131,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                         matrix[row_num, matrix_index] = values[row_num]
 
                 matrix[:, (matrix_index + 1):] = 0.0
-                df_matrix = pd.DataFrame(matrix.todense())
+                # df_matrix = pd.DataFrame(matrix.todense())
                 var_stc_features[gene] = matrix.tocsr()
 
             with gzip.open('data/features/var_stc_features.pkl.gz', 'wb') as f:
