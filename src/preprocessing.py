@@ -1109,7 +1109,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
     def variant_structure_input(self):
         af_data = self.alphafold_extractor()
-
         if not os.path.exists('data/features/var_stc_features.pkl.gz'):
             var_stc_features = {}
 
