@@ -24,7 +24,7 @@ from functools import partial
 from sklearn.model_selection import train_test_split
 from Bio import SeqIO
 from torch.utils.data import DataLoader
-from datetime import datetime, timedelta
+import esm
 
 from autoencoders.ae import AutoencoderTrainer
 from autoencoders.vae import VAETrainer
@@ -909,13 +909,16 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         print("Preparing variant features...")
         self.variant_gh_data(config['hyperparameters']['pathogenicity_embedding'])
 
-        print("Processing AlphaMissense data...")
+        print("Obtaining AlphaMissense pathogenicity embeddings...")
         self.var_pat_features = self.variant_pathogenicity_input()
+
+        print("Obtaining AlphaFold protein structure embeddings")
         self.var_stc_features = self.variant_structure_input()
+
+        print("Obtaining ESM-2 protein sequence embeddings...")
+        self.esm_model, self.esm_tokenizer = esm.pretrained.esm2_t48_15B_UR50D()
         self.var_seq_features = self.variant_sequence_input()
         print('joe')
-
-        # ESM-2 amino acid sequence embeddings
 
         self.data = self.pathogenicity_train_data()
 
@@ -1146,34 +1149,43 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
     def variant_sequence_input(self):
         # TODO:
-        #  [ ] for the GH variants, get the wildtype and variant sequences
+        #  [X] for the GH variants, get the wildtype and variant sequences
         #  [ ] get ESM-2 embeddings for the wildtype and variant sequences
+        #       [X] check if it is better to first collect all seqs and then calculate embeddings or do it on the fly
+        #       --> embed as pairs (2, 1280) on the fly
         #  [ ] subtract the wildtype embedding from the variant embedding to get the final embedding
         #  high-level idea: collate the embeddings per gene and save them in a dictionary to prepare them for
         #  autoencoder
         var_seq_data = self.gh_data.drop_duplicates(subset=['Feature'])
-        # get the transcript ids from the feature
 
-        for transcript_id in transcript_ids:
-            protein_sequence = self.get_protein_sequence(transcript_id)
-            if protein_sequence:
-                print(f"{transcript_id}: {protein_sequence}")
-            else:
-                print(f"Failed to fetch protein sequence for {transcript_id}")
-        pass
+        transcript_ids = var_seq_data['Feature'].tolist()
+        ensg_ids = var_seq_data['Gene'].tolist()
+        prot_pos = var_seq_data['Protein_position'].tolist()
+        amino_acids = var_seq_data['Amino_acids'].tolist()
+        mt_aas = [aa.split('/')[1] for aa in amino_acids]
+        wildtype_sequences = {}
+
+        for i, (transcript_id, ensg_id) in enumerate(zip(transcript_ids, ensg_ids)):
+            var_seq, wt_seq, wildtype_sequences = self.get_protein_sequence(transcript_id, ensg_id, wildtype_sequences)
+
+            var_seq = list(var_seq)
+            var_seq[prot_pos[i] - 1] = mt_aas[i]
+            var_seq = ''.join(var_seq)
+
+            wt_emb, mt_emb = self.get_esm_embeddings(wt_seq, var_seq)
+
+            print('joe')
 
     @staticmethod
     def get_protein_sequence(transcript_id, ensg_id, wildtype_sequences):
-        # TODO: make sure that we check if wt is different from mt and think of how to store and return them from the
-        #  function
-        
         server = "https://rest.ensembl.org"
         ext_variant = f"/sequence/id/{transcript_id}?type=protein"
         ext_wildtype = f"/lookup/id/{ensg_id}?expand=1"
 
         while True:
             # Check if wildtype sequence is already in the dictionary
-            if ensg_id in wildtype_sequences:
+            canonical_transcript_id = None
+            if ensg_id in list(wildtype_sequences.keys()):
                 wildtype_sequence = wildtype_sequences[ensg_id]
             else:
                 # Fetch gene information from Ensembl to get the canonical transcript
@@ -1194,15 +1206,27 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
                         # Fetch canonical protein sequence from Ensembl
                         ext_canonical_protein = f"/sequence/id/{canonical_transcript_id}?type=protein"
-                        response_canonical_protein = requests.get(server + ext_canonical_protein,
-                                                                  headers={"Content-Type": "text/plain"})
-
-                        if response_canonical_protein.status_code == 200:
-                            wildtype_sequence = response_canonical_protein.text
-                            wildtype_sequences[ensg_id] = wildtype_sequence
-                        else:
-                            print(f"Failed to fetch canonical protein sequence for {ensg_id}")
-                            wildtype_sequence = None
+                        while True:
+                            response_canonical_protein = requests.get(server + ext_canonical_protein,
+                                                                      headers={"Content-Type": "text/plain"})
+                            if response_canonical_protein.status_code == 200:
+                                wildtype_sequence = response_canonical_protein.text
+                                wildtype_sequences[ensg_id] = wildtype_sequence
+                                break
+                            elif response_canonical_protein.status_code == 429:  # Too Many Requests
+                                retry_after = response_canonical_protein.headers.get("Retry-After")
+                                if retry_after:
+                                    retry_after = int(retry_after)
+                                    print(f"Rate limit exceeded. Retrying after {retry_after} seconds.")
+                                    time.sleep(retry_after)
+                                else:
+                                    # Default to 1 second if Retry-After header is not present
+                                    print("Rate limit exceeded. Retrying after 1 second.")
+                                    time.sleep(1)
+                            else:
+                                print(f"Failed to fetch canonical protein sequence for {ensg_id}")
+                                wildtype_sequence = None
+                                break
                     else:
                         print(f"No canonical transcript found for {ensg_id}")
                         wildtype_sequence = None
@@ -1210,24 +1234,35 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                     print(f"Failed to fetch gene information for {ensg_id}")
                     wildtype_sequence = None
 
-            # Fetch variant sequence from Ensembl
-            response_variant = requests.get(server + ext_variant, headers={"Content-Type": "text/plain"})
-
-            if response_variant.status_code == 200:
-                return response_variant.text, wildtype_sequence
-
-            if response_variant.status_code == 429:  # Too Many Requests
-                retry_after = response_variant.headers.get("Retry-After")
-                if retry_after:
-                    retry_after = int(retry_after)
-                    print(f"Rate limit exceeded. Retrying after {retry_after} seconds.")
-                    time.sleep(retry_after)
+            if canonical_transcript_id != transcript_id:
+                response_variant = requests.get(server + ext_variant, headers={"Content-Type": "text/plain"})
+                if response_variant.status_code == 200:
+                    return response_variant.text, wildtype_sequence, wildtype_sequences
+                if response_variant.status_code == 429:  # Too Many Requests
+                    retry_after = response_variant.headers.get("Retry-After")
+                    if retry_after:
+                        retry_after = int(retry_after)
+                        print(f"Rate limit exceeded. Retrying after {retry_after} seconds.")
+                        time.sleep(retry_after)
+                    else:
+                        # Default to 1 second if Retry-After header is not present
+                        print("Rate limit exceeded. Retrying after 1 second.")
+                        time.sleep(1)
                 else:
-                    # Default to 1 second if Retry-After header is not present
-                    print("Rate limit exceeded. Retrying after 1 second.")
-                    time.sleep(1)
+                    response_variant.raise_for_status()
             else:
-                response_variant.raise_for_status()
+                variant_sequence = wildtype_sequence
+                return variant_sequence, wildtype_sequence, wildtype_sequences
+
+    def get_esm_embeddings(self, wt_seq, mt_seq):
+        inputs = self.esm_tokenizer([wt_seq, mt_seq])
+        outputs = self.esm_model(**inputs)
+        last_hidden_states = outputs.last_hidden_state
+        x = last_hidden_states.detach()
+        out = x.mean(axis=1)
+        print('joe')
+        return out
+
 
     def fetch_pathogenicity_embeddings(self, variant_am_features):
         hparams = self.config['hyperparameters']['pathogenicity_autoencoder']
