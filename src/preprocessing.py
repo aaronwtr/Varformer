@@ -906,6 +906,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             self.gcp_rcnt_neg = gcp.rcnt_neg_data
             self.gcp_pharos_neg = gcp.pharos_neg_data
 
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         print("Preparing variant features...")
         self.variant_gh_data(config['hyperparameters']['pathogenicity_embedding'])
 
@@ -916,7 +918,17 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.var_stc_features = self.variant_structure_input()
 
         print("Obtaining ESM-2 protein sequence embeddings...")
-        self.esm_model, self.esm_tokenizer = esm.pretrained.esm2_t48_15B_UR50D()
+
+        if self.device == 'cuda':
+            # self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t48_15B_UR50D()
+            # self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t36_3B_UR50D()
+            self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t33_650M_UR50D()
+            self.esm_model = self.esm_model.half()
+        else:
+            self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t33_650M_UR50D()
+        self.esm_model = self.esm_model.to(self.device)
+        self.esm_batch_converter = self.esm_alphabet.get_batch_converter()
+        self.esm_model.eval()
         self.var_seq_features = self.variant_sequence_input()
         print('joe')
 
@@ -1153,6 +1165,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         #  [ ] get ESM-2 embeddings for the wildtype and variant sequences
         #       [X] check if it is better to first collect all seqs and then calculate embeddings or do it on the fly
         #       --> embed as pairs (2, 1280) on the fly
+        #       [ ] accelerate esm model inference with gpu if available and run on cluster
         #  [ ] subtract the wildtype embedding from the variant embedding to get the final embedding
         #  high-level idea: collate the embeddings per gene and save them in a dictionary to prepare them for
         #  autoencoder
@@ -1165,7 +1178,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         mt_aas = [aa.split('/')[1] for aa in amino_acids]
         wildtype_sequences = {}
 
-        for i, (transcript_id, ensg_id) in enumerate(zip(transcript_ids, ensg_ids)):
+        num_genes = len(transcript_ids)
+
+        for i, (transcript_id, ensg_id) in tqdm(enumerate(zip(transcript_ids, ensg_ids)), total=num_genes):
             var_seq, wt_seq, wildtype_sequences = self.get_protein_sequence(transcript_id, ensg_id, wildtype_sequences)
 
             var_seq = list(var_seq)
@@ -1173,8 +1188,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             var_seq = ''.join(var_seq)
 
             wt_emb, mt_emb = self.get_esm_embeddings(wt_seq, var_seq)
-
-            print('joe')
+            # todo: think about how to represent these (get inspiration from other two variant modules)
 
     @staticmethod
     def get_protein_sequence(transcript_id, ensg_id, wildtype_sequences):
@@ -1255,14 +1269,24 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 return variant_sequence, wildtype_sequence, wildtype_sequences
 
     def get_esm_embeddings(self, wt_seq, mt_seq):
-        inputs = self.esm_tokenizer([wt_seq, mt_seq])
-        outputs = self.esm_model(**inputs)
-        last_hidden_states = outputs.last_hidden_state
-        x = last_hidden_states.detach()
-        out = x.mean(axis=1)
-        print('joe')
-        return out
+        seqs = [
+            ("wt_seq", wt_seq),
+            ("mt_seq", mt_seq)
+        ]
+        batch_labels, batch_strs, batch_tokens = self.esm_batch_converter(seqs)
+        batch_lens = (batch_tokens != self.esm_alphabet.padding_idx).sum(1)
 
+        # Extract per-residue representations (on device)
+        with torch.no_grad():
+            results = self.esm_model(batch_tokens.to(self.device), repr_layers=[33], return_contacts=False)
+        token_representations = results["representations"][33]
+
+        # Generate per-sequence representations via averaging
+        # NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
+        sequence_representations = []
+        for i, tokens_len in enumerate(batch_lens):
+            sequence_representations.append(token_representations[i, 1: tokens_len - 1].mean(0))
+        return sequence_representations
 
     def fetch_pathogenicity_embeddings(self, variant_am_features):
         hparams = self.config['hyperparameters']['pathogenicity_autoencoder']
