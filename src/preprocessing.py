@@ -904,6 +904,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             self.gcp_rcnt_neg = gcp.rcnt_neg_data
             self.gcp_pharos_neg = gcp.pharos_neg_data
 
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
         print("Preparing variant features...")
         self.variant_gh_data(config['hyperparameters']['pathogenicity_embedding'])
 
