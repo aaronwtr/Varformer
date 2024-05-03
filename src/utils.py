@@ -573,14 +573,20 @@ def pooling(x, reduct_dim):
     return pooled_x
 
 
-def aa_to_idx(aa: str) -> int:
+def aa_to_idx(aa: str, dna_encoded=False) -> int:
     """
-    Convert single-letter amino acid codes to index.
+    Convert single-letter amino acid codes to index. NOTE: This contains the non-standard amino acid U!
     """
-    aa_to_idx_map = {
-        'A': 0, 'C': 1, 'D': 2, 'E': 3, 'F': 4, 'G': 5, 'H': 6, 'I': 7, 'K': 8, 'L': 9, 'M': 10, 'N': 11,
-        'P': 12, 'Q': 13, 'R': 14, 'S': 15, 'T': 16, 'U': 17, 'V': 18, 'W': 19, 'Y': 20
-    }
+    if not dna_encoded:
+        aa_to_idx_map = {
+            'A': 0, 'C': 1, 'D': 2, 'E': 3, 'F': 4, 'G': 5, 'H': 6, 'I': 7, 'K': 8, 'L': 9, 'M': 10, 'N': 11,
+            'P': 12, 'Q': 13, 'R': 14, 'S': 15, 'T': 16, 'U': 17, 'V': 18, 'W': 19, 'Y': 20
+        }
+    else:
+        aa_to_idx_map = {
+            'A': 0, 'C': 1, 'D': 2, 'E': 3, 'F': 4, 'G': 5, 'H': 6, 'I': 7, 'K': 8, 'L': 9, 'M': 10, 'N': 11,
+            'P': 12, 'Q': 13, 'R': 14, 'S': 15, 'T': 16, 'V': 17, 'W': 18, 'Y': 19
+        }
     return aa_to_idx_map[aa]
 
 
