@@ -8,8 +8,6 @@ import utils
 import requests
 import time
 
-
-
 import pytorch_lightning as pl
 import pickle as pkl
 import gzip
@@ -1051,79 +1049,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             with gzip.open('../data/features/var_pat_features.pkl.gz', 'rb') as f:
                 return pkl.load(f)
 
-        # if not os.path.exists("../data/alphamissense/variant_am_features.pkl"):
-        #     variant_am_features = {}
-        #     for index, row in tqdm(self.gh_data.iterrows()):
-        #         gene = row['Gene']
-        #         gh_af = row['AF_ELGH']
-        #         am_score = row['am_pathogenicity']
-        #         if gene not in variant_am_features.keys():
-        #             variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
-        #         else:
-        #             variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
-        #     with open('../data/alphamissense/variant_am_features.pkl', 'wb') as fp:
-        #         pkl.dump(variant_am_features, fp)
-        # else:
-        #     variant_am_features = pd.read_pickle('../data/alphamissense/variant_am_features.pkl')
-        #
-        # if self.config['hyperparameters']['pathogenicity_autoencoder']['ae_type'] == "ae":
-        #     if not os.path.exists('autoencoders/checkpoints/variant_pathogenicity_encoder'):
-        #         os.mkdir('autoencoders/checkpoints/variant_pathogenicity_encoder')
-        #     if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_encoder'):
-        #         # if no pre-trained model exists, train one
-        #         print('Pre-training pathogenicity autoencoder...')
-        #
-        #         ae_training.train(variant_am_features, self.config)
-        #         print('Pathogenicity autoencoder trained!')
-        #         print('Embedding pathogenicity data from variant to gene level...')
-        #         if not os.path.exists('../data/alphamissense/embeddings_ae.pkl'):
-        #             embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-        #             with open('../data/alphamissense/embeddings_ae.pkl', 'wb') as fp:
-        #                 pkl.dump(embeddings, fp)
-        #         else:
-        #             with open('../data/alphamissense/embeddings_ae.pkl', 'rb') as fp:
-        #                 embeddings = pkl.load(fp)
-        #         self.pathogenicity_embeddings = embeddings
-        #     else:
-        #         # if pre-trained model exists, load it
-        #         print('Pretrained autoencoder found. Loading pathogenicity embeddings...')
-        #         if not os.path.exists('../data/alphamissense/embeddings_ae.pkl'):
-        #             embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-        #             with open('../data/alphamissense/embeddings_ae.pkl', 'wb') as fp:
-        #                 pkl.dump(embeddings, fp)
-        #         else:
-        #             with open('../data/alphamissense/embeddings_ae.pkl', 'rb') as fp:
-        #                 embeddings = pkl.load(fp)
-        #         self.pathogenicity_embeddings = embeddings
-        # else:
-        #     if not os.path.exists('autoencoders/checkpoints/variant_pathogenicity_vae'):
-        #         os.mkdir('autoencoders/checkpoints/variant_pathogenicity_vae')
-        #     if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_vae'):
-        #         print('Pre-training pathogenicity VAE...')
-        #
-        #         vae_training.train(variant_am_features, self.config)
-        #         print('Pathogenicity VAE trained!')
-        #         print('Embedding pathogenicity data from variant to gene level...')
-        #         if not os.path.exists('../data/alphamissense/embeddings_vae.pkl'):
-        #             embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-        #             with open('../data/alphamissense/embeddings_vae.pkl', 'wb') as fp:
-        #                 pkl.dump(embeddings, fp)
-        #         else:
-        #             with open('../data/alphamissense/embeddings_vae.pkl', 'rb') as fp:
-        #                 embeddings = pkl.load(fp)
-        #         self.pathogenicity_embeddings = embeddings
-        #     else:
-        #         # if pre-trained model exists, load it
-        #         print('Pretrained VAE found. Loading pathogenicity embeddings...')
-        #         if not os.path.exists('../data/alphamissense/embeddings_vae.pkl'):
-        #             embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-        #             with open('../data/alphamissense/embeddings_vae.pkl', 'wb') as fp:
-        #                 pkl.dump(embeddings, fp)
-        #         else:
-        #             with open('../data/alphamissense/embeddings_vae.pkl', 'rb') as fp:
-        #                 embeddings = pkl.load(fp)
-        #         self.pathogenicity_embeddings = embeddings
-
     def variant_structure_input(self):
         af_data = self.alphafold_extractor()
 
@@ -1169,12 +1094,15 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         #  [ ] subtract the wildtype embedding from the variant embedding to get the final embedding
         #  high-level idea: collate the embeddings per gene and save them in a dictionary to prepare them for
         #  autoencoder
+        var_seq_features = {}
+
         var_seq_data = self.gh_data.drop_duplicates(subset=['Feature'])
 
         transcript_ids = var_seq_data['Feature'].tolist()
         ensg_ids = var_seq_data['Gene'].tolist()
-        prot_pos = var_seq_data['Protein_position'].tolist()
+        prot_pos = var_seq_data['Protein_pos_shard'].tolist()
         amino_acids = var_seq_data['Amino_acids'].tolist()
+        ref_aas = [aa.split('/')[0] for aa in amino_acids]
         mt_aas = [aa.split('/')[1] for aa in amino_acids]
         wildtype_sequences = {}
 
@@ -1182,13 +1110,47 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         for i, (transcript_id, ensg_id) in tqdm(enumerate(zip(transcript_ids, ensg_ids)), total=num_genes):
             var_seq, wt_seq, wildtype_sequences = self.get_protein_sequence(transcript_id, ensg_id, wildtype_sequences)
-
             var_seq = list(var_seq)
             var_seq[prot_pos[i] - 1] = mt_aas[i]
             var_seq = ''.join(var_seq)
 
-            wt_emb, mt_emb = self.get_esm_embeddings(wt_seq, var_seq)
-            # todo: think about how to represent these (get inspiration from other two variant modules)
+            ref_idx = aa_to_idx(ref_aas[i], dna_encoded=True)
+            alt_idx = aa_to_idx(mt_aas[i], dna_encoded=True)
+
+            if wt_seq > 1022:  # split the sequence into chunks of 1022 (ESM-2 limitation)
+                wt_seqs = [wt_seq[i:i + 1022] for i in range(0, len(wt_seq), 1022)]
+                var_seqs = [var_seq[i:i + 1022] for i in range(0, len(var_seq), 1022)]
+                variant_chunk_index = (prot_pos[i] - 1) // 1022
+                for j, (wt_seq, var_seq) in enumerate(zip(wt_seqs, var_seqs)):
+                    if j == variant_chunk_index:
+                        seqs = [
+                            ("wt_seq", wt_seq),
+                            ("mt_seq", var_seq)
+                        ]
+                        wt_emb, mt_emb = self.get_esm_embeddings(seqs)
+            else:
+                seqs = [
+                    ("wt_seq", wt_seq),
+                    ("mt_seq", var_seq)
+                ]
+                wt_emb, mt_emb = self.get_esm_embeddings(seqs)
+
+            var_emb = mt_emb - wt_emb
+
+            if ensg_id not in var_seq_features.keys():
+                matrix_shape = (20 * 20 * 4096, 1280)
+                var_seq_matrix = sparse.lil_matrix(matrix_shape, dtype=np.float32)
+                matrix_index = prot_pos[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
+                var_seq_matrix[matrix_index, :] = var_emb
+                var_seq_features[ensg_id] = var_seq_matrix
+            else:
+                var_seq_matrix = var_seq_features[ensg_id]
+                matrix_index = prot_pos[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
+                if var_seq_matrix[matrix_index, :] != 0:    # dealing with splice variants
+                    prev_var_emb = var_seq_matrix[matrix_index, :]
+                    var_emb = (prev_var_emb + var_emb) / 2
+                var_seq_matrix[matrix_index, :] = var_emb
+                var_seq_features[ensg_id] = var_seq_matrix
 
     @staticmethod
     def get_protein_sequence(transcript_id, ensg_id, wildtype_sequences):
@@ -1268,11 +1230,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 variant_sequence = wildtype_sequence
                 return variant_sequence, wildtype_sequence, wildtype_sequences
 
-    def get_esm_embeddings(self, wt_seq, mt_seq):
-        seqs = [
-            ("wt_seq", wt_seq),
-            ("mt_seq", mt_seq)
-        ]
+    def get_esm_embeddings(self, seqs):
         batch_labels, batch_strs, batch_tokens = self.esm_batch_converter(seqs)
         batch_lens = (batch_tokens != self.esm_alphabet.padding_idx).sum(1)
 
