@@ -910,6 +910,18 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         print("Processing AlphaMissense data...")
         #self.var_pat_features = self.variant_pathogenicity_input()
         # self.var_stc_features = self.variant_structure_input()
+        print("Obtaining ESM-2 protein sequence embeddings...")
+
+        if self.device == 'cuda':
+            # self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t48_15B_UR50D()
+            # self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t36_3B_UR50D()
+            self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t33_650M_UR50D()
+            self.esm_model = self.esm_model.half()
+        else:
+            self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t33_650M_UR50D()
+        self.esm_model = self.esm_model.to(self.device)
+        self.esm_batch_converter = self.esm_alphabet.get_batch_converter()
+        self.esm_model.eval()
         self.var_seq_features = self.variant_sequence_input()
         import sys
         sys.exit()
