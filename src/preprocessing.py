@@ -5,6 +5,8 @@ import warnings
 import argparse
 import torch
 import utils
+import requests
+import time
 
 import pytorch_lightning as pl
 import pickle as pkl
@@ -12,7 +14,7 @@ import gzip
 import scipy.sparse as sparse
 import pandas as pd
 import numpy as np
-import dataloader as dl
+import src.dataloader as dl
 
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,6 +22,7 @@ from functools import partial
 from sklearn.model_selection import train_test_split
 from Bio import SeqIO
 from torch.utils.data import DataLoader
+import esm
 
 #from autoencoders.ae import AutoencoderTrainer
 #from autoencoders.vae import VAETrainer
@@ -906,8 +909,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         print("Processing AlphaMissense data...")
         #self.var_pat_features = self.variant_pathogenicity_input()
-        self.var_stc_features = self.variant_structure_input()
-        # self.var_seq_features = self.variant_sequence_input()
+        # self.var_stc_features = self.variant_structure_input()
+        self.var_seq_features = self.variant_sequence_input()
         import sys
         sys.exit()
         print('joe')
@@ -1152,63 +1155,71 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         #  [ ] subtract the wildtype embedding from the variant embedding to get the final embedding
         #  high-level idea: collate the embeddings per gene and save them in a dictionary to prepare them for
         #  autoencoder
-        var_seq_features = {}
+        if not os.path.exists('data/features/var_seq_features.pkl.gz'):
+            var_seq_features = {}
 
-        var_seq_data = self.gh_data.drop_duplicates(subset=['Feature'])
+            var_seq_data = self.gh_data.drop_duplicates(subset=['Feature'])
 
-        transcript_ids = var_seq_data['Feature'].tolist()
-        ensg_ids = var_seq_data['Gene'].tolist()
-        prot_pos = var_seq_data['Protein_pos_shard'].tolist()
-        amino_acids = var_seq_data['Amino_acids'].tolist()
-        ref_aas = [aa.split('/')[0] for aa in amino_acids]
-        mt_aas = [aa.split('/')[1] for aa in amino_acids]
-        wildtype_sequences = {}
+            transcript_ids = var_seq_data['Feature'].tolist()
+            ensg_ids = var_seq_data['Gene'].tolist()
+            prot_pos = var_seq_data['Protein_pos_shard'].tolist()
+            amino_acids = var_seq_data['Amino_acids'].tolist()
+            ref_aas = [aa.split('/')[0] for aa in amino_acids]
+            mt_aas = [aa.split('/')[1] for aa in amino_acids]
+            wildtype_sequences = {}
 
-        num_genes = len(transcript_ids)
+            num_genes = len(transcript_ids)
 
-        for i, (transcript_id, ensg_id) in tqdm(enumerate(zip(transcript_ids, ensg_ids)), total=num_genes):
-            var_seq, wt_seq, wildtype_sequences = self.get_protein_sequence(transcript_id, ensg_id, wildtype_sequences)
-            var_seq = list(var_seq)
-            var_seq[prot_pos[i] - 1] = mt_aas[i]
-            var_seq = ''.join(var_seq)
+            for i, (transcript_id, ensg_id) in tqdm(enumerate(zip(transcript_ids, ensg_ids)), total=num_genes):
+                var_seq, wt_seq, wildtype_sequences = self.get_protein_sequence(transcript_id, ensg_id, wildtype_sequences)
+                var_seq = list(var_seq)
+                var_seq[prot_pos[i] - 1] = mt_aas[i]
+                var_seq = ''.join(var_seq)
 
-            ref_idx = aa_to_idx(ref_aas[i], dna_encoded=True)
-            alt_idx = aa_to_idx(mt_aas[i], dna_encoded=True)
+                ref_idx = aa_to_idx(ref_aas[i], dna_encoded=True)
+                alt_idx = aa_to_idx(mt_aas[i], dna_encoded=True)
 
-            if wt_seq > 1022:  # split the sequence into chunks of 1022 (ESM-2 limitation)
-                wt_seqs = [wt_seq[i:i + 1022] for i in range(0, len(wt_seq), 1022)]
-                var_seqs = [var_seq[i:i + 1022] for i in range(0, len(var_seq), 1022)]
-                variant_chunk_index = (prot_pos[i] - 1) // 1022
-                for j, (wt_seq, var_seq) in enumerate(zip(wt_seqs, var_seqs)):
-                    if j == variant_chunk_index:
-                        seqs = [
-                            ("wt_seq", wt_seq),
-                            ("mt_seq", var_seq)
-                        ]
-                        wt_emb, mt_emb = self.get_esm_embeddings(seqs)
-            else:
-                seqs = [
-                    ("wt_seq", wt_seq),
-                    ("mt_seq", var_seq)
-                ]
-                wt_emb, mt_emb = self.get_esm_embeddings(seqs)
+                if wt_seq > 1022:  # split the sequence into chunks of 1022 (ESM-2 limitation)
+                    wt_seqs = [wt_seq[i:i + 1022] for i in range(0, len(wt_seq), 1022)]
+                    var_seqs = [var_seq[i:i + 1022] for i in range(0, len(var_seq), 1022)]
+                    variant_chunk_index = (prot_pos[i] - 1) // 1022
+                    for j, (wt_seq, var_seq) in enumerate(zip(wt_seqs, var_seqs)):
+                        if j == variant_chunk_index:
+                            seqs = [
+                                ("wt_seq", wt_seq),
+                                ("mt_seq", var_seq)
+                            ]
+                            wt_emb, mt_emb = self.get_esm_embeddings(seqs)
+                else:
+                    seqs = [
+                        ("wt_seq", wt_seq),
+                        ("mt_seq", var_seq)
+                    ]
+                    wt_emb, mt_emb = self.get_esm_embeddings(seqs)
 
-            var_emb = mt_emb - wt_emb
+                var_emb = mt_emb - wt_emb
 
-            if ensg_id not in var_seq_features.keys():
-                matrix_shape = (20 * 20 * 4096, 1280)
-                var_seq_matrix = sparse.lil_matrix(matrix_shape, dtype=np.float32)
-                matrix_index = prot_pos[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
-                var_seq_matrix[matrix_index, :] = var_emb
-                var_seq_features[ensg_id] = var_seq_matrix
-            else:
-                var_seq_matrix = var_seq_features[ensg_id]
-                matrix_index = prot_pos[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
-                if var_seq_matrix[matrix_index, :] != 0:  # dealing with splice variants
-                    prev_var_emb = var_seq_matrix[matrix_index, :]
-                    var_emb = (prev_var_emb + var_emb) / 2
-                var_seq_matrix[matrix_index, :] = var_emb
-                var_seq_features[ensg_id] = var_seq_matrix
+                if ensg_id not in var_seq_features.keys():
+                    matrix_shape = (20 * 20 * 4096, 1280)
+                    var_seq_matrix = sparse.lil_matrix(matrix_shape, dtype=np.float32)
+                    matrix_index = prot_pos[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
+                    var_seq_matrix[matrix_index, :] = var_emb
+                    var_seq_features[ensg_id] = var_seq_matrix
+                else:
+                    var_seq_matrix = var_seq_features[ensg_id]
+                    matrix_index = prot_pos[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
+                    if var_seq_matrix[matrix_index, :] != 0:  # dealing with splice variants
+                        prev_var_emb = var_seq_matrix[matrix_index, :]
+                        var_emb = (prev_var_emb + var_emb) / 2
+                    var_seq_matrix[matrix_index, :] = var_emb
+                    var_seq_features[ensg_id] = var_seq_matrix
+
+            with gzip.open('data/features/var_stc_features.pkl.gz', 'wb') as f:
+                pkl.dump(var_seq_features, f)
+            return var_seq_features
+        else:
+            with gzip.open('data/features/var_seq_features.pkl.gz', 'rb') as f:
+                return pkl.load(f)
 
     @staticmethod
     def get_protein_sequence(transcript_id, ensg_id, wildtype_sequences):
