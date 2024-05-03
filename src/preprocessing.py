@@ -14,7 +14,7 @@ import gzip
 import scipy.sparse as sparse
 import pandas as pd
 import numpy as np
-import src.dataloader as dl
+import dataloader as dl
 
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
