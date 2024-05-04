@@ -1181,11 +1181,15 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             ref_aas = [aa.split('/')[0] for aa in amino_acids]
             mt_aas = [aa.split('/')[1] for aa in amino_acids]
             wildtype_sequences = {}
+            print(len(prot_pos))
+            print(len(mt_aas))
 
             num_genes = len(transcript_ids)
 
             for i, (transcript_id, ensg_id) in tqdm(enumerate(zip(transcript_ids, ensg_ids)), total=num_genes):
                 var_seq, wt_seq, wildtype_sequences = self.get_protein_sequence(transcript_id, ensg_id, wildtype_sequences)
+                if var_seq is None or wt_seq is None:
+                    continue
                 var_seq = list(var_seq)
                 var_seq[prot_pos[i] - 1] = mt_aas[i]
                 var_seq = ''.join(var_seq)
@@ -1193,7 +1197,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 ref_idx = aa_to_idx(ref_aas[i], dna_encoded=True)
                 alt_idx = aa_to_idx(mt_aas[i], dna_encoded=True)
 
-                if wt_seq > 1022:  # split the sequence into chunks of 1022 (ESM-2 limitation)
+                if len(wt_seq) > 1022:  # split the sequence into chunks of 1022 (ESM-2 limitation)
                     wt_seqs = [wt_seq[i:i + 1022] for i in range(0, len(wt_seq), 1022)]
                     var_seqs = [var_seq[i:i + 1022] for i in range(0, len(var_seq), 1022)]
                     variant_chunk_index = (prot_pos[i] - 1) // 1022
@@ -1212,21 +1216,24 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                     wt_emb, mt_emb = self.get_esm_embeddings(seqs)
 
                 var_emb = mt_emb - wt_emb
+                print(f"\nEmbedding for mutation {ref_aas[i]} -> {mt_aas[i]} at amino acid {prot_pos[i]}: \n "
+                          "{var_emb}\n")
 
                 if ensg_id not in var_seq_features.keys():
                     matrix_shape = (20 * 20 * 4096, 1280)
                     var_seq_matrix = sparse.lil_matrix(matrix_shape, dtype=np.float32)
                     matrix_index = prot_pos[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
                     var_seq_matrix[matrix_index, :] = var_emb
-                    var_seq_features[ensg_id] = var_seq_matrix
+                    var_seq_features[ensg_id] = var_seq_matrix.tocsr()
                 else:
-                    var_seq_matrix = var_seq_features[ensg_id]
+                    var_seq_matrix = var_seq_features[ensg_id].tolil()
                     matrix_index = prot_pos[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
-                    if var_seq_matrix[matrix_index, :] != 0:  # dealing with splice variants
-                        prev_var_emb = var_seq_matrix[matrix_index, :]
-                        var_emb = (prev_var_emb + var_emb) / 2
+                    if var_seq_matrix[matrix_index, :].count_nonzero() > 0:
+                        prev_var_emb = var_seq_matrix[matrix_index, :].toarray()  # Convert to dense matrix
+                        var_emb_dense = var_emb.numpy()  # Convert tensor to NumPy array
+                        var_emb = (prev_var_emb + var_emb_dense) / 2  # Add the dense matrices
                     var_seq_matrix[matrix_index, :] = var_emb
-                    var_seq_features[ensg_id] = var_seq_matrix
+                    var_seq_features[ensg_id] = var_seq_matrix.tocsr()
 
             with gzip.open('data/features/var_stc_features.pkl.gz', 'wb') as f:
                 pkl.dump(var_seq_features, f)
@@ -1282,6 +1289,10 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                                     # Default to 1 second if Retry-After header is not present
                                     print("Rate limit exceeded. Retrying after 1 second.")
                                     time.sleep(1)
+                            elif response_canonical_protein.status_code == 400:
+                                print(f"No known protein sequence for {transcript_id}")
+                                wildtype_sequence = None
+                                break
                             else:
                                 print(f"Failed to fetch canonical protein sequence for {ensg_id}")
                                 wildtype_sequence = None
@@ -1307,6 +1318,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                         # Default to 1 second if Retry-After header is not present
                         print("Rate limit exceeded. Retrying after 1 second.")
                         time.sleep(1)
+                elif response_variant.status_code == 400:
+                    print(f"No known protein sequence for {transcript_id}")
+                    return None, wildtype_sequence, wildtype_sequences
                 else:
                     response_variant.raise_for_status()
             else:
@@ -1317,16 +1331,18 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         batch_labels, batch_strs, batch_tokens = self.esm_batch_converter(seqs)
         batch_lens = (batch_tokens != self.esm_alphabet.padding_idx).sum(1)
 
-        # Extract per-residue representations (on device)
+        # Generate the embeddings on the CUDA device
         with torch.no_grad():
-            results = self.esm_model(batch_tokens.to(self.device), repr_layers=[33], return_contacts=False)
-        token_representations = results["representations"][33]
+            results = self.esm_model(batch_tokens.to(self.device), repr_layers=[33])
+
+        # Get the embeddings from the last layer
+        token_embeddings = results["representations"][33].cpu()
 
         # Generate per-sequence representations via averaging
         # NOTE: token 0 is always a beginning-of-sequence token, so the first residue is token 1.
         sequence_representations = []
         for i, tokens_len in enumerate(batch_lens):
-            sequence_representations.append(token_representations[i, 1: tokens_len - 1].mean(0))
+            sequence_representations.append(token_embeddings[i, 1: tokens_len - 1].mean(0))
         return sequence_representations
 
     def fetch_pathogenicity_embeddings(self, variant_am_features):
