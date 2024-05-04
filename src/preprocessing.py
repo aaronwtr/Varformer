@@ -1094,6 +1094,11 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         #  [ ] subtract the wildtype embedding from the variant embedding to get the final embedding
         #  high-level idea: collate the embeddings per gene and save them in a dictionary to prepare them for
         #  autoencoder
+
+        # TODO: just get embeddings for the genes instead of the transcript. Also look into what these transcripts
+        #  represent. E.g., there are multiple sequences per transcripts
+
+
         if not os.path.exists('data/features/var_seq_features.pkl.gz'):
             var_seq_features = {}
 
@@ -1119,7 +1124,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 ref_idx = aa_to_idx(ref_aas[i], dna_encoded=True)
                 alt_idx = aa_to_idx(mt_aas[i], dna_encoded=True)
 
-                if wt_seq > 1022:  # split the sequence into chunks of 1022 (ESM-2 limitation)
+                if len(wt_seq) > 1022:  # split the sequence into chunks of 1022 (ESM-2 limitation)
                     wt_seqs = [wt_seq[i:i + 1022] for i in range(0, len(wt_seq), 1022)]
                     var_seqs = [var_seq[i:i + 1022] for i in range(0, len(var_seq), 1022)]
                     variant_chunk_index = (prot_pos[i] - 1) // 1022
