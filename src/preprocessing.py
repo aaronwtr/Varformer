@@ -1176,13 +1176,12 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
             transcript_ids = var_seq_data['Feature'].tolist()
             ensg_ids = var_seq_data['Gene'].tolist()
-            prot_pos = var_seq_data['Protein_pos_shard'].tolist()
+            prot_pos = var_seq_data['Protein_position'].tolist()
+            prot_pos_shard = var_seq_data['Protein_pos_shard'].tolist()
             amino_acids = var_seq_data['Amino_acids'].tolist()
             ref_aas = [aa.split('/')[0] for aa in amino_acids]
             mt_aas = [aa.split('/')[1] for aa in amino_acids]
             wildtype_sequences = {}
-            print(len(prot_pos))
-            print(len(mt_aas))
 
             num_genes = len(transcript_ids)
 
@@ -1222,12 +1221,12 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 if ensg_id not in var_seq_features.keys():
                     matrix_shape = (20 * 20 * 4096, 1280)
                     var_seq_matrix = sparse.lil_matrix(matrix_shape, dtype=np.float32)
-                    matrix_index = prot_pos[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
+                    matrix_index = prot_pos_shard[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
                     var_seq_matrix[matrix_index, :] = var_emb
                     var_seq_features[ensg_id] = var_seq_matrix.tocsr()
                 else:
                     var_seq_matrix = var_seq_features[ensg_id].tolil()
-                    matrix_index = prot_pos[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
+                    matrix_index = prot_pos_shard[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
                     if var_seq_matrix[matrix_index, :].count_nonzero() > 0:
                         prev_var_emb = var_seq_matrix[matrix_index, :].toarray()  # Convert to dense matrix
                         var_emb_dense = var_emb.numpy()  # Convert tensor to NumPy array
