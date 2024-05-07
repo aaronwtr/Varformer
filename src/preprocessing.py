@@ -905,7 +905,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             self.gcp_pharos_neg = gcp.pharos_neg_data
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        
+
         print("Preparing variant features...")
         self.variant_gh_data(config['hyperparameters']['pathogenicity_embedding'])
 
@@ -1170,31 +1170,58 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         #  high-level idea: collate the embeddings per gene and save them in a dictionary to prepare them for
         #  autoencoder
         if not os.path.exists('data/features/var_seq_features.pkl.gz'):
-            var_seq_features = {}
+            # Load the latest checkpoint if it exists
+            checkpoint_path = 'data/features/var_seq_features_checkpoint_1.pkl.gz'
+            if os.path.exists(checkpoint_path):
+                with gzip.open(checkpoint_path, 'rb') as f:
+                    var_seq_features_ckpt = pkl.load(f)
+                var_seq_features = var_seq_features_ckpt
+            else:
+                var_seq_features = {}
+                var_seq_features_ckpt = {}
+
 
             var_seq_data = self.gh_data.drop_duplicates(subset=['Feature'])
+
+            # var_seq_data_split = np.array_split(var_seq_data, 8)
+            # var_seq_data = var_seq_data_split[0]
 
             transcript_ids = var_seq_data['Feature'].tolist()
             ensg_ids = var_seq_data['Gene'].tolist()
             prot_pos = var_seq_data['Protein_position'].tolist()
-            prot_pos_shard = var_seq_data['Protein_pos_shard'].tolist()
+            # prot_pos_shard = var_seq_data['Protein_pos_shard'].tolist()
             amino_acids = var_seq_data['Amino_acids'].tolist()
             ref_aas = [aa.split('/')[0] for aa in amino_acids]
             mt_aas = [aa.split('/')[1] for aa in amino_acids]
             wildtype_sequences = {}
+            gene_counters = {}
 
             num_genes = len(transcript_ids)
-
+            ref_aa_count = 0
+            iso_mismatch_count = 0
+            no_enst_seq_count = 0
+            counter = 0
             for i, (transcript_id, ensg_id) in tqdm(enumerate(zip(transcript_ids, ensg_ids)), total=num_genes):
-                var_seq, wt_seq, wildtype_sequences = self.get_protein_sequence(transcript_id, ensg_id, wildtype_sequences)
-                if var_seq is None or wt_seq is None:
+                if ensg_id in var_seq_features_ckpt.keys():
                     continue
+
+                var_seq, wt_seq, wildtype_sequences = self.get_protein_sequence(transcript_id, ensg_id,
+                                                                                wildtype_sequences)
+                if var_seq is None or wt_seq is None:
+                    no_enst_seq_count += 1
+                    continue
+                if prot_pos[i] - 1 >= len(var_seq):
+                    print("Skipping because of isoform mismatch. . .")
+                    iso_mismatch_count += 1
+                    continue
+                if ref_aas[i] != var_seq[prot_pos[i] - 1]:
+                    print("Skipping because of reference amino acid mismatch. . .")
+                    ref_aa_count += 1
+                    continue
+
                 var_seq = list(var_seq)
                 var_seq[prot_pos[i] - 1] = mt_aas[i]
                 var_seq = ''.join(var_seq)
-
-                ref_idx = aa_to_idx(ref_aas[i], dna_encoded=True)
-                alt_idx = aa_to_idx(mt_aas[i], dna_encoded=True)
 
                 if len(wt_seq) > 1022:  # split the sequence into chunks of 1022 (ESM-2 limitation)
                     wt_seqs = [wt_seq[i:i + 1022] for i in range(0, len(wt_seq), 1022)]
@@ -1215,48 +1242,71 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                     wt_emb, mt_emb = self.get_esm_embeddings(seqs)
 
                 var_emb = mt_emb - wt_emb
-                print(f"\nEmbedding for mutation {ref_aas[i]} -> {mt_aas[i]} at amino acid {prot_pos[i]}: \n "
-                          "{var_emb}\n")
 
+                row_idx = 4096 // 2
                 if ensg_id not in var_seq_features.keys():
-                    matrix_shape = (20 * 20 * 4096, 1280)
+                    matrix_shape = (4096, 1280)
                     var_seq_matrix = sparse.lil_matrix(matrix_shape, dtype=np.float32)
-                    matrix_index = prot_pos_shard[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
-                    var_seq_matrix[matrix_index, :] = var_emb
+                    var_seq_matrix[row_idx, :] = var_emb
                     var_seq_features[ensg_id] = var_seq_matrix.tocsr()
+                    gene_counters[ensg_id] = 1  # Initialize counter for this gene
                 else:
                     var_seq_matrix = var_seq_features[ensg_id].tolil()
-                    matrix_index = prot_pos_shard[i] + (alt_idx * 4096) + (ref_idx * 4096 * 20)
-                    if var_seq_matrix[matrix_index, :].count_nonzero() > 0:
-                        prev_var_emb = var_seq_matrix[matrix_index, :].toarray()  # Convert to dense matrix
-                        var_emb_dense = var_emb.numpy()  # Convert tensor to NumPy array
-                        var_emb = (prev_var_emb + var_emb_dense) / 2  # Add the dense matrices
-                    var_seq_matrix[matrix_index, :] = var_emb
-                    var_seq_features[ensg_id] = var_seq_matrix.tocsr()
+                    gene_counter = gene_counters[ensg_id]
+                    offset = (gene_counter + 1) // 2  # Calculate offset from the middle row
+                    if gene_counter % 2 == 0:
+                        row_idx -= offset
+                    else:
+                        row_idx += offset
 
-            with gzip.open('data/features/var_stc_features.pkl.gz', 'wb') as f:
+                    var_seq_matrix[row_idx, :] = var_emb
+                    var_seq_features[ensg_id] = var_seq_matrix.tocsr()
+                    gene_counters[ensg_id] += 1  # Increment counter for this gene
+
+                counter += 1
+                if counter >= 10:
+                    # Save a checkpoint
+                    with gzip.open(checkpoint_path, 'wb') as f:
+                        pkl.dump(var_seq_features, f)
+                    counter = 0
+
+            print(f"Finished! Following are the statistics for the missing embeddings:'n")
+            print(f"Number of reference amino acid mismatches: {ref_aa_count}\n")
+            print(f"Number of isoform mismatches: {iso_mismatch_count}\n")
+            print(f"Number of missing ENST sequences: {no_enst_seq_count}\n")
+
+            with gzip.open('data/features/var_seq_features_1.pkl.gz', 'wb') as f:
                 pkl.dump(var_seq_features, f)
             return var_seq_features
         else:
-            with gzip.open('data/features/var_seq_features.pkl.gz', 'rb') as f:
+            with gzip.open('data/features/var_seq_features_1.pkl.gz', 'rb') as f:
                 return pkl.load(f)
 
     @staticmethod
-    def get_protein_sequence(transcript_id, ensg_id, wildtype_sequences):
+    def get_protein_sequence(transcript_id, ensg_id, wildtype_sequences, max_retries=10, retry_delay=5):
         server = "https://rest.ensembl.org"
         ext_variant = f"/sequence/id/{transcript_id}?type=protein"
         ext_wildtype = f"/lookup/id/{ensg_id}?expand=1"
 
-        while True:
-            # Check if wildtype sequence is already in the dictionary
-            canonical_transcript_id = None
-            if ensg_id in list(wildtype_sequences.keys()):
-                wildtype_sequence = wildtype_sequences[ensg_id]
-            else:
-                # Fetch gene information from Ensembl to get the canonical transcript
-                response_wildtype = requests.get(server + ext_wildtype, headers={"Content-Type": "application/json"})
+        retry_count = 0
 
-                if response_wildtype.status_code == 200:
+        while retry_count < max_retries:
+            try:
+                # Check if wildtype sequence is already in the dictionary
+                canonical_transcript_id = None
+                if ensg_id in list(wildtype_sequences.keys()):
+                    wildtype_sequence = wildtype_sequences[ensg_id]
+                else:
+                    # Fetch gene information from Ensembl to get the canonical transcript
+                    response_wildtype = requests.get(server + ext_wildtype,
+                                                     headers={"Content-Type": "application/json"})
+                    # catch 400 error
+                    if response_wildtype.status_code == 400:
+                        print(f"Bad request for {ensg_id}")
+                        return None, None, wildtype_sequences
+
+                    response_wildtype.raise_for_status()  # Raise an exception for non-2xx status codes
+
                     gene_data = response_wildtype.json()
 
                     # Find the canonical transcript
@@ -1271,60 +1321,43 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
                         # Fetch canonical protein sequence from Ensembl
                         ext_canonical_protein = f"/sequence/id/{canonical_transcript_id}?type=protein"
-                        while True:
-                            response_canonical_protein = requests.get(server + ext_canonical_protein,
-                                                                      headers={"Content-Type": "text/plain"})
-                            if response_canonical_protein.status_code == 200:
-                                wildtype_sequence = response_canonical_protein.text
-                                wildtype_sequences[ensg_id] = wildtype_sequence
-                                break
-                            elif response_canonical_protein.status_code == 429:  # Too Many Requests
-                                retry_after = response_canonical_protein.headers.get("Retry-After")
-                                if retry_after:
-                                    retry_after = int(retry_after)
-                                    print(f"Rate limit exceeded. Retrying after {retry_after} seconds.")
-                                    time.sleep(retry_after)
-                                else:
-                                    # Default to 1 second if Retry-After header is not present
-                                    print("Rate limit exceeded. Retrying after 1 second.")
-                                    time.sleep(1)
-                            elif response_canonical_protein.status_code == 400:
-                                print(f"No known protein sequence for {transcript_id}")
-                                wildtype_sequence = None
-                                break
-                            else:
-                                print(f"Failed to fetch canonical protein sequence for {ensg_id}")
-                                wildtype_sequence = None
-                                break
+                        response_canonical_protein = requests.get(server + ext_canonical_protein,
+                                                                  headers={"Content-Type": "text/plain"})
+
+                        if response_wildtype.status_code == 400:
+                            print(f"Bad request for {transcript_id}")
+                            return None, None, wildtype_sequences
+
+                        response_canonical_protein.raise_for_status()  # Raise an exception for non-2xx status codes
+
+                        wildtype_sequence = response_canonical_protein.text
+                        wildtype_sequence = wildtype_sequence.replace("*", "")
+                        wildtype_sequences[ensg_id] = wildtype_sequence
                     else:
                         print(f"No canonical transcript found for {ensg_id}")
                         wildtype_sequence = None
-                else:
-                    print(f"Failed to fetch gene information for {ensg_id}")
-                    wildtype_sequence = None
 
-            if canonical_transcript_id != transcript_id:
-                response_variant = requests.get(server + ext_variant, headers={"Content-Type": "text/plain"})
-                if response_variant.status_code == 200:
-                    return response_variant.text, wildtype_sequence, wildtype_sequences
-                if response_variant.status_code == 429:  # Too Many Requests
-                    retry_after = response_variant.headers.get("Retry-After")
-                    if retry_after:
-                        retry_after = int(retry_after)
-                        print(f"Rate limit exceeded. Retrying after {retry_after} seconds.")
-                        time.sleep(retry_after)
-                    else:
-                        # Default to 1 second if Retry-After header is not present
-                        print("Rate limit exceeded. Retrying after 1 second.")
-                        time.sleep(1)
-                elif response_variant.status_code == 400:
-                    print(f"No known protein sequence for {transcript_id}")
-                    return None, wildtype_sequence, wildtype_sequences
+                if canonical_transcript_id != transcript_id:
+                    response_variant = requests.get(server + ext_variant, headers={"Content-Type": "text/plain"})
+                    if response_variant.status_code == 400:
+                        print(f"Bad request for {transcript_id}")
+                        return None, None, wildtype_sequences
+                    response_variant.raise_for_status()  # Raise an exception for non-2xx status codes
+                    var_sequence = response_variant.text
+                    var_sequence = var_sequence.replace("*", "")
+                    return var_sequence, wildtype_sequence, wildtype_sequences
                 else:
-                    response_variant.raise_for_status()
-            else:
-                variant_sequence = wildtype_sequence
-                return variant_sequence, wildtype_sequence, wildtype_sequences
+                    variant_sequence = wildtype_sequence
+                    return variant_sequence, wildtype_sequence, wildtype_sequences
+
+            except requests.exceptions.RequestException as e:
+                retry_count += 1
+                if retry_count < max_retries:
+                    print(
+                        f"Error occurred: {e}. Retrying in {retry_delay} seconds... (Attempt {retry_count}/{max_retries})")
+                    time.sleep(retry_delay)
+                else:
+                    raise TimeoutError(f"Maximum number of retries ({max_retries}) reached. Giving up.")
 
     def get_esm_embeddings(self, seqs):
         batch_labels, batch_strs, batch_tokens = self.esm_batch_converter(seqs)
