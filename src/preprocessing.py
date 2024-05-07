@@ -1085,15 +1085,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 return pkl.load(f)
 
     def variant_sequence_input(self):
-        # TODO:
-        #  [X] for the GH variants, get the wildtype and variant sequences
-        #  [ ] get ESM-2 embeddings for the wildtype and variant sequences
-        #       [X] check if it is better to first collect all seqs and then calculate embeddings or do it on the fly
-        #       --> embed as pairs (2, 1280) on the fly
-        #       [ ] accelerate esm model inference with gpu if available and run on cluster
-        #  [ ] subtract the wildtype embedding from the variant embedding to get the final embedding
-        #  high-level idea: collate the embeddings per gene and save them in a dictionary to prepare them for
-        #  autoencoder
         if not os.path.exists('data/features/var_seq_features.pkl.gz'):
             # Load the latest checkpoint if it exists
             checkpoint_path = 'data/features/var_seq_features_checkpoint_1.pkl.gz'
