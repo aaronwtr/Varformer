@@ -25,19 +25,18 @@ if __name__ == "__main__":
 
     # TODO:
     #  MLP model
-    #  [ ] Integrate variant-to-gene mapping into the model end-to-end
+    #  [ ] ! Integrate variant-to-gene mapping into the model end-to-end
     #  [ ] Fix preprocessing into four modules
     #      [X] Gene characterisation module (eval)
     #      [X] Gene ontology module (eval)
     #      [ ] Population variant characterisation module
-    #           [ ] ! Generate AM embeddings (make end-to-end)
-    #           [ ] Evaluate AM embeddings
-    #           [ ] Generate ESM AA seq embeddings
+    #           [X] Generate AM embeddings
+    #           [ ] ! Evaluate AM embeddings
+    #           [X] Generate ESM AA seq embeddings
     #           [ ] Evaluate ESM AA seq embeddings
+    #           [X] Generate AF embeddings
+    #           [ ] Evaluate AF embeddings
     #           [ ] Evaluate PVC embeddings (AM + ESM)
-    #      [ ] Protein structure characterisation module
-    #           [ ] Generate AF protein structure embeddings
-    #           [ ] Evaluate AF protein structure embeddings
     #  [X] Incorporate citeline data and make label distribution plot
     #  [X] Swap out GH datafreeze for all the GH data and make sure to handle LoF and Missense properly
     #       [X] Go through data peculiarities and select columns to keep.
@@ -52,11 +51,6 @@ if __name__ == "__main__":
     #       [X] Get positive samples
     #       [X] Balance the positive samples with randomly sampled negatives. Make sure this works in all modalities
     #  -
-    #  [ ] Train and test each module separately
-    #      [ ] Gene characterisation module
-    #      [ ] Gene ontology module
-    #      [ ] Protein structure characterisation module
-    #      [ ] Population variant characterisation module
     #  -
     #  [ ] Combine modules into ensemble model and evaluate
     #  -

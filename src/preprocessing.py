@@ -865,20 +865,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
     and missense variant pathogenicity embeddings, and it processes protein structure confidence scores, in particular
     it generates and processes embeddings of AlphaFold's residue-wise pLDDT score.
     """
-
-    # TODO:
-    #  [ ] AlphaMissense pathogenicity variant data
-    #       Preprocess AlphaMissense data to get a dictionary with key each gene and values (20, 20, N_g) tensors
-    #       where 20 is the total number of possible amino acids and N_g is the length of the gene
-    #  [ ] AlphaFold protein structure prediction confidence data
-    #       Preprocess AlphaFold data to get a dictionary with key each gene and values (20, N_f) tensor where
-    #       20 is the total number of possible amino acids and N_f is the input embedding dimension that is at
-    #       least as large as the longest gene sequence and padded with zeros for shorter sequences
-    #  [ ] ESM protein sequence embeddings
-    #       Generate ESM embeddings for all genes such that wildtype and variant sequences that are (1, N_s) tensors
-    #       where N_s is the embedding dimension that is given by the ESM model. Then we subtract the wildtype
-    #       embedding from the variant embedding to get the final embedding
-
     def __init__(self, config, gcp=None):
         if not gcp:
             super().__init__(config)
