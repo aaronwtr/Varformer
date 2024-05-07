@@ -1096,7 +1096,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 var_seq_features = {}
                 var_seq_features_ckpt = {}
 
-
             var_seq_data = self.gh_data.drop_duplicates(subset=['Feature'])
 
             # var_seq_data_split = np.array_split(var_seq_data, 8)
