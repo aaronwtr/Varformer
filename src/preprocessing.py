@@ -1,4 +1,3 @@
-import requests
 import os
 import gc
 import warnings
@@ -902,7 +901,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.var_stc_features = self.variant_structure_input()
 
         print("Obtaining ESM-2 protein sequence embeddings...")
-
         if self.device == 'cuda':
             # self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t48_15B_UR50D()
             # self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t36_3B_UR50D()
@@ -914,34 +912,37 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.esm_batch_converter = self.esm_alphabet.get_batch_converter()
         self.esm_model.eval()
         self.var_seq_features = self.variant_sequence_input()
-        print('joe')
 
-        self.data = self.pathogenicity_train_data()
+        # todo:
+        #  - flatten the embeddings to prepare for the VAE
+        #  - make dataframes with embeddings and target
 
-        self.acmg_data = self.data[self.data['ENSG'].isin(self.acmg_ids)]
-        self.acmg_data = self.acmg_data.drop(columns=['ENSG'])
-        self.acmg_data = self.acmg_data.set_index(self.gcp_acmg.index)
-        self.acmg_data['target'] = self.gcp_acmg['target']
-
-        self.pfam_data = self.data[self.data['ENSG'].isin(self.pfam_ids)]
-        self.pfam_data = self.pfam_data.drop(columns=['ENSG'])
-        self.pfam_data = self.pfam_data.set_index(self.gcp_pfam.index)
-        self.pfam_data['target'] = self.gcp_pfam['target']
-
-        self.data = self.data[~self.data['ENSG'].isin(self.acmg_ids)]
-        self.data = self.data[~self.data['ENSG'].isin(self.pfam_ids)]
-        self.data = self.data.drop(columns=['ENSG'])
-        self.data = self.data.set_index(self.gcp_data.index)
-
-        self.num_features = len(self.data.columns) - 1
-        self.norm = False
-
-        # TODO:
-        #  - Implement vae
-
-        print("Processing AlphaFold protein structure prediction confidence data...")
-        self.alphafold_features = None
-        self.plddt_embedder()
+        # self.data = self.pathogenicity_train_data()
+        #
+        # self.acmg_data = self.data[self.data['ENSG'].isin(self.acmg_ids)]
+        # self.acmg_data = self.acmg_data.drop(columns=['ENSG'])
+        # self.acmg_data = self.acmg_data.set_index(self.gcp_acmg.index)
+        # self.acmg_data['target'] = self.gcp_acmg['target']
+        #
+        # self.pfam_data = self.data[self.data['ENSG'].isin(self.pfam_ids)]
+        # self.pfam_data = self.pfam_data.drop(columns=['ENSG'])
+        # self.pfam_data = self.pfam_data.set_index(self.gcp_pfam.index)
+        # self.pfam_data['target'] = self.gcp_pfam['target']
+        #
+        # self.data = self.data[~self.data['ENSG'].isin(self.acmg_ids)]
+        # self.data = self.data[~self.data['ENSG'].isin(self.pfam_ids)]
+        # self.data = self.data.drop(columns=['ENSG'])
+        # self.data = self.data.set_index(self.gcp_data.index)
+        #
+        # self.num_features = len(self.data.columns) - 1
+        # self.norm = False
+        #
+        # # TODO:
+        # #  - Implement vae
+        #
+        # print("Processing AlphaFold protein structure prediction confidence data...")
+        # self.alphafold_features = None
+        # self.plddt_embedder()
 
     def variant_gh_data(self, config):
         print("Preparing GH data for variant-level embeddings...")
@@ -1071,9 +1072,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 return pkl.load(f)
 
     def variant_sequence_input(self):
-        if not os.path.exists('data/features/var_seq_features.pkl.gz'):
+        if not os.path.exists('../data/features/var_seq_features.pkl.gz'):
             # Load the latest checkpoint if it exists
-            checkpoint_path = 'data/features/var_seq_features_checkpoint_1.pkl.gz'
+            checkpoint_path = '../data/features/var_seq_features_ckpt.pkl.gz'
             if os.path.exists(checkpoint_path):
                 with gzip.open(checkpoint_path, 'rb') as f:
                     var_seq_features_ckpt = pkl.load(f)
@@ -1176,11 +1177,11 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             print(f"Number of isoform mismatches: {iso_mismatch_count}\n")
             print(f"Number of missing ENST sequences: {no_enst_seq_count}\n")
 
-            with gzip.open('data/features/var_seq_features_1.pkl.gz', 'wb') as f:
+            with gzip.open('../data/features/var_seq_features_1.pkl.gz', 'wb') as f:
                 pkl.dump(var_seq_features, f)
             return var_seq_features
         else:
-            with gzip.open('data/features/var_seq_features_1.pkl.gz', 'rb') as f:
+            with gzip.open('../data/features/var_seq_features.pkl.gz', 'rb') as f:
                 return pkl.load(f)
 
     @staticmethod
@@ -1320,8 +1321,12 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         return embeddings
 
-    def pathogenicity_train_data(self):
-        combined_data = pd.DataFrame.from_dict(self.pathogenicity_embeddings, orient='index')
+    def variant_emb_data(self):
+        path_embs = pd.DataFrame.from_dict(self.var_pat_embs, orient='index')
+        stc_embs = pd.DataFrame.from_dict(self.var_stc_embs, orient='index')
+        seq_embs = pd.DataFrame.from_dict(self.var_seq_embs, orient='index')
+
+
         combined_data = combined_data.reset_index().rename(columns={'index': 'ENSG'})
 
         path_genes = list(combined_data['ENSG'])
