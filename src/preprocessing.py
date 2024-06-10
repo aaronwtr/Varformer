@@ -912,9 +912,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.esm_batch_converter = self.esm_alphabet.get_batch_converter()
         self.esm_model.eval()
         self.var_seq_features = self.variant_sequence_input()
-
+        
         # todo:
-        #  - flatten the embeddings to prepare for the VAE
         #  - make dataframes with embeddings and target
 
         # self.data = self.pathogenicity_train_data()
@@ -1177,12 +1176,20 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             print(f"Number of isoform mismatches: {iso_mismatch_count}\n")
             print(f"Number of missing ENST sequences: {no_enst_seq_count}\n")
 
+            var_seq_flattened = {gene: matrix.toarray().ravel() for gene, matrix in var_seq_features.items()}
+
             with gzip.open('../data/features/var_seq_features_1.pkl.gz', 'wb') as f:
-                pkl.dump(var_seq_features, f)
-            return var_seq_features
+                pkl.dump(var_seq_flattened, f)
+            return var_seq_flattened
         else:
             with gzip.open('../data/features/var_seq_features.pkl.gz', 'rb') as f:
-                return pkl.load(f)
+                var_seq = pkl.load(f)
+                first_val = list(var_seq.values())[0]
+                if len(first_val.shape) == 1:
+                    return var_seq
+                else:
+                    var_seq_flattened = {gene: matrix.toarray().ravel() for gene, matrix in var_seq.items()}
+                    return var_seq_flattened
 
     @staticmethod
     def get_protein_sequence(transcript_id, ensg_id, wildtype_sequences, max_retries=10, retry_delay=5):
