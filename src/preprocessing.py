@@ -918,7 +918,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         if not os.path.exists('../data/cache/variant_pathogenicity_features.pkl') or \
                 not os.path.exists('../data/cache/variant_structure_features.pkl') or \
-                not os.path.exists('../data/cache/variant_sequence_features.pkl'):
+                not os.path.exists('../data/cache/variant_sequence_features.pkl.bz2'):
             self.var_pat_features, self.pat_ensg_ids, self.pat_uniprot_ids = featurise(self.var_pat_features,
                                                                                        'pathogenicity')
             self.num_pat_features = len(self.var_pat_features.columns)
