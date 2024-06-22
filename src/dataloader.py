@@ -21,16 +21,13 @@ class ModuleDataProcessor:
             self.config = yaml.safe_load(stream)
 
     def process(self):
-        data = {'gc': None, 'go': None, 'pvc': None, 'psc': None}
+        data = {'gc': None, 'go': None, 'pvc': None}
         if self.gc:
             data['gc'] = self.open_gc_data()
         if self.go:
             data['go'] = self.open_go_data(data['gc'])
         if self.pvc:
             data['pvc'] = self.open_pvc_data(data['gc'])
-        if self.psc:
-            # TODO: Implement and call the corresponding method for 'psc'
-            pass
         return data
 
     def open_gc_data(self):
