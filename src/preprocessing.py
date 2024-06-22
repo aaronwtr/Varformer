@@ -6,6 +6,8 @@ import torch
 import utils
 import requests
 import time
+import esm
+import bz2
 
 import pytorch_lightning as pl
 import pickle as pkl
@@ -21,7 +23,7 @@ from functools import partial
 from sklearn.model_selection import train_test_split
 from Bio import SeqIO
 from torch.utils.data import DataLoader
-import esm
+from shutil import copyfileobj
 
 from autoencoders.ae import AutoencoderTrainer
 from autoencoders.vae import VAETrainer
@@ -864,6 +866,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
     and missense variant pathogenicity embeddings, and it processes protein structure confidence scores, in particular
     it generates and processes embeddings of AlphaFold's residue-wise pLDDT score.
     """
+
     def __init__(self, config, gcp=None):
         if not gcp:
             super().__init__(config)
@@ -912,36 +915,97 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.esm_batch_converter = self.esm_alphabet.get_batch_converter()
         self.esm_model.eval()
         self.var_seq_features = self.variant_sequence_input()
-        
-        # todo:
-        #  - make dataframes with embeddings and target
 
-        # self.data = self.pathogenicity_train_data()
-        #
-        # self.acmg_data = self.data[self.data['ENSG'].isin(self.acmg_ids)]
-        # self.acmg_data = self.acmg_data.drop(columns=['ENSG'])
-        # self.acmg_data = self.acmg_data.set_index(self.gcp_acmg.index)
-        # self.acmg_data['target'] = self.gcp_acmg['target']
-        #
-        # self.pfam_data = self.data[self.data['ENSG'].isin(self.pfam_ids)]
-        # self.pfam_data = self.pfam_data.drop(columns=['ENSG'])
-        # self.pfam_data = self.pfam_data.set_index(self.gcp_pfam.index)
-        # self.pfam_data['target'] = self.gcp_pfam['target']
-        #
-        # self.data = self.data[~self.data['ENSG'].isin(self.acmg_ids)]
-        # self.data = self.data[~self.data['ENSG'].isin(self.pfam_ids)]
-        # self.data = self.data.drop(columns=['ENSG'])
-        # self.data = self.data.set_index(self.gcp_data.index)
-        #
-        # self.num_features = len(self.data.columns) - 1
-        # self.norm = False
-        #
+        if not os.path.exists('../data/cache/variant_pathogenicity_features.pkl') or \
+                not os.path.exists('../data/cache/variant_structure_features.pkl') or \
+                not os.path.exists('../data/cache/variant_sequence_features.pkl'):
+            self.var_pat_features, self.pat_ensg_ids, self.pat_uniprot_ids = featurise(self.var_pat_features,
+                                                                                       'pathogenicity')
+            self.num_pat_features = len(self.var_pat_features.columns)
+
+            self.var_stc_features, self.stc_ensg_ids, self.stc_uniprot_ids = featurise(self.var_stc_features,
+                                                                                       'structure')
+            self.num_stc_features = len(self.var_stc_features.columns)
+
+            self.var_seq_features, self.seq_ensg_ids, self.seq_uniprot_ids = featurise(self.var_seq_features,
+                                                                                       'sequence')
+
+            if not os.path.exists('../data/cache/variant_pathogenicity_features.pkl'):
+                self.var_pat_features.to_pickle('../data/cache/variant_pathogenicity_features.pkl')
+            if not os.path.exists('../data/cache/variant_structure_features.pkl'):
+                self.var_stc_features.to_pickle('../data/cache/variant_structure_features.pkl')
+            if not os.path.exists('../data/cache/variant_sequence_features.pkl'):
+                with bz2.BZ2File('../data/cache/variant_sequence_features.pkl.bz2', 'wb') as f:
+                    pkl.dump(self.var_seq_features, f)
+        else:
+            self.var_pat_features = pd.read_pickle('../data/cache/variant_pathogenicity_features.pkl')
+            self.var_stc_features = pd.read_pickle('../data/cache/variant_structure_features.pkl')
+            with bz2.BZ2File('../data/cache/variant_sequence_features.pkl.bz2', 'rb') as f:
+                self.var_seq_features = pkl.load(f)
+
+        # todo: check if data did not get corrupted during compression
+        print('break')
+
+        self.num_seq_features = len(self.var_seq_features.columns)
+
+        self.norm = False
+
+        # Ground truth
+        self.target = load_combined_labels()
+
+        # Combine features and target
+        self.full_data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
+
+        # Get test data and remove from train feature matrix
+        self.pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.drgbl_targets_pfam)]
+        self.pfam_pos_data = self.full_data[self.full_data.index.isin(self.pfam_ids.index)]
+        num_pfam_pos = len(self.pfam_pos_data)
+
+        self.rcnt_ids = self.ensg_ids[self.ensg_ids.isin(self.rcnt_targets_fda)]
+        self.rcnt_pos_data = self.full_data[self.full_data.index.isin(self.rcnt_ids.index)]
+        self.rcnt_pos_data.loc[:, 'target'] = 1
+        num_rcnt_pos = len(self.rcnt_pos_data)
+
+        self.pharos_ids = self.ensg_ids[self.ensg_ids.isin(self.chem_targets_pharos)]
+        self.pharos_pos_data = self.full_data[self.full_data.index.isin(self.pharos_ids.index)]
+        self.pharos_pos_data.loc[:, 'target'] = 1
+        num_pharos_pos = len(self.pharos_pos_data)
+
+        self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
+
+        self.data_neg = self.full_data[~self.full_data.index.isin(self.holdout_ids.index)]
+
+        common_essentials = self.full_data[self.full_data['common_essentials'] == 1]
+        common_essentials = common_essentials[common_essentials['target'] == 0]
+        common_essentials = common_essentials[common_essentials['pli_lof_constraint'] > 0.9]
+        negative_test_balance = common_essentials.sample(n=len(self.holdout_ids), random_state=42)
+        negative_test_ids = self.ensg_ids[self.ensg_ids.index.isin(negative_test_balance.index)]
+        num_negs = len(negative_test_ids)
+
+        self.pfam_negs = negative_test_ids.sample(n=num_pfam_pos, random_state=42)
+        negative_test_ids = negative_test_ids.drop(self.pfam_negs.index)
+
+        self.rcnt_negs = negative_test_ids.sample(n=num_rcnt_pos, random_state=42)
+        negative_test_ids = negative_test_ids.drop(self.rcnt_negs.index)
+
+        self.pharos_negs = negative_test_ids.sample(n=num_pharos_pos, random_state=42)
+
+        self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs])
+        self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs])
+        self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs])
+
+        self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
+
+        self.pfam_neg_data = self.full_data[self.full_data.index.isin(self.pfam_negs.index)]
+        self.rcnt_neg_data = self.full_data[self.full_data.index.isin(self.rcnt_negs.index)]
+        self.pharos_neg_data = self.full_data[self.full_data.index.isin(self.pharos_negs.index)]
+
+        self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
+        self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
+        self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
+
         # # TODO:
         # #  - Implement vae
-        #
-        # print("Processing AlphaFold protein structure prediction confidence data...")
-        # self.alphafold_features = None
-        # self.plddt_embedder()
 
     def variant_gh_data(self, config):
         print("Preparing GH data for variant-level embeddings...")
@@ -1332,7 +1396,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         path_embs = pd.DataFrame.from_dict(self.var_pat_embs, orient='index')
         stc_embs = pd.DataFrame.from_dict(self.var_stc_embs, orient='index')
         seq_embs = pd.DataFrame.from_dict(self.var_seq_embs, orient='index')
-
 
         combined_data = combined_data.reset_index().rename(columns={'index': 'ENSG'})
 
