@@ -16,9 +16,11 @@ import pandas as pd
 import pickle as pkl
 
 from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_score, confusion_matrix, roc_curve, auc
+from scipy.sparse import csr_matrix
 from Bio import Seq, SeqIO, Entrez
 from torch import nn
-from typing import Tuple, Any
+from typing import Tuple, Optional
+from tqdm import tqdm
 
 
 class random_seed_context:
@@ -499,15 +501,33 @@ def _convert_to_dense(indices, shape):
     return dense_matrix
 
 
-def featurise(features: dict) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    # load missense variant feature matrix
+def featurise(features: dict, feature_name: Optional[str] = '') -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    sparse_feature_dict = {}
     with open("../data/features/raw_miva_feature_matrix.pkl", 'rb') as f:
         feature_matrix = pkl.load(f)
 
-    for feature, values in features.items():
-        feature_matrix[feature] = feature_matrix["ENSG"].map(values)
+    if isinstance(next(iter(features.values())), csr_matrix):
+        for gene, matrix in tqdm(features.items(), total=len(features)):
+            dense_vector = matrix.toarray().flatten().reshape(1, -1)
+            sparse_vector = csr_matrix(dense_vector)
+            sparse_feature_dict[gene] = sparse_vector
+        feature_matrix[feature_name] = feature_matrix["ENSG"].map(sparse_feature_dict)
+        zero_fill = [0] * dense_vector.shape[1]
+        if feature_matrix[feature_name].isna().any():
+            feature_matrix[feature_name] = feature_matrix[feature_name].apply(lambda x: x if x is not np.nan else zero_fill)
+    elif isinstance(next(iter(features.values())), np.ndarray):
+        feature_matrix[feature_name] = feature_matrix["ENSG"].map(features)
+        if feature_name == 'sequence':
+            array_length = feature_matrix['sequence'].dropna().iloc[0].size
+            feature_matrix['sequence'] = feature_matrix['sequence'].apply(lambda x: x if isinstance(x, np.ndarray) else np.zeros(array_length))
+        else:
+            zero_fill = [0] * len(next(iter(features.values())))
+            feature_matrix[feature_name] = feature_matrix[feature_name].apply(lambda x: x if not (np.nan or x == '') else zero_fill)
+    else:
+        for feature, values in features.items():
+            feature_matrix[feature] = feature_matrix["ENSG"].map(values)
 
-    feature_matrix.fillna(0, inplace=True)
+        feature_matrix.fillna(0, inplace=True)
 
     ensg_ids = feature_matrix["ENSG"]
     uniprot_ids = feature_matrix["UNIPROT"]
@@ -520,7 +540,6 @@ def featurise(features: dict) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
     # plot.correlation_heatmap(feature_matrix)
 
     return feature_matrix, ensg_ids, uniprot_ids
-
 
 def load_fda_labels() -> pd.DataFrame:
     return pd.read_excel("../data/FDA_approved_drug_targets_2023_Q3.xlsx")
@@ -603,7 +622,6 @@ def three_letter_aa_to_idx(aa: str) -> int:
     return three_letter_aa_to_idx_map[aa]
 
 
-
 def aa1_to_aa3(single_code):
     amino_acids = {
         'A': 'ALA',
@@ -631,6 +649,7 @@ def aa1_to_aa3(single_code):
     # Convert input to uppercase
     single_code = single_code.upper()
     return amino_acids.get(single_code, 'Unknown')
+
 
 #################################### ARCHIVE ####################################
 
