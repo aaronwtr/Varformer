@@ -39,7 +39,7 @@ class GeneCharacterisationPreprocessor:
     def __init__(self, config):
         print("Gene Characterisation Preprocessor is booting up...")
         self.config = config
-        self.files_and_dirs = os.listdir("../data")
+        self.files_and_dirs = os.listdir("data")
         self.data_name_mapping = {
             "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
             "gnomad.exomes.v2.1.1.lof_metrics.by_gene.csv": "gnomAD Exomes Loss-of-Function Metrics",
@@ -368,7 +368,7 @@ class GeneCharacterisationPreprocessor:
         Featurise PPI data, i.e. count and normalize the PPIs for each PPI that is experimentally validated.
         """
         protein_info = []  # To store the parsed data
-        with open("../data/9606.protein.links.full.v12.0.txt", "r") as file:
+        with open("data/9606.protein.links.full.v12.0.txt", "r") as file:
             for line in file:
                 fields = line.strip().split('\t')
                 protein_info.append(fields)
@@ -914,6 +914,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.esm_model = self.esm_model.to(self.device)
         self.esm_batch_converter = self.esm_alphabet.get_batch_converter()
         self.esm_model.eval()
+
         self.var_seq_features = self.variant_sequence_input()
 
         if not os.path.exists('data/cache/variant_pathogenicity_features.pkl') or \
@@ -931,7 +932,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                                                                                        'sequence')
 
             if not os.path.exists('data/cache/variant_pathogenicity_features.pkl'):
-                self.var_pat_features.to_pickle('../data/cache/variant_pathogenicity_features.pkl')
+                self.var_pat_features.to_pickle('data/cache/variant_pathogenicity_features.pkl')
             if not os.path.exists('data/cache/variant_structure_features.pkl'):
                 self.var_stc_features.to_pickle('data/cache/variant_structure_features.pkl')
             if not os.path.exists('data/cache/variant_sequence_features.pkl'):
@@ -1037,8 +1038,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         """
         # check if gh_am_data.pkl exists yet
         print("Combining AM and GH data...")
-        if not os.path.exists("../data/features/var_pat_features.pkl.gz"):
-            am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
+        if not os.path.exists("data/features/var_pat_features.pkl.gz"):
+            am = pd.read_csv("data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
             am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
 
             am = am[['am_pathogenicity', 'variant_id']]
@@ -1097,7 +1098,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 pkl.dump(var_pat_features, f)
             return var_pat_features
         else:
-            with gzip.open('../data/features/var_pat_features.pkl.gz', 'rb') as f:
+            with gzip.open('data/features/var_pat_features.pkl.gz', 'rb') as f:
                 return pkl.load(f)
 
         # if not os.path.exists("../data/alphamissense/variant_am_features.pkl"):
@@ -1667,7 +1668,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
         self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
 
-        am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
+        am = pd.read_csv("data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
 
         am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
         self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
@@ -1687,8 +1688,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
 
-        if not os.path.exists("../data/alphamissense/gh_am_data.pkl"):
-            self.gh_data.to_pickle('../data/alphamissense/gh_am_data.pkl')
+        if not os.path.exists("data/alphamissense/gh_am_data.pkl"):
+            self.gh_data.to_pickle('data/alphamissense/gh_am_data.pkl')
 
         variant_am_features = {}
         for index, row in tqdm(self.gh_data.iterrows()):
@@ -1863,7 +1864,7 @@ class __MissenseVariantPreprocessor:
             self.variant_data['variant_id'] = self.variant_data['#CHROM'] + '_' + self.variant_data['POS'].astype(str) + \
                                               '_' + self.variant_data['REF'] + '_' + self.variant_data['ALT']
             am = am[['am_pathogenicity', 'variant_id']]
-            vp_pretrained_data = pd.read_csv("../data/VariPred/varipred_output_data_pretrained.csv", sep="\t")
+            vp_pretrained_data = pd.read_csv("data/VariPred/varipred_output_data_pretrained.csv", sep="\t")
             vp_pretrained_data = vp_pretrained_data.rename(columns={'target_id': 'varipred_id', 'probability':
                 'vp_pathogenicity'})
             # remove the classification column from the pretrained data
