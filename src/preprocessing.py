@@ -944,7 +944,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 self.var_seq_features = pkl.load(f)
 
         # todo: remove sequence features for now and rethink how to implement them. Potentially decrease amino acid
-        #  context window 
+        #  context window
         print('break')
 
         self.num_seq_features = len(self.var_seq_features.columns)
