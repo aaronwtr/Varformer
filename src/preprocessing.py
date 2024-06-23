@@ -943,7 +943,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             with bz2.BZ2File('../data/cache/variant_sequence_features.pkl.bz2', 'rb') as f:
                 self.var_seq_features = pkl.load(f)
 
-        # todo: check if data did not get corrupted during compression
+        # todo: remove sequence features for now and rethink how to implement them. Potentially decrease amino acid
+        #  context window 
         print('break')
 
         self.num_seq_features = len(self.var_seq_features.columns)
