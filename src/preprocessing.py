@@ -304,7 +304,7 @@ class GeneCharacterisationPreprocessor:
         #       f"{common_essentials_pfam['gene_name'].tolist()}")
 
         # Recently approved targets
-        rcnt_app_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name='rcnt_app')
+        rcnt_app_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name='rcnt_app_targets')
         rcnt_app_genes = rcnt_app_raw['ENSG'].tolist()
         self.rcnt_targets_fda = rcnt_app_genes
 
@@ -934,17 +934,14 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             if not os.path.exists('../data/cache/variant_pathogenicity_features.pkl'):
                 self.var_pat_features.to_pickle('../data/cache/variant_pathogenicity_features.pkl')
             # if not os.path.exists('../data/cache/variant_structure_features.pkl'):
-                # self.var_stc_features.to_pickle('../data/cache/variant_structure_features.pkl')
+            # self.var_stc_features.to_pickle('../data/cache/variant_structure_features.pkl')
             # if not os.path.exists('../data/cache/variant_sequence_features.pkl'):
-                # with bz2.BZ2File('../data/cache/variant_sequence_features.pkl.bz2', 'wb') as f:
-                    # pkl.dump(self.var_seq_features, f)
+            # with bz2.BZ2File('../data/cache/variant_sequence_features.pkl.bz2', 'wb') as f:
+            # pkl.dump(self.var_seq_features, f)
         else:
             self.var_pat_features = pd.read_pickle('../data/cache/variant_pathogenicity_features.pkl')
             # self.var_stc_features = pd.read_pickle('../data/cache/variant_structure_features.pkl')
             # self.var_seq_features = pd.read_pickle('../data/cache/variant_sequence_features.pkl')
-
-        # todo: remove sequence features for now and rethink how to implement them. Potentially decrease amino acid
-        #  context window
 
         print('break')
 
