@@ -19,6 +19,7 @@ from typing import Dict, Union
 
 from dataloader import DrugTargetData, ModuleDataProcessor
 from model import BaseTargetIdentifier, BaseLightningTargetIdentifier
+from autoencoders.vae_training import train_vae, extract_latent_features
 from puupl import training as puupl_training
 from plot import umap, plot_embedding_distribution
 
@@ -256,6 +257,20 @@ def kfold_train(
 
         train_genes = genes.iloc[train_indices]
         val_genes = genes.iloc[val_indices]
+
+        if 'pvc' in used_modules:
+            train_data_dict = {"input": train_raw}
+            val_data_dict = {"input": val_raw}
+
+            vae_model = train_vae(train_data_dict, config)
+
+            train_latent_features = extract_latent_features(vae_model, train_data_dict)
+            val_latent_features = extract_latent_features(vae_model, val_data_dict)
+
+            train_z = pd.DataFrame(train_latent_features, index=train_raw.index)
+            val_z = pd.DataFrame(val_latent_features, index=val_raw.index)
+
+            # TODO: continue training with the latent features . . .
 
         mlp_lightning, _train, val, test, hyperparameters, accelerator = initialise_model(
             train_raw,
