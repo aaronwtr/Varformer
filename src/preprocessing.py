@@ -900,8 +900,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         print("Obtaining AlphaMissense pathogenicity embeddings...")
         self.var_pat_features = self.variant_pathogenicity_input()
 
-        # TODO: get results for the pathogenicity features with AE end-to-end training
-
         # print("Obtaining AlphaFold protein structure embeddings")
         # self.var_stc_features = self.variant_structure_input()
 
@@ -943,8 +941,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             # self.var_stc_features = pd.read_pickle('../data/cache/variant_structure_features.pkl')
             # self.var_seq_features = pd.read_pickle('../data/cache/variant_sequence_features.pkl')
 
-        print('break')
-
         # self.num_seq_features = len(self.var_seq_features.columns)
 
         self.norm = False
@@ -960,10 +956,10 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.pfam_pos_data = self.full_data[self.full_data.index.isin(self.pfam_ids.index)]
         num_pfam_pos = len(self.pfam_pos_data)
 
-        # self.rcnt_ids = self.ensg_ids[self.ensg_ids.isin(self.rcnt_targets_fda)]
-        # self.rcnt_pos_data = self.full_data[self.full_data.index.isin(self.rcnt_ids.index)]
-        # self.rcnt_pos_data.loc[:, 'target'] = 1
-        # num_rcnt_pos = len(self.rcnt_pos_data)
+        self.rcnt_ids = self.ensg_ids[self.ensg_ids.isin(self.rcnt_targets_fda)]
+        self.rcnt_pos_data = self.full_data[self.full_data.index.isin(self.rcnt_ids.index)]
+        self.rcnt_pos_data.loc[:, 'target'] = 1
+        num_rcnt_pos = len(self.rcnt_pos_data)
 
         self.pharos_ids = self.ensg_ids[self.ensg_ids.isin(self.chem_targets_pharos)]
         self.pharos_pos_data = self.full_data[self.full_data.index.isin(self.pharos_ids.index)]
@@ -1002,9 +998,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
         self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
         self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
-
-        # TODO:
-        #  - Implement vae
 
     def variant_gh_data(self, config):
         print("Preparing GH data for variant-level embeddings...")
