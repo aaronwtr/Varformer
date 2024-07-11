@@ -337,6 +337,8 @@ def kfold_train(
     for fold, (train_indices, val_indices) in enumerate(kfold.split(data)):
         print(f"Training fold {fold + 1}/{num_splits}")
 
+        # TODO: Debug this
+        
         # Split the data
         train_raw = data.iloc[train_indices, :]
         val_raw = data.iloc[val_indices, :]
@@ -415,7 +417,7 @@ def kfold_teacher(ensemble=False, **modules):
         for module, preprocessor in data.items():
             if modules[module]:
                 train_df = preprocessor.data
-                umap(train_df)
+                # umap(train_df)
                 genes = preprocessor.ensg_ids
                 num_features = preprocessor.num_features
                 norm = preprocessor.norm
