@@ -915,9 +915,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         # self.esm_model.eval()
         # self.var_seq_features = self.variant_sequence_input()
 
-        if not os.path.exists('../data/cache/variant_pathogenicity_features.pkl') or \
-                not os.path.exists('../data/cache/variant_structure_features.pkl') or \
-                not os.path.exists('../data/cache/variant_sequence_features.pkl.bz2'):
+        if not os.path.exists('../data/cache/variant_pathogenicity_features.pkl'):
             self.var_pat_features, self.pat_ensg_ids, self.pat_uniprot_ids = featurise(self.var_pat_features,
                                                                                        'pathogenicity')
             self.num_pat_features = len(self.var_pat_features.columns)
@@ -930,14 +928,17 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             #                                                                            'sequence')
 
             if not os.path.exists('../data/cache/variant_pathogenicity_features.pkl'):
-                self.var_pat_features.to_pickle('../data/cache/variant_pathogenicity_features.pkl')
+                var_pat_data = [self.var_pat_features, self.pat_ensg_ids, self.pat_uniprot_ids]
+                with open('../data/cache/variant_pathogenicity_features.pkl', 'wb') as file:
+                    pkl.dump(var_pat_data, file)
             # if not os.path.exists('../data/cache/variant_structure_features.pkl'):
             # self.var_stc_features.to_pickle('../data/cache/variant_structure_features.pkl')
             # if not os.path.exists('../data/cache/variant_sequence_features.pkl'):
             # with bz2.BZ2File('../data/cache/variant_sequence_features.pkl.bz2', 'wb') as f:
             # pkl.dump(self.var_seq_features, f)
         else:
-            self.var_pat_features = pd.read_pickle('../data/cache/variant_pathogenicity_features.pkl')
+            var_pat_data = pd.read_pickle('../data/cache/variant_pathogenicity_features.pkl')
+            self.var_pat_features, self.pat_ensg_ids, self.pat_uniprot_ids = var_pat_data
             # self.var_stc_features = pd.read_pickle('../data/cache/variant_structure_features.pkl')
             # self.var_seq_features = pd.read_pickle('../data/cache/variant_sequence_features.pkl')
 
@@ -948,34 +949,35 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         # Ground truth
         self.target = load_combined_labels()
 
+        common_essentials = self.data[self.data['common_essentials'] == 1]
+        common_essentials = common_essentials[common_essentials['target'] == 0]
+        common_essentials = common_essentials[common_essentials['pli_lof_constraint'] > 0.9]
+        negative_test_balance = common_essentials.sample(n=len(self.holdout_ids), random_state=42)
+        negative_test_ids = self.pat_ensg_ids[self.pat_ensg_ids.index.isin(negative_test_balance.index)]
+        num_negs = len(negative_test_ids)
+
         # Combine features and target
-        self.full_data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
+        self.features = self.var_pat_features
+        self.data = combine_features_and_labels(self.pat_ensg_ids, self.features, self.target)
 
         # Get test data and remove from train feature matrix
-        self.pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.drgbl_targets_pfam)]
-        self.pfam_pos_data = self.full_data[self.full_data.index.isin(self.pfam_ids.index)]
+        self.pfam_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.drgbl_targets_pfam)]
+        self.pfam_pos_data = self.data[self.data.index.isin(self.pfam_ids.index)]
         num_pfam_pos = len(self.pfam_pos_data)
 
-        self.rcnt_ids = self.ensg_ids[self.ensg_ids.isin(self.rcnt_targets_fda)]
-        self.rcnt_pos_data = self.full_data[self.full_data.index.isin(self.rcnt_ids.index)]
+        self.rcnt_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.rcnt_targets_fda)]
+        self.rcnt_pos_data = self.data[self.data.index.isin(self.rcnt_ids.index)]
         self.rcnt_pos_data.loc[:, 'target'] = 1
         num_rcnt_pos = len(self.rcnt_pos_data)
 
-        self.pharos_ids = self.ensg_ids[self.ensg_ids.isin(self.chem_targets_pharos)]
-        self.pharos_pos_data = self.full_data[self.full_data.index.isin(self.pharos_ids.index)]
+        self.pharos_ids = self.pat_uniprot_ids[self.pat_ensg_ids.isin(self.chem_targets_pharos)]
+        self.pharos_pos_data = self.data[self.data.index.isin(self.pharos_ids.index)]
         self.pharos_pos_data.loc[:, 'target'] = 1
         num_pharos_pos = len(self.pharos_pos_data)
 
         self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
 
-        self.data_neg = self.full_data[~self.full_data.index.isin(self.holdout_ids.index)]
-
-        common_essentials = self.full_data[self.full_data['common_essentials'] == 1]
-        common_essentials = common_essentials[common_essentials['target'] == 0]
-        common_essentials = common_essentials[common_essentials['pli_lof_constraint'] > 0.9]
-        negative_test_balance = common_essentials.sample(n=len(self.holdout_ids), random_state=42)
-        negative_test_ids = self.ensg_ids[self.ensg_ids.index.isin(negative_test_balance.index)]
-        num_negs = len(negative_test_ids)
+        self.data_neg = self.data[~self.data.index.isin(self.holdout_ids.index)]
 
         self.pfam_negs = negative_test_ids.sample(n=num_pfam_pos, random_state=42)
         negative_test_ids = negative_test_ids.drop(self.pfam_negs.index)
