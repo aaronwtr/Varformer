@@ -100,17 +100,15 @@ class DrugTargetVAEData(Dataset):
         return len(self.features)
 
     def __getitem__(self, index):
-        # Drug Target Data
-        feature_data = self.features[index]
         label = self.labels[index] if self.labels is not None else torch.tensor(0.0)
 
         variant_data = self.variant_pathogenicities[index]
-        reduced_variant_data = self.reduction(variant_data)
+        variant_features = self.reduction(variant_data)
 
         if self.test_source is False:
-            return feature_data, label, reduced_variant_data
+            return variant_features, label
         else:
-            return feature_data, label, reduced_variant_data, self.test_source
+            return variant_features, label, self.test_source
 
     def reduction(self, x):
         if self.reduction_type == "padding":
