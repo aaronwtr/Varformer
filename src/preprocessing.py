@@ -959,6 +959,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         # Combine features and target
         self.features = self.var_pat_features
         self.data = combine_features_and_labels(self.pat_ensg_ids, self.features, self.target)
+        self.ensg_ids = self.pat_ensg_ids
 
         # Get test data and remove from train feature matrix
         self.pfam_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.drgbl_targets_pfam)]
@@ -993,9 +994,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
 
-        self.pfam_neg_data = self.full_data[self.full_data.index.isin(self.pfam_negs.index)]
-        self.rcnt_neg_data = self.full_data[self.full_data.index.isin(self.rcnt_negs.index)]
-        self.pharos_neg_data = self.full_data[self.full_data.index.isin(self.pharos_negs.index)]
+        self.pfam_neg_data = self.data[self.data.index.isin(self.pfam_negs.index)]
+        self.rcnt_neg_data = self.data[self.data.index.isin(self.rcnt_negs.index)]
+        self.pharos_neg_data = self.data[self.data.index.isin(self.pharos_negs.index)]
 
         self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
         self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
