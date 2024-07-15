@@ -34,7 +34,7 @@ hyperparameters:
     weight_decay: 0.1
   pathogenicity_embedding:
     usage: True
-    io_dim: 4096  # standard 1024
+    io_dim: 4096  # standard 4096
     latent_dim: 512 # standard 256
     reduction: "padding" # choose from "padding" or "pooling"
     batch_size: 128 # standard 128
@@ -42,6 +42,7 @@ hyperparameters:
     ae_type: "vae" # choose from "vae" or "ae"
     num_layers: 2 # tunable hyperparam
     nhead: 2 # tunable hyperparam
+    num_workers: 0
   plddt_autoencoder:
     usage: None
   puupl:
