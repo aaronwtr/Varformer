@@ -247,4 +247,8 @@ data/elgh/gh_parts/
 
 data/cache/
 
+data/genes_health_presentation/consequence_counts.pdf
+
+data/genes_health_presentation/
+
 src/archive/split_esm_embedding/

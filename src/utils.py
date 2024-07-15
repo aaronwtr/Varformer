@@ -16,7 +16,7 @@ import pandas as pd
 import pickle as pkl
 
 from sklearn.metrics import matthews_corrcoef, classification_report, roc_auc_score, confusion_matrix, roc_curve, auc
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, issparse
 from Bio import Seq, SeqIO, Entrez
 from torch import nn
 from typing import Tuple, Optional
@@ -492,6 +492,14 @@ def set_seed(seed):
     random.seed(seed)
 
 
+def df_col_to_dense(x):
+    if issparse(x):
+        return np.array(x.todense()).flatten()
+    elif isinstance(x, np.matrix):
+        return np.array(x).flatten()
+    return x
+
+
 def _convert_to_dense(indices, shape):
     dense_matrix = np.zeros(shape)
 
@@ -512,17 +520,21 @@ def featurise(features: dict, feature_name: Optional[str] = '') -> Tuple[pd.Data
             sparse_vector = csr_matrix(dense_vector)
             sparse_feature_dict[gene] = sparse_vector
         feature_matrix[feature_name] = feature_matrix["ENSG"].map(sparse_feature_dict)
-        zero_fill = [0] * dense_vector.shape[1]
+        zero_fill = [0.0] * dense_vector.shape[1]
+        zero_fill = np.array(zero_fill, dtype=np.float32)
         if feature_matrix[feature_name].isna().any():
-            feature_matrix[feature_name] = feature_matrix[feature_name].apply(lambda x: x if x is not np.nan else zero_fill)
+            feature_matrix[feature_name] = feature_matrix[feature_name].apply(
+                lambda x: x if x is not np.nan else zero_fill)
     elif isinstance(next(iter(features.values())), np.ndarray):
         feature_matrix[feature_name] = feature_matrix["ENSG"].map(features)
         if feature_name == 'sequence':
             array_length = feature_matrix['sequence'].dropna().iloc[0].size
-            feature_matrix['sequence'] = feature_matrix['sequence'].apply(lambda x: x if isinstance(x, np.ndarray) else np.zeros(array_length))
+            feature_matrix['sequence'] = feature_matrix['sequence'].apply(
+                lambda x: x if isinstance(x, np.ndarray) else np.zeros(array_length))
         else:
             zero_fill = [0] * len(next(iter(features.values())))
-            feature_matrix[feature_name] = feature_matrix[feature_name].apply(lambda x: x if not (np.nan or x == '') else zero_fill)
+            feature_matrix[feature_name] = feature_matrix[feature_name].apply(
+                lambda x: x if not (np.nan or x == '') else zero_fill)
     else:
         for feature, values in features.items():
             feature_matrix[feature] = feature_matrix["ENSG"].map(values)

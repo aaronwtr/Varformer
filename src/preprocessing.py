@@ -25,9 +25,9 @@ from Bio import SeqIO
 from torch.utils.data import DataLoader
 from shutil import copyfileobj
 
-#from autoencoders.ae import AutoencoderTrainer
-#from autoencoders.vae import VAETrainer
-# from autoencoders import ae_training, vae_training
+from autoencoders.ae import AutoencoderTrainer
+from autoencoders.vae import VAETrainer
+from autoencoders import ae_training, vae_training
 from utils import featurise, load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx
 
 
@@ -39,7 +39,7 @@ class GeneCharacterisationPreprocessor:
     def __init__(self, config):
         print("Gene Characterisation Preprocessor is booting up...")
         self.config = config
-        self.files_and_dirs = os.listdir("data")
+        self.files_and_dirs = os.listdir("../data")
         self.data_name_mapping = {
             "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
             "gnomad.exomes.v2.1.1.lof_metrics.by_gene.csv": "gnomAD Exomes Loss-of-Function Metrics",
@@ -304,7 +304,7 @@ class GeneCharacterisationPreprocessor:
         #       f"{common_essentials_pfam['gene_name'].tolist()}")
 
         # Recently approved targets
-        rcnt_app_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name='rcnt_app')
+        rcnt_app_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name='rcnt_app_targets')
         rcnt_app_genes = rcnt_app_raw['ENSG'].tolist()
         self.rcnt_targets_fda = rcnt_app_genes
 
@@ -900,89 +900,85 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         print("Obtaining AlphaMissense pathogenicity embeddings...")
         self.var_pat_features = self.variant_pathogenicity_input()
 
-        print("Obtaining AlphaFold protein structure embeddings")
-        self.var_stc_features = self.variant_structure_input()
+        # print("Obtaining AlphaFold protein structure embeddings")
+        # self.var_stc_features = self.variant_structure_input()
 
-        print("Obtaining ESM-2 protein sequence embeddings...")
-        if self.device == 'cuda':
-            # self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t48_15B_UR50D()
-            # self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t36_3B_UR50D()
-            self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t33_650M_UR50D()
-            self.esm_model = self.esm_model.half()
-        else:
-            self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t33_650M_UR50D()
-        self.esm_model = self.esm_model.to(self.device)
-        self.esm_batch_converter = self.esm_alphabet.get_batch_converter()
-        self.esm_model.eval()
+        # if self.device == 'cuda':
+        #     # self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t48_15B_UR50D()
+        #     # self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t36_3B_UR50D()
+        #     self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t33_650M_UR50D()
+        #     self.esm_model = self.esm_model.half()
+        # else:
+        #     self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t33_650M_UR50D()
+        # self.esm_model = self.esm_model.to(self.device)
+        # self.esm_batch_converter = self.esm_alphabet.get_batch_converter()
+        # self.esm_model.eval()
+        # self.var_seq_features = self.variant_sequence_input()
 
-        self.var_seq_features = self.variant_sequence_input()
-
-        if not os.path.exists('data/cache/variant_pathogenicity_features.pkl') or \
-                not os.path.exists('data/cache/variant_structure_features.pkl') or \
-                not os.path.exists('data/cache/variant_sequence_features.pkl.bz2'):
+        if not os.path.exists('data/cache/variant_pathogenicity_features.pkl'):
             self.var_pat_features, self.pat_ensg_ids, self.pat_uniprot_ids = featurise(self.var_pat_features,
                                                                                        'pathogenicity')
             self.num_pat_features = len(self.var_pat_features.columns)
 
-            self.var_stc_features, self.stc_ensg_ids, self.stc_uniprot_ids = featurise(self.var_stc_features,
-                                                                                       'structure')
-            self.num_stc_features = len(self.var_stc_features.columns)
+            # self.var_stc_features, self.stc_ensg_ids, self.stc_uniprot_ids = featurise(self.var_stc_features,
+            #                                                                           'structure')
+            # self.num_stc_features = len(self.var_stc_features.columns)
 
-            self.var_seq_features, self.seq_ensg_ids, self.seq_uniprot_ids = featurise(self.var_seq_features,
-                                                                                       'sequence')
+            # self.var_seq_features, self.seq_ensg_ids, self.seq_uniprot_ids = featurise(self.var_seq_features,
+            #                                                                            'sequence')
 
-            if not os.path.exists('data/cache/variant_pathogenicity_features.pkl'):
-                self.var_pat_features.to_pickle('data/cache/variant_pathogenicity_features.pkl')
-            if not os.path.exists('data/cache/variant_structure_features.pkl'):
-                self.var_stc_features.to_pickle('data/cache/variant_structure_features.pkl')
-            if not os.path.exists('data/cache/variant_sequence_features.pkl'):
-                with bz2.BZ2File('data/cache/variant_sequence_features.pkl.bz2', 'wb') as f:
-                    pkl.dump(self.var_seq_features, f)
+            if not os.path.exists('../data/cache/variant_pathogenicity_features.pkl'):
+                var_pat_data = [self.var_pat_features, self.pat_ensg_ids, self.pat_uniprot_ids]
+                with open('../data/cache/variant_pathogenicity_features.pkl', 'wb') as file:
+                    pkl.dump(var_pat_data, file)
+            # if not os.path.exists('../data/cache/variant_structure_features.pkl'):
+            # self.var_stc_features.to_pickle('../data/cache/variant_structure_features.pkl')
+            # if not os.path.exists('../data/cache/variant_sequence_features.pkl'):
+            # with bz2.BZ2File('../data/cache/variant_sequence_features.pkl.bz2', 'wb') as f:
+            # pkl.dump(self.var_seq_features, f)
         else:
-            self.var_pat_features = pd.read_pickle('data/cache/variant_pathogenicity_features.pkl')
-            self.var_stc_features = pd.read_pickle('data/cache/variant_structure_features.pkl')
-            with bz2.BZ2File('data/cache/variant_sequence_features.pkl.bz2', 'rb') as f:
-                self.var_seq_features = pkl.load(f)
+            var_pat_data = pd.read_pickle('../data/cache/variant_pathogenicity_features.pkl')
+            self.var_pat_features, self.pat_ensg_ids, self.pat_uniprot_ids = var_pat_data
+            # self.var_stc_features = pd.read_pickle('../data/cache/variant_structure_features.pkl')
+            # self.var_seq_features = pd.read_pickle('../data/cache/variant_sequence_features.pkl')
 
-        import sys
-        print("Done!")
-        sys.exit()
-
-        self.num_seq_features = len(self.var_seq_features.columns)
+        # self.num_seq_features = len(self.var_seq_features.columns)
 
         self.norm = False
 
         # Ground truth
         self.target = load_combined_labels()
 
+        common_essentials = self.data[self.data['common_essentials'] == 1]
+        common_essentials = common_essentials[common_essentials['target'] == 0]
+        common_essentials = common_essentials[common_essentials['pli_lof_constraint'] > 0.9]
+        negative_test_balance = common_essentials.sample(n=len(self.holdout_ids), random_state=42)
+        negative_test_ids = self.pat_ensg_ids[self.pat_ensg_ids.index.isin(negative_test_balance.index)]
+        num_negs = len(negative_test_ids)
+
         # Combine features and target
-        self.full_data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
+        self.features = self.var_pat_features
+        self.data = combine_features_and_labels(self.pat_ensg_ids, self.features, self.target)
+        self.ensg_ids = self.pat_ensg_ids
 
         # Get test data and remove from train feature matrix
-        self.pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.drgbl_targets_pfam)]
-        self.pfam_pos_data = self.full_data[self.full_data.index.isin(self.pfam_ids.index)]
+        self.pfam_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.drgbl_targets_pfam)]
+        self.pfam_pos_data = self.data[self.data.index.isin(self.pfam_ids.index)]
         num_pfam_pos = len(self.pfam_pos_data)
 
-        self.rcnt_ids = self.ensg_ids[self.ensg_ids.isin(self.rcnt_targets_fda)]
-        self.rcnt_pos_data = self.full_data[self.full_data.index.isin(self.rcnt_ids.index)]
+        self.rcnt_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.rcnt_targets_fda)]
+        self.rcnt_pos_data = self.data[self.data.index.isin(self.rcnt_ids.index)]
         self.rcnt_pos_data.loc[:, 'target'] = 1
         num_rcnt_pos = len(self.rcnt_pos_data)
 
-        self.pharos_ids = self.ensg_ids[self.ensg_ids.isin(self.chem_targets_pharos)]
-        self.pharos_pos_data = self.full_data[self.full_data.index.isin(self.pharos_ids.index)]
+        self.pharos_ids = self.pat_uniprot_ids[self.pat_ensg_ids.isin(self.chem_targets_pharos)]
+        self.pharos_pos_data = self.data[self.data.index.isin(self.pharos_ids.index)]
         self.pharos_pos_data.loc[:, 'target'] = 1
         num_pharos_pos = len(self.pharos_pos_data)
 
         self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
 
-        self.data_neg = self.full_data[~self.full_data.index.isin(self.holdout_ids.index)]
-
-        common_essentials = self.full_data[self.full_data['common_essentials'] == 1]
-        common_essentials = common_essentials[common_essentials['target'] == 0]
-        common_essentials = common_essentials[common_essentials['pli_lof_constraint'] > 0.9]
-        negative_test_balance = common_essentials.sample(n=len(self.holdout_ids), random_state=42)
-        negative_test_ids = self.ensg_ids[self.ensg_ids.index.isin(negative_test_balance.index)]
-        num_negs = len(negative_test_ids)
+        self.data_neg = self.data[~self.data.index.isin(self.holdout_ids.index)]
 
         self.pfam_negs = negative_test_ids.sample(n=num_pfam_pos, random_state=42)
         negative_test_ids = negative_test_ids.drop(self.pfam_negs.index)
@@ -998,16 +994,13 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
 
-        self.pfam_neg_data = self.full_data[self.full_data.index.isin(self.pfam_negs.index)]
-        self.rcnt_neg_data = self.full_data[self.full_data.index.isin(self.rcnt_negs.index)]
-        self.pharos_neg_data = self.full_data[self.full_data.index.isin(self.pharos_negs.index)]
+        self.pfam_neg_data = self.data[self.data.index.isin(self.pfam_negs.index)]
+        self.rcnt_neg_data = self.data[self.data.index.isin(self.rcnt_negs.index)]
+        self.pharos_neg_data = self.data[self.data.index.isin(self.pharos_negs.index)]
 
         self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
         self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
         self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
-
-        # # TODO:
-        # #  - Implement vae
 
     def variant_gh_data(self, config):
         print("Preparing GH data for variant-level embeddings...")
@@ -1101,85 +1094,14 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             with gzip.open('data/features/var_pat_features.pkl.gz', 'rb') as f:
                 return pkl.load(f)
 
-        # if not os.path.exists("../data/alphamissense/variant_am_features.pkl"):
-        #     variant_am_features = {}
-        #     for index, row in tqdm(self.gh_data.iterrows()):
-        #         gene = row['Gene']
-        #         gh_af = row['AF_ELGH']
-        #         am_score = row['am_pathogenicity']
-        #         if gene not in variant_am_features.keys():
-        #             variant_am_features[gene] = [np.nan_to_num(am_score * gh_af)]
-        #         else:
-        #             variant_am_features[gene].append(np.nan_to_num(am_score * gh_af))
-        #     with open('../data/alphamissense/variant_am_features.pkl', 'wb') as fp:
-        #         pkl.dump(variant_am_features, fp)
-        # else:
-        #     variant_am_features = pd.read_pickle('../data/alphamissense/variant_am_features.pkl')
-        #
-        # if self.config['hyperparameters']['pathogenicity_autoencoder']['ae_type'] == "ae":
-        #     if not os.path.exists('autoencoders/checkpoints/variant_pathogenicity_encoder'):
-        #         os.mkdir('autoencoders/checkpoints/variant_pathogenicity_encoder')
-        #     if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_encoder'):
-        #         # if no pre-trained model exists, train one
-        #         print('Pre-training pathogenicity autoencoder...')
-        #
-        #         ae_training.train(variant_am_features, self.config)
-        #         print('Pathogenicity autoencoder trained!')
-        #         print('Embedding pathogenicity data from variant to gene level...')
-        #         if not os.path.exists('../data/alphamissense/embeddings_ae.pkl'):
-        #             embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-        #             with open('../data/alphamissense/embeddings_ae.pkl', 'wb') as fp:
-        #                 pkl.dump(embeddings, fp)
-        #         else:
-        #             with open('../data/alphamissense/embeddings_ae.pkl', 'rb') as fp:
-        #                 embeddings = pkl.load(fp)
-        #         self.pathogenicity_embeddings = embeddings
-        #     else:
-        #         # if pre-trained model exists, load it
-        #         print('Pretrained autoencoder found. Loading pathogenicity embeddings...')
-        #         if not os.path.exists('../data/alphamissense/embeddings_ae.pkl'):
-        #             embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-        #             with open('../data/alphamissense/embeddings_ae.pkl', 'wb') as fp:
-        #                 pkl.dump(embeddings, fp)
-        #         else:
-        #             with open('../data/alphamissense/embeddings_ae.pkl', 'rb') as fp:
-        #                 embeddings = pkl.load(fp)
-        #         self.pathogenicity_embeddings = embeddings
-        # else:
-        #     if not os.path.exists('autoencoders/checkpoints/variant_pathogenicity_vae'):
-        #         os.mkdir('autoencoders/checkpoints/variant_pathogenicity_vae')
-        #     if not os.listdir('autoencoders/checkpoints/variant_pathogenicity_vae'):
-        #         print('Pre-training pathogenicity VAE...')
-        #
-        #         vae_training.train(variant_am_features, self.config)
-        #         print('Pathogenicity VAE trained!')
-        #         print('Embedding pathogenicity data from variant to gene level...')
-        #         if not os.path.exists('../data/alphamissense/embeddings_vae.pkl'):
-        #             embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-        #             with open('../data/alphamissense/embeddings_vae.pkl', 'wb') as fp:
-        #                 pkl.dump(embeddings, fp)
-        #         else:
-        #             with open('../data/alphamissense/embeddings_vae.pkl', 'rb') as fp:
-        #                 embeddings = pkl.load(fp)
-        #         self.pathogenicity_embeddings = embeddings
-        #     else:
-        #         # if pre-trained model exists, load it
-        #         print('Pretrained VAE found. Loading pathogenicity embeddings...')
-        #         if not os.path.exists('../data/alphamissense/embeddings_vae.pkl'):
-        #             embeddings = self.fetch_pathogenicity_embeddings(variant_am_features)
-        #             with open('../data/alphamissense/embeddings_vae.pkl', 'wb') as fp:
-        #                 pkl.dump(embeddings, fp)
-        #         else:
-        #             with open('../data/alphamissense/embeddings_vae.pkl', 'rb') as fp:
-        #                 embeddings = pkl.load(fp)
-        #         self.pathogenicity_embeddings = embeddings
-
     def variant_structure_input(self):
         af_data = self.alphafold_extractor()
-        if not os.path.exists('data/features/var_stc_features.pkl.gz'):
+
+        if not os.path.exists('../data/features/var_stc_features.pkl.gz'):
             var_stc_features = {}
 
             num_genes = len(af_data)
+
             for gene, gene_data in tqdm(af_data.items(), total=num_genes):
                 coords = gene_data['coordinates']
                 plddt = gene_data['res_plddt']

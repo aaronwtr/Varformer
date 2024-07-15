@@ -1,3 +1,5 @@
+import gc
+
 import yaml
 import os
 import torch
@@ -16,9 +18,12 @@ from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import MinMaxScaler
 from typing import Dict, Union
+from tqdm import tqdm
 
-from dataloader import DrugTargetData, ModuleDataProcessor
-from model import BaseTargetIdentifier, BaseLightningTargetIdentifier
+from dataloader import DrugTargetData, ModuleDataProcessor, DrugTargetVAEData
+from model import BaseTargetIdentifier, BaseLightningTargetIdentifier, VariantRepresentationTargetIdentifier
+from utils import df_col_to_dense
+from autoencoders.vae import VAE
 from puupl import training as puupl_training
 # from plot import umap, plot_embedding_distribution
 
@@ -81,57 +86,179 @@ def objective(trial: optuna.trial.Trial) -> float:
     return trainer.callback_metrics["val_auroc"].item()
 
 
-def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_raw, config, norm,
-                   model_type="mlp"):
+def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_raw, config, module_str):
     hparams = config['hyperparameters']
 
-    val_norm = val_raw.iloc[:, :-1].values
+    train_raw['pathogenicity'] = train_raw['pathogenicity'].apply(df_col_to_dense)
+    val_raw['pathogenicity'] = val_raw['pathogenicity'].apply(df_col_to_dense)
 
-    gene_names_train = train_genes
+    # train_raw['pathogenicity'] = train_raw['pathogenicity'].transform(df_col_to_dense)
+    # val_raw['pathogenicity'] = val_raw['pathogenicity'].transform(df_col_to_dense)
+
+    # chunk_size = 1000  # Adjust based on your available memory
+    # for start in tqdm(range(0, len(train_raw), chunk_size)):
+    #     end = start + chunk_size
+    #     train_raw.iloc[start:end, train_raw.columns.get_loc('pathogenicity')] = train_raw.iloc[start:end,
+    #                                                                             train_raw.columns.get_loc(
+    #                                                                                 'pathogenicity')].apply(
+    #         df_col_to_dense)
+
+    # Normalize the training data
     train_norm = train_raw.iloc[:, :-1].values
-
+    exploded_array = np.vstack(train_norm[:, 0])
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
+    # get a subset from the middle of the exploded array
+    print("exploded array:\n")
+    exploded_array_sub = exploded_array[:, 200000:600000]
+    print(exploded_array_sub)
 
-    _train = DataLoader(
-        DrugTargetData(data=train_norm, labels=train_raw.iloc[:, -1].values, gene_names=gene_names_train),
-        batch_size=int(hparams[model_type]['batch_size']),
-        shuffle=True,
-        num_workers=int(hparams[model_type]['num_workers'])
-    )
+    import sys
+    sys.exit()
 
-    gene_names_val = val_genes
-    val_norm = scaler.transform(val_norm)
-    val = DataLoader(
-        DrugTargetData(data=val_norm, labels=val_raw.iloc[:, -1].values, gene_names=gene_names_val),
-        batch_size=int(hparams[model_type]['batch_size']),
-        shuffle=False
-    )
+    # for start in tqdm(range(0, len(val_raw), chunk_size)):
+    #     end = start + chunk_size
+    #     val_raw.loc[start:end, 'pathogenicity'] = val_raw.loc[start:end, 'pathogenicity'].apply(df_col_to_dense)
+    #     val_raw.iloc[start:end, val_raw.columns.get_loc('pathogenicity')] = val_raw.iloc[start:end,
+    #                                                                             val_raw.columns.get_loc(
+    #                                                                                 'pathogenicity')].apply(
+    #         df_col_to_dense)
 
-    test = {}
+    # train_tst = val_raw.iloc[-100:, :]
+    #
+    # for row in train_tst.iterrows():
+    #     # find which vectors in the pathogenicity column contain non-zero values
+    #     vec = row[1]['pathogenicity']
+    #     print('joe')
+
+    drug_target_train_data = {
+        'data': train_norm,
+        'labels': train_raw.iloc[:, -1].values,
+        'gene_names': train_genes
+    }
+
+    drug_target_val_data = {
+        'data': scaler.transform(val_raw.iloc[:, :-1].values),
+        'labels': val_raw.iloc[:, -1].values,
+        'gene_names': val_genes
+    }
+
+    drug_target_test_data = {}
     for key, raw in test_raw.items():
-        gene_names = test_genes[key]
-        normed = raw.iloc[:, :-1].values
-        normed = scaler.transform(normed)
-        normed_test = DataLoader(
-            DrugTargetData(data=normed, labels=raw.iloc[:, -1].values, gene_names=gene_names,
-                           test_source=key),
-            batch_size=len(raw),
-            shuffle=False
+        normed = scaler.transform(raw.iloc[:, :-1].values)
+        drug_target_test_data[key] = {
+            'data': normed,
+            'labels': raw.iloc[:, -1].values,
+            'gene_names': test_genes[key],
+            'test_source': key
+        }
+
+    if module_str == "pvc":
+        _train = DataLoader(
+            DrugTargetVAEData(
+                drug_target_train_data,
+                reduct_dim=hparams['pathogenicity_embedding']['io_dim']
+            ),
+            batch_size=hparams['pathogenicity_embedding']['batch_size'],
+            shuffle=True,
+            num_workers=hparams['pathogenicity_embedding']['num_workers']
         )
-        test[key] = normed_test
 
-    return _train, val, test
+        val = DataLoader(
+            DrugTargetVAEData(
+                drug_target_val_data,
+                reduct_dim=hparams['pathogenicity_embedding']['io_dim']
+            ),
+            batch_size=hparams['pathogenicity_embedding']['batch_size'],
+            shuffle=False,
+            num_workers=hparams['pathogenicity_embedding']['num_workers']
+        )
+
+        test = {}
+        for key, data in drug_target_test_data.items():
+            test[key] = DataLoader(
+                DrugTargetVAEData(
+                    data,
+                    reduct_dim=hparams['pathogenicity_embedding']['io_dim']
+                ),
+                batch_size=hparams['pathogenicity_embedding']['batch_size'],
+                shuffle=False,
+                num_workers=hparams['pathogenicity_embedding']['num_workers']
+            )
+    else:
+        _train = DataLoader(
+            DrugTargetData(
+                data=train_norm,
+                labels=train_raw.iloc[:, -1].values,
+                gene_names=train_genes
+            ),
+            batch_size=int(hparams['mlp']['batch_size']),
+            shuffle=True,
+            num_workers=int(hparams['mlp']['num_workers'])
+        )
+
+        val = DataLoader(
+            DrugTargetData(
+                data=scaler.transform(val_raw.iloc[:, :-1].values),
+                labels=val_raw.iloc[:, -1].values,
+                gene_names=val_genes
+            ),
+            batch_size=int(hparams['mlp']['batch_size']),
+            shuffle=False,
+            num_workers=int(hparams['mlp']['num_workers'])
+        )
+
+        test = {}
+        for key, raw in test_raw.items():
+            normed = scaler.transform(raw.iloc[:, :-1].values)
+            test[key] = DataLoader(
+                DrugTargetData(
+                    data=normed,
+                    labels=raw.iloc[:, -1].values,
+                    gene_names=test_genes[key],
+                    test_source=key
+                ),
+                batch_size=len(raw),
+                shuffle=False,
+                num_workers=int(hparams['mlp']['num_workers'])
+            )
+
+    # if isinstance(_train.dataset, DrugTargetData):
+    label_imbalance = _train.dataset.label_imbalance().item()
+
+    # else:
+    #     train_dtd = DataLoader(
+    #         DrugTargetData(
+    #             data=train_norm,
+    #             labels=train_raw.iloc[:, -1].values,
+    #             gene_names=gene_names_train
+    #         ),
+    #         batch_size=int(hparams['mlp']['batch_size']),
+    #         shuffle=True,
+    #         num_workers=int(hparams['mlp']['num_workers'])
+    #     )
+    #     label_imbalance = train_dtd.dataset.label_imbalance().item()
+
+    return _train, val, test, label_imbalance
 
 
-def initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, test, num_features, config, norm):
+def initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, test, num_features, config, module_str):
     hyperparams = config['hyperparameters']
-    _train, val, test = normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test, config, norm)
-
-    train_imbalance = 1 / float(_train.dataset.label_imbalance().item())  # calculate inverse class frequency
+    _train, val, test, train_imbalance = normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test,
+                                                        config, module_str)
 
     mlp_pytorch = BaseTargetIdentifier(config=config, num_features=num_features)
-    mlp_lightning = BaseLightningTargetIdentifier(model=mlp_pytorch, config=config, imbalance=train_imbalance)
+
+    if module_str == "pvc":
+        vae = VAE(input_dim=hyperparams['pathogenicity_embedding']['io_dim'],
+                  latent_dim=hyperparams['pathogenicity_embedding']['latent_dim'])
+        model = VariantRepresentationTargetIdentifier(
+            vae, mlp_pytorch, config, num_features,
+            latent_dim=hyperparams['pathogenicity_embedding']['latent_dim'],
+            imbalance=train_imbalance
+        )
+    else:
+        model = BaseLightningTargetIdentifier(model=mlp_pytorch, config=config, imbalance=train_imbalance)
 
     if torch.cuda.is_available():
         accelerator = 'gpu'
@@ -151,7 +278,7 @@ def initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, tes
         weight_decay=hyperparams['mlp']['weight_decay'],
     )
 
-    return mlp_lightning, _train, val, test, hyperparameters, accelerator
+    return model, _train, val, test, hyperparameters, accelerator
 
 
 def train(tag="Training"):
@@ -246,10 +373,9 @@ def kfold_train(
             group = f"distillation-{i}-{model_type}-{module_str}"
         os.mkdir(f'checkpoints/{group}')
 
-    # use the new train object to train a new model
     for fold, (train_indices, val_indices) in enumerate(kfold.split(data)):
         print(f"Training fold {fold + 1}/{num_splits}")
-
+        
         # Split the data
         train_raw = data.iloc[train_indices, :]
         val_raw = data.iloc[val_indices, :]
@@ -266,7 +392,7 @@ def kfold_train(
             test_data,
             num_features,
             config,
-            norm
+            module_str
         )
 
         run = wandb.init(
@@ -328,7 +454,7 @@ def kfold_teacher(ensemble=False, **modules):
         for module, preprocessor in data.items():
             if modules[module]:
                 train_df = preprocessor.data
-                umap(train_df)
+                # umap(train_df)
                 genes = preprocessor.ensg_ids
                 num_features = preprocessor.num_features
                 norm = preprocessor.norm
