@@ -1,3 +1,5 @@
+import gc
+
 import yaml
 import os
 import torch
@@ -16,10 +18,11 @@ from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import MinMaxScaler
 from typing import Dict, Union
+from tqdm import tqdm
 
 from dataloader import DrugTargetData, ModuleDataProcessor, DrugTargetVAEData
 from model import BaseTargetIdentifier, BaseLightningTargetIdentifier, VariantRepresentationTargetIdentifier
-from utils import padding
+from utils import df_col_to_dense
 from autoencoders.vae import VAE
 from puupl import training as puupl_training
 from plot import umap, plot_embedding_distribution
@@ -86,10 +89,47 @@ def objective(trial: optuna.trial.Trial) -> float:
 def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_raw, config, module_str):
     hparams = config['hyperparameters']
 
+    train_raw['pathogenicity'] = train_raw['pathogenicity'].apply(df_col_to_dense)
+    val_raw['pathogenicity'] = val_raw['pathogenicity'].apply(df_col_to_dense)
+
+    # train_raw['pathogenicity'] = train_raw['pathogenicity'].transform(df_col_to_dense)
+    # val_raw['pathogenicity'] = val_raw['pathogenicity'].transform(df_col_to_dense)
+
+    # chunk_size = 1000  # Adjust based on your available memory
+    # for start in tqdm(range(0, len(train_raw), chunk_size)):
+    #     end = start + chunk_size
+    #     train_raw.iloc[start:end, train_raw.columns.get_loc('pathogenicity')] = train_raw.iloc[start:end,
+    #                                                                             train_raw.columns.get_loc(
+    #                                                                                 'pathogenicity')].apply(
+    #         df_col_to_dense)
+
     # Normalize the training data
     train_norm = train_raw.iloc[:, :-1].values
+    exploded_array = np.vstack(train_norm[:, 0])
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
+    # get a subset from the middle of the exploded array
+    print("exploded array:\n")
+    exploded_array_sub = exploded_array[:, 200000:600000]
+    print(exploded_array_sub)
+
+    import sys
+    sys.exit()
+
+    # for start in tqdm(range(0, len(val_raw), chunk_size)):
+    #     end = start + chunk_size
+    #     val_raw.loc[start:end, 'pathogenicity'] = val_raw.loc[start:end, 'pathogenicity'].apply(df_col_to_dense)
+    #     val_raw.iloc[start:end, val_raw.columns.get_loc('pathogenicity')] = val_raw.iloc[start:end,
+    #                                                                             val_raw.columns.get_loc(
+    #                                                                                 'pathogenicity')].apply(
+    #         df_col_to_dense)
+
+    # train_tst = val_raw.iloc[-100:, :]
+    #
+    # for row in train_tst.iterrows():
+    #     # find which vectors in the pathogenicity column contain non-zero values
+    #     vec = row[1]['pathogenicity']
+    #     print('joe')
 
     drug_target_train_data = {
         'data': train_norm,
@@ -333,11 +373,8 @@ def kfold_train(
             group = f"distillation-{i}-{model_type}-{module_str}"
         os.mkdir(f'checkpoints/{group}')
 
-    # use the new train object to train a new model
     for fold, (train_indices, val_indices) in enumerate(kfold.split(data)):
         print(f"Training fold {fold + 1}/{num_splits}")
-
-        # TODO: Debug this
         
         # Split the data
         train_raw = data.iloc[train_indices, :]
