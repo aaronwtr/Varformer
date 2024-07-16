@@ -90,7 +90,7 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     hparams = config['hyperparameters']
 
     train_raw['pathogenicity'] = train_raw['pathogenicity'].apply(df_col_to_dense)
-    val_raw['pathogenicity'] = val_raw['pathogenicity'].apply(df_col_to_dense)
+    # val_raw['pathogenicity'] = val_raw['pathogenicity'].apply(df_col_to_dense)
 
     # train_raw['pathogenicity'] = train_raw['pathogenicity'].transform(df_col_to_dense)
     # val_raw['pathogenicity'] = val_raw['pathogenicity'].transform(df_col_to_dense)
@@ -106,12 +106,13 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     # Normalize the training data
     train_norm = train_raw.iloc[:, :-1].values
     exploded_array = np.vstack(train_norm[:, 0])
+    print("\n\n\n\n")
+    print("Exploded array:\n")
+    exploded_array_sub = exploded_array[:, 200000:600000]
+    print(exploded_array_sub)
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
     # get a subset from the middle of the exploded array
-    print("exploded array:\n")
-    exploded_array_sub = exploded_array[:, 200000:600000]
-    print(exploded_array_sub)
 
     import sys
     sys.exit()
@@ -365,6 +366,7 @@ def kfold_train(
 
     group = f"distillation-1-{model_type}-{module_str}"
     if not os.path.isdir(f'checkpoints/{group}'):
+        os.mkdir('checkpoints')
         os.mkdir(f'checkpoints/{group}')
     else:
         i = 1

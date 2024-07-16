@@ -2,14 +2,14 @@ import wandb
 import torch
 
 import numpy as np
-import src.dataloader as dl
+import dataloader as dl
 
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader
 from pytorch_lightning.callbacks import ModelCheckpoint
-from src.autoencoders.vae import VAETrainer
-from src.utils import padding
+from autoencoders.vae import VAETrainer
+from utils import padding
 
 
 def train_vae(data_dict, config):
