@@ -39,7 +39,7 @@ class GeneCharacterisationPreprocessor:
     def __init__(self, config):
         print("Gene Characterisation Preprocessor is booting up...")
         self.config = config
-        self.files_and_dirs = os.listdir("../data")
+        self.files_and_dirs = os.listdir("data")
         self.data_name_mapping = {
             "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
             "gnomad.exomes.v2.1.1.lof_metrics.by_gene.csv": "gnomAD Exomes Loss-of-Function Metrics",
@@ -927,9 +927,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             # self.var_seq_features, self.seq_ensg_ids, self.seq_uniprot_ids = featurise(self.var_seq_features,
             #                                                                            'sequence')
 
-            if not os.path.exists('../data/cache/variant_pathogenicity_features.pkl'):
+            if not os.path.exists('data/cache/variant_pathogenicity_features.pkl'):
                 var_pat_data = [self.var_pat_features, self.pat_ensg_ids, self.pat_uniprot_ids]
-                with open('../data/cache/variant_pathogenicity_features.pkl', 'wb') as file:
+                with open('data/cache/variant_pathogenicity_features.pkl', 'wb') as file:
                     pkl.dump(var_pat_data, file)
             # if not os.path.exists('../data/cache/variant_structure_features.pkl'):
             # self.var_stc_features.to_pickle('../data/cache/variant_structure_features.pkl')
@@ -937,7 +937,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             # with bz2.BZ2File('../data/cache/variant_sequence_features.pkl.bz2', 'wb') as f:
             # pkl.dump(self.var_seq_features, f)
         else:
-            var_pat_data = pd.read_pickle('../data/cache/variant_pathogenicity_features.pkl')
+            var_pat_data = pd.read_pickle('data/cache/variant_pathogenicity_features.pkl')
             self.var_pat_features, self.pat_ensg_ids, self.pat_uniprot_ids = var_pat_data
             # self.var_stc_features = pd.read_pickle('../data/cache/variant_structure_features.pkl')
             # self.var_seq_features = pd.read_pickle('../data/cache/variant_sequence_features.pkl')
@@ -1087,7 +1087,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             for gene, var_pat_matrix in var_pat_features.items():
                 var_pat_features[gene] = var_pat_matrix.tocsr()
 
-            with gzip.open('../data/features/var_pat_features.pkl.gz', 'wb') as f:
+            with gzip.open('data/features/var_pat_features.pkl.gz', 'wb') as f:
                 pkl.dump(var_pat_features, f)
             return var_pat_features
         else:
@@ -1097,7 +1097,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
     def variant_structure_input(self):
         af_data = self.alphafold_extractor()
 
-        if not os.path.exists('../data/features/var_stc_features.pkl.gz'):
+        if not os.path.exists('data/features/var_stc_features.pkl.gz'):
             var_stc_features = {}
 
             num_genes = len(af_data)
@@ -1470,8 +1470,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 features = pkl.load(fp)
                 return features
         else:
-            if os.path.exists('../data/alphafold/alphafold_features_temp.pkl'):
-                with open('../data/alphafold/alphafold_features_temp.pkl', 'rb') as fp:
+            if os.path.exists('data/alphafold/alphafold_features_temp.pkl'):
+                with open('data/alphafold/alphafold_features_temp.pkl', 'rb') as fp:
                     extracted_values = pkl.load(fp)
             else:
                 for qualifier in tqdm(uniprot_ids):
