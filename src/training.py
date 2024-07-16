@@ -104,14 +104,10 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     #         df_col_to_dense)
 
     # Normalize the training data
-    train_norm = train_raw.iloc[:, :-1].values
-    exploded_array = np.vstack(train_norm[:, 0])
+    train_norm_raw = train_raw.iloc[:, :-1].values
+    train_norm = np.vstack(train_norm_raw[:, 0])
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
-    # get a subset from the middle of the exploded array
-    print("exploded array:\n")
-    exploded_array_sub = exploded_array[:, 200000:600000]
-    print(exploded_array_sub)
 
     import sys
     sys.exit()
