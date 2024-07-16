@@ -1012,7 +1012,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
             self.gh_data['Protein_position'] = self.gh_data['Protein_position'].astype(int)
             selected_data = self.gh_data[self.gh_data['Protein_position'] > config['io_dim']]
-            genes_sharded = selected_data['SYMBOL'].unique().tolist()
+            # TODO fix this in agreement with processing of pat features in variant_pathogenicity_input
+            io_dim = config['']
             self.gh_data.loc[:, 'Protein_pos_shard'] = self.gh_data['Protein_position'].apply(
                 lambda x: (x - 1) % 4096 + 1)
             cols = self.gh_data.columns.tolist()
@@ -1072,8 +1073,10 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 pos = row['Protein_pos_shard']
                 value = row['am_pathogenicity'] * row['AF']
 
+                io_dim = self.config['hyperparameters']['pathogenicity_embedding']['io_dim']
+                print('joe')
                 if gene not in var_pat_features.keys():
-                    matrix_shape = (21 * 21, 4096)
+                    matrix_shape = (21 * 21, io_dim)
                     var_pat_matrix = sparse.lil_matrix(matrix_shape, dtype=np.float32)
                     matrix_index = ref_idx * 21 + alt_idx
                     var_pat_matrix[matrix_index, pos - 1] = value
