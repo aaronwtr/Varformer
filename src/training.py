@@ -90,7 +90,7 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     hparams = config['hyperparameters']
 
     train_raw['pathogenicity'] = train_raw['pathogenicity'].apply(df_col_to_dense)
-    # val_raw['pathogenicity'] = val_raw['pathogenicity'].apply(df_col_to_dense)
+    val_raw['pathogenicity'] = val_raw['pathogenicity'].apply(df_col_to_dense)
 
     # train_raw['pathogenicity'] = train_raw['pathogenicity'].transform(df_col_to_dense)
     # val_raw['pathogenicity'] = val_raw['pathogenicity'].transform(df_col_to_dense)
@@ -104,18 +104,10 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     #         df_col_to_dense)
 
     # Normalize the training data
-    train_norm = train_raw.iloc[:, :-1].values
-    exploded_array = np.vstack(train_norm[:, 0])
-    print("\n\n\n\n")
-    print("Exploded array:\n")
-    exploded_array_sub = exploded_array[:, 200000:600000]
-    print(exploded_array_sub)
+    train_norm_raw = train_raw.iloc[:, :-1].values
+    train_norm = np.vstack(train_norm_raw[:, 0])
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
-    # get a subset from the middle of the exploded array
-
-    import sys
-    sys.exit()
 
     # for start in tqdm(range(0, len(val_raw), chunk_size)):
     #     end = start + chunk_size
