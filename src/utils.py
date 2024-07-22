@@ -494,9 +494,11 @@ def set_seed(seed):
 
 def df_col_to_dense(x):
     if issparse(x):
-        return np.array(x.todense()).flatten()
+        _x = np.array(x.todense()).flatten()
+        return _x
     elif isinstance(x, np.matrix):
-        return np.array(x).flatten()
+        _x = np.array(x).flatten()
+        return _x
     return x
 
 
