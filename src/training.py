@@ -109,8 +109,9 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
 
-    import sys
-    sys.exit()
+    val_norm_raw = val_raw.iloc[:, :-1].values
+    val_norm = np.vstack(val_norm_raw[:, 0])
+    val_norm = scaler.transform(val_norm)
 
     # for start in tqdm(range(0, len(val_raw), chunk_size)):
     #     end = start + chunk_size
@@ -134,16 +135,18 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     }
 
     drug_target_val_data = {
-        'data': scaler.transform(val_raw.iloc[:, :-1].values),
+        'data': val_norm,
         'labels': val_raw.iloc[:, -1].values,
         'gene_names': val_genes
     }
 
     drug_target_test_data = {}
     for key, raw in test_raw.items():
-        normed = scaler.transform(raw.iloc[:, :-1].values)
+        test_norm_raw = raw.iloc[:, :-1].values
+        test_norm = np.vstack(test_norm_raw[:, 0])
+        test_norm = scaler.transform(test_norm)
         drug_target_test_data[key] = {
-            'data': normed,
+            'data': test_norm,
             'labels': raw.iloc[:, -1].values,
             'gene_names': test_genes[key],
             'test_source': key
@@ -356,6 +359,14 @@ def kfold_train(
         used_modules = [modules]
     else:
         used_modules = [k for k, v in modules.items() if v]
+
+    data = data.iloc[:100, :]
+    row1 = data.iloc[0, :-1].values
+    row2 = data.iloc[1, :-1].values
+    row3 = data.iloc[2, :-1].values
+    row4 = data.iloc[3, :-1].values
+    row5 = data.iloc[4, :-1].values
+    row6 = data.iloc[5, :-1].values
 
     module_str = f"{'-'.join(used_modules)}"
 
