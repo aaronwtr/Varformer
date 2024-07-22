@@ -493,6 +493,16 @@ def set_seed(seed):
 
 
 def df_col_to_dense(x):
+    # inspect all the types in x and collect in a list
+    print(x)
+    print("\n\n\n")
+    print("type of x: \n")
+    print(type(x))
+    print("\n\n\n")
+    types_unwrapped = [type(i) for i in x]
+    unique_types = set(types_unwrapped)
+    print("Types unwrapped: \n")
+    print(unique_types)
     if issparse(x):
         return np.array(x.todense()).flatten()
     elif isinstance(x, np.matrix):
