@@ -113,21 +113,6 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     val_norm = np.vstack(val_norm_raw[:, 0])
     val_norm = scaler.transform(val_norm)
 
-    # for start in tqdm(range(0, len(val_raw), chunk_size)):
-    #     end = start + chunk_size
-    #     val_raw.loc[start:end, 'pathogenicity'] = val_raw.loc[start:end, 'pathogenicity'].apply(df_col_to_dense)
-    #     val_raw.iloc[start:end, val_raw.columns.get_loc('pathogenicity')] = val_raw.iloc[start:end,
-    #                                                                             val_raw.columns.get_loc(
-    #                                                                                 'pathogenicity')].apply(
-    #         df_col_to_dense)
-
-    # train_tst = val_raw.iloc[-100:, :]
-    #
-    # for row in train_tst.iterrows():
-    #     # find which vectors in the pathogenicity column contain non-zero values
-    #     vec = row[1]['pathogenicity']
-    #     print('joe')
-
     drug_target_train_data = {
         'data': train_norm,
         'labels': train_raw.iloc[:, -1].values,
@@ -359,14 +344,6 @@ def kfold_train(
         used_modules = [modules]
     else:
         used_modules = [k for k, v in modules.items() if v]
-
-    data = data.iloc[:100, :]
-    row1 = data.iloc[0, :-1].values
-    row2 = data.iloc[1, :-1].values
-    row3 = data.iloc[2, :-1].values
-    row4 = data.iloc[3, :-1].values
-    row5 = data.iloc[4, :-1].values
-    row6 = data.iloc[5, :-1].values
 
     module_str = f"{'-'.join(used_modules)}"
 
