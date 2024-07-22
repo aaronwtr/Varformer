@@ -90,6 +90,10 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     hparams = config['hyperparameters']
 
     train_raw['pathogenicity'] = train_raw['pathogenicity'].apply(df_col_to_dense)
+    print("\n\n\n")
+    print("Val raw shape: ", val_raw['pathogenicity'].shape)
+    print("\n\n\n")
+    print("Val raw: ", val_raw['pathogenicity'])
     val_raw['pathogenicity'] = val_raw['pathogenicity'].apply(df_col_to_dense)
 
     # train_raw['pathogenicity'] = train_raw['pathogenicity'].transform(df_col_to_dense)
@@ -108,6 +112,10 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     train_norm = np.vstack(train_norm_raw[:, 0])
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
+
+    val_norm_raw = val_raw.iloc[:, :-1].values
+    val_norm = np.vstack(val_norm_raw[:, 0])
+    val_norm = scaler.transform(val_norm)
 
     # for start in tqdm(range(0, len(val_raw), chunk_size)):
     #     end = start + chunk_size
@@ -131,16 +139,18 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     }
 
     drug_target_val_data = {
-        'data': scaler.transform(val_raw.iloc[:, :-1].values),
+        'data': val_norm,
         'labels': val_raw.iloc[:, -1].values,
         'gene_names': val_genes
     }
 
     drug_target_test_data = {}
     for key, raw in test_raw.items():
-        normed = scaler.transform(raw.iloc[:, :-1].values)
+        test_norm_raw = raw.iloc[:, :-1].values
+        test_norm = np.vstack(test_norm_raw[:, 0])
+        test_norm = scaler.transform(test_norm)
         drug_target_test_data[key] = {
-            'data': normed,
+            'data': test_norm,
             'labels': raw.iloc[:, -1].values,
             'gene_names': test_genes[key],
             'test_source': key
