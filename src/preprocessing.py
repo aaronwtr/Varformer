@@ -1012,10 +1012,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
             self.gh_data['Protein_position'] = self.gh_data['Protein_position'].astype(int)
             selected_data = self.gh_data[self.gh_data['Protein_position'] > config['io_dim']]
-            # TODO fix this in agreement with processing of pat features in variant_pathogenicity_input
-            io_dim = config['']
+            io_dim = config['io_dim']
             self.gh_data.loc[:, 'Protein_pos_shard'] = self.gh_data['Protein_position'].apply(
-                lambda x: (x - 1) % 4096 + 1)
+                lambda x: (x - 1) % io_dim + 1)
             cols = self.gh_data.columns.tolist()
             pp_idx = cols.index('Protein_position')
             cols = cols[:pp_idx] + [cols[-1]] + cols[pp_idx:-1]
@@ -1074,7 +1073,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 value = row['am_pathogenicity'] * row['AF']
 
                 io_dim = self.config['hyperparameters']['pathogenicity_embedding']['io_dim']
-                print('joe')
                 if gene not in var_pat_features.keys():
                     matrix_shape = (21 * 21, io_dim)
                     var_pat_matrix = sparse.lil_matrix(matrix_shape, dtype=np.float32)
