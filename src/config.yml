@@ -32,10 +32,11 @@ hyperparameters:
     dropout: 0.5
     num_workers: 0
     weight_decay: 0.1
+    wandb: False
   pathogenicity_embedding:
     usage: True
-    io_dim: 1024  # standard 4096
-    latent_dim: 512 # standard 256
+    io_dim: 256  # standard 4096
+    latent_dim: 128 # standard 256
     reduction: "padding" # choose from "padding" or "pooling"
     batch_size: 128 # standard 128
     max_epochs: 100 # standard 20
