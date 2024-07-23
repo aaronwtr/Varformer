@@ -89,19 +89,12 @@ def objective(trial: optuna.trial.Trial) -> float:
 def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_raw, config, module_str):
     hparams = config['hyperparameters']
 
-    train_raw['pathogenicity'] = train_raw['pathogenicity'].apply(df_col_to_dense)
-    val_raw['pathogenicity'] = val_raw['pathogenicity'].apply(df_col_to_dense)
-
-    # train_raw['pathogenicity'] = train_raw['pathogenicity'].transform(df_col_to_dense)
-    # val_raw['pathogenicity'] = val_raw['pathogenicity'].transform(df_col_to_dense)
-
-    # chunk_size = 1000  # Adjust based on your available memory
-    # for start in tqdm(range(0, len(train_raw), chunk_size)):
-    #     end = start + chunk_size
-    #     train_raw.iloc[start:end, train_raw.columns.get_loc('pathogenicity')] = train_raw.iloc[start:end,
-    #                                                                             train_raw.columns.get_loc(
-    #                                                                                 'pathogenicity')].apply(
-    #         df_col_to_dense)
+    if module_str == "pvc":
+        train_raw['pathogenicity'] = train_raw['pathogenicity'].apply(df_col_to_dense)
+        val_raw['pathogenicity'] = val_raw['pathogenicity'].apply(df_col_to_dense)
+        test_raw['pfam']['pathogenicity'] = test_raw['pfam']['pathogenicity'].apply(df_col_to_dense)
+        test_raw['rcnt']['pathogenicity'] = test_raw['rcnt']['pathogenicity'].apply(df_col_to_dense)
+        test_raw['pharos']['pathogenicity'] = test_raw['pharos']['pathogenicity'].apply(df_col_to_dense)
 
     # Normalize the training data
     train_norm_raw = train_raw.iloc[:, :-1].values
@@ -130,9 +123,10 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
         test_norm_raw = raw.iloc[:, :-1].values
         test_norm = np.vstack(test_norm_raw[:, 0])
         test_norm = scaler.transform(test_norm)
+        test_labels = raw.iloc[:, -1].values
         drug_target_test_data[key] = {
             'data': test_norm,
-            'labels': raw.iloc[:, -1].values,
+            'labels': test_labels,
             'gene_names': test_genes[key],
             'test_source': key
         }
@@ -231,6 +225,7 @@ def initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, tes
     _train, val, test, train_imbalance = normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test,
                                                         config, module_str)
 
+    # todo: feed representations through the model
     mlp_pytorch = BaseTargetIdentifier(config=config, num_features=num_features)
 
     if module_str == "pvc":
@@ -281,20 +276,21 @@ def train(tag="Training"):
     )
 
     if tag == "Standard Training":
-        wandb_logger = WandbLogger(
-            project="drug-target-prediction",
-            tags=[f"depth{config['mlp']['depth']}-nn"],
-            log_model="all"
-        )
-        wandb_logger.log_hyperparams(hyperparameters)
-        run_name = wandb_logger.experiment.name
-        checkpoint_callback = ModelCheckpoint(
-            monitor='epoch',
-            dirpath='checkpoints',
-            filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}',
-            save_top_k=1,
-            mode='max',
-        )
+        if config['hyperparameters']['mlp']['wandb']:
+            wandb_logger = WandbLogger(
+                project="drug-target-prediction",
+                tags=[f"depth{config['mlp']['depth']}-nn"],
+                log_model="all"
+            )
+            wandb_logger.log_hyperparams(hyperparameters)
+            run_name = wandb_logger.experiment.name
+            checkpoint_callback = ModelCheckpoint(
+                monitor='epoch',
+                dirpath='checkpoints',
+                filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}',
+                save_top_k=1,
+                mode='max',
+            )
 
         utils.set_seed(42)
         trainer = pl.Trainer(
@@ -379,21 +375,22 @@ def kfold_train(
             module_str
         )
 
-        run = wandb.init(
-            project="drug-target-prediction",
-            tags=[f"distillation-fold{fold + 1}"],
-            config=hyperparameters,
-            group=f"{group}"
-        )
+        if config['hyperparameters']['mlp']['wandb']:
+            run = wandb.init(
+                project="drug-target-prediction",
+                tags=[f"distillation-fold{fold + 1}"],
+                config=hyperparameters,
+                group=f"{group}"
+            )
 
-        run_name = wandb.run.name
-        checkpoint_callback = ModelCheckpoint(
-            monitor='epoch',
-            dirpath=f'checkpoints/{group}',
-            filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}-' + f'fold{fold}',
-            save_top_k=1,
-            mode='max'
-        )
+            run_name = wandb.run.name
+            checkpoint_callback = ModelCheckpoint(
+                monitor='epoch',
+                dirpath=f'checkpoints/{group}',
+                filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}-' + f'fold{fold}',
+                save_top_k=1,
+                mode='max'
+            )
 
         utils.set_seed(42)
         trainer = pl.Trainer(
@@ -410,7 +407,8 @@ def kfold_train(
         trainer.test(ckpt_path="best", dataloaders=test["rcnt"])
         trainer.test(ckpt_path="best", dataloaders=test["pharos"])
 
-        run.finish()
+        if config['hyperparameters']['mlp']['wandb']:
+            run.finish()
 
 
 def kfold_teacher(ensemble=False, **modules):
