@@ -382,8 +382,8 @@ def kfold_train(
                 config=hyperparameters,
                 group=f"{group}"
             )
-
             run_name = wandb.run.name
+
             checkpoint_callback = ModelCheckpoint(
                 monitor='epoch',
                 dirpath=f'checkpoints/{group}',
@@ -392,23 +392,37 @@ def kfold_train(
                 mode='max'
             )
 
-        utils.set_seed(42)
-        trainer = pl.Trainer(
-            max_epochs=int(config['hyperparameters']['mlp']['epochs']),
-            accelerator=accelerator,
-            enable_progress_bar=True,
-            log_every_n_steps=1,
-            logger=WandbLogger(wandb.run),
-            callbacks=[checkpoint_callback]
-        )
+            utils.set_seed(42)
+            trainer = pl.Trainer(
+                max_epochs=int(config['hyperparameters']['mlp']['epochs']),
+                accelerator=accelerator,
+                enable_progress_bar=True,
+                log_every_n_steps=1,
+                logger=WandbLogger(wandb.run),
+                callbacks=[checkpoint_callback]
+            )
 
-        trainer.fit(mlp_lightning, _train, val)
-        trainer.test(ckpt_path="best", dataloaders=test["pfam"])
-        trainer.test(ckpt_path="best", dataloaders=test["rcnt"])
-        trainer.test(ckpt_path="best", dataloaders=test["pharos"])
+            trainer.fit(mlp_lightning, _train, val)
+            trainer.test(ckpt_path="best", dataloaders=test["pfam"])
+            trainer.test(ckpt_path="best", dataloaders=test["rcnt"])
+            trainer.test(ckpt_path="best", dataloaders=test["pharos"])
 
-        if config['hyperparameters']['mlp']['wandb']:
             run.finish()
+        else:
+            utils.set_seed(42)
+            trainer = pl.Trainer(
+                max_epochs=int(config['hyperparameters']['mlp']['epochs']),
+                accelerator=accelerator,
+                enable_progress_bar=True,
+                log_every_n_steps=1,
+                logger=False,
+                enable_checkpointing=False
+            )
+
+            trainer.fit(mlp_lightning, _train, val)
+            trainer.test(ckpt_path="best", dataloaders=test["pfam"])
+            trainer.test(ckpt_path="best", dataloaders=test["rcnt"])
+            trainer.test(ckpt_path="best", dataloaders=test["pharos"])
 
 
 def kfold_teacher(ensemble=False, **modules):
