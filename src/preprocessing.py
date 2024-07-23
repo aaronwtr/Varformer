@@ -927,10 +927,10 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             # self.var_seq_features, self.seq_ensg_ids, self.seq_uniprot_ids = featurise(self.var_seq_features,
             #                                                                            'sequence')
 
-            if not os.path.exists('../data/cache/variant_pathogenicity_features.pkl'):
-                var_pat_data = [self.var_pat_features, self.pat_ensg_ids, self.pat_uniprot_ids]
-                with open('../data/cache/variant_pathogenicity_features.pkl', 'wb') as file:
-                    pkl.dump(var_pat_data, file)
+            var_pat_data = [self.var_pat_features, self.pat_ensg_ids, self.pat_uniprot_ids]
+            with open('../data/cache/variant_pathogenicity_features.pkl', 'wb') as file:
+                pkl.dump(var_pat_data, file)
+
             # if not os.path.exists('../data/cache/variant_structure_features.pkl'):
             # self.var_stc_features.to_pickle('../data/cache/variant_structure_features.pkl')
             # if not os.path.exists('../data/cache/variant_sequence_features.pkl'):
@@ -1005,25 +1005,34 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
     def variant_gh_data(self, config):
         print("Preparing GH data for variant-level embeddings...")
         if not os.path.exists("../data/elgh/gh_miva_data.pkl"):
-            self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
-            self.gh_data = self.gh_data.explode('ALT')
-            self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
-            self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
-
-            self.gh_data['Protein_position'] = self.gh_data['Protein_position'].astype(int)
-            selected_data = self.gh_data[self.gh_data['Protein_position'] > config['io_dim']]
-            io_dim = config['io_dim']
-            self.gh_data.loc[:, 'Protein_pos_shard'] = self.gh_data['Protein_position'].apply(
-                lambda x: (x - 1) % io_dim + 1)
-            cols = self.gh_data.columns.tolist()
-            pp_idx = cols.index('Protein_position')
-            cols = cols[:pp_idx] + [cols[-1]] + cols[pp_idx:-1]
-            self.gh_data = self.gh_data[cols]
-
-            # self.gh_data = self.gh_data[self.gh_data['SYMBOL'].isin(genes_sharded)]
-            self.gh_data.to_pickle('../data/elgh/gh_miva_data.pkl')
+            self.variant_sharding(config)
         else:
             self.gh_data = pd.read_pickle('../data/elgh/gh_miva_data.pkl')
+            max_pos = self.gh_data['Protein_pos_shard'].max()
+            if max_pos != config['io_dim']:
+                print("Representation dimension has been changed, reprocessing GH data...")
+                self.variant_sharding(config)
+                if os.path.exists("../data/features/var_pat_features.pkl.gz"):
+                    os.remove("../data/features/var_pat_features.pkl.gz")
+                    os.remove("../data/cache/variant_pathogenicity_features.pkl")
+
+    def variant_sharding(self, config):
+        self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
+        self.gh_data = self.gh_data.explode('ALT')
+        self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
+        self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
+
+        self.gh_data['Protein_position'] = self.gh_data['Protein_position'].astype(int)
+        io_dim = config['io_dim']
+        self.gh_data.loc[:, 'Protein_pos_shard'] = self.gh_data['Protein_position'].apply(
+            lambda x: (x - 1) % io_dim + 1)
+        cols = self.gh_data.columns.tolist()
+        pp_idx = cols.index('Protein_position')
+        cols = cols[:pp_idx] + [cols[-1]] + cols[pp_idx:-1]
+        self.gh_data = self.gh_data[cols]
+
+        # self.gh_data = self.gh_data[self.gh_data['SYMBOL'].isin(genes_sharded)]
+        self.gh_data.to_pickle('../data/elgh/gh_miva_data.pkl')
 
     def variant_pathogenicity_input(self):
         """
