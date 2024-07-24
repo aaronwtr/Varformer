@@ -946,6 +946,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         self.norm = False
 
+        self.num_features = config['hyperparameters']['pathogenicity_embedding']['latent_dim']
+
         # Ground truth
         self.target = load_combined_labels()
 
