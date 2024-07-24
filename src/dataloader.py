@@ -115,8 +115,10 @@ class DrugTargetVAEData(Dataset):
             x = self.padding(x)
         elif self.reduction_type == "pooling":
             x = self.pooling(x)
+        elif self.reduction_type == 'None':
+            return x
         else:
-            raise ValueError("Invalid reduction type. Expected 'padding' or 'pooling'.")
+            raise ValueError("Invalid reduction type. Expected 'padding', 'pooling' or 'None'.")
         return x
 
     def padding(self, x):

@@ -184,7 +184,6 @@ class VariantRepresentationTargetIdentifier(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        # TODO: debug this
         features, labels = batch
         reconstruction, mu, logvar, logits, probas, bin_preds = self(features)
         vae_loss = self.vae.loss_function(reconstruction, features, mu, logvar)
