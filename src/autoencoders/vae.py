@@ -37,6 +37,7 @@ class VAE(nn.Module):
         # recon_loss = nn.functional.mse_loss(recon_x, x, reduction='sum')
 
         # Use BCE loss for reconstruction
+        # todo: debug this
         recon_loss = nn.functional.binary_cross_entropy(recon_x, x, reduction='sum')
 
         # KL divergence
