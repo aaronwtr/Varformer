@@ -99,6 +99,7 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     # Normalize the training data
     train_norm_raw = train_raw.iloc[:, :-1].values
     train_norm = np.vstack(train_norm_raw[:, 0])
+    flattened_io_dim = train_norm.shape[1]
     scaler = MinMaxScaler()
     train_norm = scaler.fit_transform(train_norm)
 
@@ -135,7 +136,8 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
         _train = DataLoader(
             DrugTargetVAEData(
                 drug_target_train_data,
-                reduct_dim=hparams['pathogenicity_embedding']['io_dim']
+                reduct_dim=hparams['pathogenicity_embedding']['io_dim'],
+                reduction_type=hparams['pathogenicity_embedding']['reduction']
             ),
             batch_size=hparams['pathogenicity_embedding']['batch_size'],
             shuffle=True,
@@ -145,7 +147,8 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
         val = DataLoader(
             DrugTargetVAEData(
                 drug_target_val_data,
-                reduct_dim=hparams['pathogenicity_embedding']['io_dim']
+                reduct_dim=hparams['pathogenicity_embedding']['io_dim'],
+                reduction_type=hparams['pathogenicity_embedding']['reduction']
             ),
             batch_size=hparams['pathogenicity_embedding']['batch_size'],
             shuffle=False,
@@ -157,7 +160,8 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
             test[key] = DataLoader(
                 DrugTargetVAEData(
                     data,
-                    reduct_dim=hparams['pathogenicity_embedding']['io_dim']
+                    reduct_dim=hparams['pathogenicity_embedding']['io_dim'],
+                    reduction_type=hparams['pathogenicity_embedding']['reduction']
                 ),
                 batch_size=hparams['pathogenicity_embedding']['batch_size'],
                 shuffle=False,
@@ -217,19 +221,19 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     #     )
     #     label_imbalance = train_dtd.dataset.label_imbalance().item()
 
-    return _train, val, test, label_imbalance
+    return _train, val, test, label_imbalance, flattened_io_dim
 
 
 def initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, test, num_features, config, module_str):
     hyperparams = config['hyperparameters']
-    _train, val, test, train_imbalance = normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test,
-                                                        config, module_str)
+    _train, val, test, train_imbalance, flattened_io_dim = normalise_data(train_raw, val_raw, train_genes, val_genes,
+                                                                          test_genes, test, config, module_str)
 
     # todo: feed representations through the model
     mlp_pytorch = BaseTargetIdentifier(config=config, num_features=num_features)
 
     if module_str == "pvc":
-        vae = VAE(input_dim=hyperparams['pathogenicity_embedding']['io_dim'],
+        vae = VAE(input_dim=flattened_io_dim,
                   latent_dim=hyperparams['pathogenicity_embedding']['latent_dim'])
         model = VariantRepresentationTargetIdentifier(
             vae, mlp_pytorch, config, num_features,
