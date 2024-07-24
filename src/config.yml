@@ -37,7 +37,7 @@ hyperparameters:
     usage: True
     io_dim: 256  # standard 4096
     latent_dim: 128 # standard 256
-    reduction: "padding" # choose from "padding" or "pooling"
+    reduction: None # choose from "padding", "pooling" or None
     batch_size: 128 # standard 128
     max_epochs: 100 # standard 20
     ae_type: "vae" # choose from "vae" or "ae"
