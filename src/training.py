@@ -414,13 +414,21 @@ def kfold_train(
             run.finish()
         else:
             utils.set_seed(42)
+            checkpoint_callback = ModelCheckpoint(
+                monitor='epoch',
+                dirpath=f'checkpoints/{group}',
+                save_top_k=1,
+                mode='max'
+            )
+
             trainer = pl.Trainer(
                 max_epochs=int(config['hyperparameters']['mlp']['epochs']),
                 accelerator=accelerator,
                 enable_progress_bar=True,
                 log_every_n_steps=1,
                 logger=False,
-                enable_checkpointing=False
+                enable_checkpointing=True,
+                callbacks=[checkpoint_callback]
             )
 
             trainer.fit(mlp_lightning, _train, val)
