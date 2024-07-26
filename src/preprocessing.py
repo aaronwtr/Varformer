@@ -1082,11 +1082,13 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 alt_idx = aa_to_idx(alt_aa)
                 pos = row['Protein_pos_shard']
                 value = row['am_pathogenicity'] * row['AF']
+                if np.isnan(value):
+                    continue
 
                 io_dim = self.config['hyperparameters']['pathogenicity_embedding']['io_dim']
                 if gene not in var_pat_features.keys():
                     matrix_shape = (21 * 21, io_dim)
-                    var_pat_matrix = sparse.lil_matrix(matrix_shape, dtype=np.float32)
+                    var_pat_matrix = np.zeros(matrix_shape, dtype=np.float32)
                     matrix_index = ref_idx * 21 + alt_idx
                     var_pat_matrix[matrix_index, pos - 1] = value
                     var_pat_features[gene] = var_pat_matrix
@@ -1097,10 +1099,10 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                         print(f"Warning: Overwriting value at position {pos} for gene {gene}")
                     var_pat_matrix[matrix_index, pos - 1] = value
                     var_pat_features[gene] = var_pat_matrix
-
-            # Convert all sparse matrices to CSR format
-            for gene, var_pat_matrix in var_pat_features.items():
-                var_pat_features[gene] = var_pat_matrix.tocsr()
+            #
+            # # Convert all sparse matrices to CSR format
+            # for gene, var_pat_matrix in var_pat_features.items():
+            #     var_pat_features[gene] = var_pat_matrix.tocsr()
 
             with gzip.open('../data/features/var_pat_features.pkl.gz', 'wb') as f:
                 pkl.dump(var_pat_features, f)
