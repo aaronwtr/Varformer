@@ -4,6 +4,7 @@ import lightning as pl
 import torch.nn as nn
 import torch.nn.functional as F
 import xgboost as xgb
+import numpy as np
 
 from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef, F1Score
 from sklearn.metrics import accuracy_score, roc_auc_score
@@ -159,8 +160,10 @@ class VariantRepresentationTargetIdentifier(pl.LightningModule):
         self.imbalance = imbalance
 
     def forward(self, x):
+        x_arr = x.detach().numpy()
         mu, logvar = torch.chunk(self.vae.encoder(x), 2, dim=1)
         z = self.vae.reparameterize(mu, logvar)
+        z_arr = z.detach().numpy()
         reconstruction = self.vae.decoder(z)
         logits, probabilities, binary_predictions = self.base_model(z)
         return reconstruction, mu, logvar, logits, probabilities, binary_predictions
