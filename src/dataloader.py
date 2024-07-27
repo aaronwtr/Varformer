@@ -92,7 +92,7 @@ class DrugTargetVAEData(Dataset):
         self.test_source = drug_target_data.get('test_source', False)
 
         # Variant Pathogenicity Data
-        self.variant_pathogenicities = [torch.tensor(v, dtype=torch.float32) for v in drug_target_data['data']]
+        # self.variant_pathogenicities = [torch.tensor(v, dtype=torch.float32) for v in drug_target_data['data']]
         self.reduction_type = reduction_type
         self.reduct_dim = reduct_dim
 
@@ -101,8 +101,7 @@ class DrugTargetVAEData(Dataset):
 
     def __getitem__(self, index):
         label = self.labels[index] if self.labels is not None else torch.tensor(0.0)
-
-        variant_data = self.variant_pathogenicities[index]
+        variant_data = self.features[index]
         variant_features = self.reduction(variant_data)
 
         if self.test_source is False:
@@ -115,7 +114,7 @@ class DrugTargetVAEData(Dataset):
             x = self.padding(x)
         elif self.reduction_type == "pooling":
             x = self.pooling(x)
-        elif self.reduction_type == 'None':
+        elif self.reduction_type == "None":
             return x
         else:
             raise ValueError("Invalid reduction type. Expected 'padding', 'pooling' or 'None'.")

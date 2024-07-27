@@ -100,12 +100,16 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     train_norm_raw = train_raw.iloc[:, :-1].values
     train_norm = np.vstack(train_norm_raw[:, 0])
     flattened_io_dim = train_norm.shape[1]
-    scaler = MinMaxScaler()
-    train_norm = scaler.fit_transform(train_norm)
+
+    if module_str != "pvc":
+        # No normalisation needed for missense variant representations
+        scaler = MinMaxScaler()
+        train_norm = scaler.fit_transform(train_norm)
 
     val_norm_raw = val_raw.iloc[:, :-1].values
     val_norm = np.vstack(val_norm_raw[:, 0])
-    val_norm = scaler.transform(val_norm)
+    if module_str != "pvc":
+        val_norm = scaler.transform(val_norm)
 
     drug_target_train_data = {
         'data': train_norm,
@@ -123,7 +127,8 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
     for key, raw in test_raw.items():
         test_norm_raw = raw.iloc[:, :-1].values
         test_norm = np.vstack(test_norm_raw[:, 0])
-        test_norm = scaler.transform(test_norm)
+        if module_str != "pvc":
+            test_norm = scaler.transform(test_norm)
         test_labels = raw.iloc[:, -1].values
         drug_target_test_data[key] = {
             'data': test_norm,
