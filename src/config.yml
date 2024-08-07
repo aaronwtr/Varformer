@@ -26,12 +26,12 @@ hyperparameters:
     lr_end: 1e-3
     epochs: 100
     width: 256
-    batch_size: 256
+    batch_size: 128
     depth: 4
     threshold: 0.6
-    dropout: 0.5
+    dropout: 0.0
     num_workers: 0
-    weight_decay: 0.1
+    weight_decay: 0.0
     wandb: True
   pathogenicity_embedding:
     usage: True
@@ -39,7 +39,7 @@ hyperparameters:
     latent_dim: 256 # standard 256
     reduction: None # choose from "padding", "pooling" or None
     batch_size: 64 # standard 128
-    max_epochs: 100 # standard 20
+    max_epochs: 50 # standard 20
     ae_type: "vae" # choose from "vae" or "ae"
     num_layers: 2 # tunable hyperparam
     nhead: 2 # tunable hyperparam
