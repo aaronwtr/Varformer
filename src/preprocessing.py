@@ -898,13 +898,13 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.variant_gh_data(config['hyperparameters']['pathogenicity_embedding'])
 
         print("Obtaining AlphaMissense pathogenicity embeddings...")
-        if not os.path.exists("../data/features/variant_pat_features.pkl"):
+        if not os.path.exists("../data/features/var_pat_features.pkl"):
             self.var_pat_features = self.varformer_pathogenicity_input()
-            with open('../data/features/variant_pat_features.pkl', 'wb') as file:
-                pkl.dump(var_pat_data, file)
+            with open('../data/features/var_pat_features.pkl', 'wb') as file:
+                pkl.dump(self.var_pat_features, file)
         else:
-            with open("../data/features/variant_pat_features.pkl", "rb") as f:
-                self.var_pat_features, self.pat_ensg_ids, self.pat_uniprot_ids = pkl.load(f)
+            with open("../data/features/var_pat_features.pkl", "rb") as f:
+                self.var_pat_features = pkl.load(f)
 
         # print("Obtaining AlphaFold protein structure embeddings")
         # self.var_stc_features = self.variant_structure_input()
@@ -929,40 +929,37 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.target = load_combined_labels()
 
         # TODO
-        #  [ ] Make a separate train and test dictionary
+        #  [X] Make a separate train and test dictionary
         #  [ ] Make a dedicated Dataset for the data that can be integrated with a Transformer architecture
         #  [ ] Make the VarFormer model
 
         # Combine features and target
-        self.features = self.var_pat_features
-        self.data = combine_features_and_labels(self.pat_ensg_ids, self.features, self.target)
-        self.ensg_ids = self.pat_ensg_ids
+        # self.data = combine_features_and_labels(self.pat_ensg_ids, self.features, self.target)
+        self.pat_ensg_ids = pd.Series(list(self.var_pat_features.keys()))
 
         # Get test data and remove from train feature matrix
         self.pfam_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.drgbl_targets_pfam)]
-        self.pfam_pos_data = self.data[self.data.index.isin(self.pfam_ids.index)]
-        num_pfam_pos = len(self.pfam_pos_data)
+        self.pfam_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_ids}
+        num_pfam_pos = len(self.pfam_pos_dict)
 
         self.rcnt_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.rcnt_targets_fda)]
-        self.rcnt_pos_data = self.data[self.data.index.isin(self.rcnt_ids.index)]
-        self.rcnt_pos_data.loc[:, 'target'] = 1
-        num_rcnt_pos = len(self.rcnt_pos_data)
+        self.rcnt_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_ids}
+        num_rcnt_pos = len(self.rcnt_pos_dict)
 
-        self.pharos_ids = self.pat_uniprot_ids[self.pat_ensg_ids.isin(self.chem_targets_pharos)]
-        self.pharos_pos_data = self.data[self.data.index.isin(self.pharos_ids.index)]
-        self.pharos_pos_data.loc[:, 'target'] = 1
-        num_pharos_pos = len(self.pharos_pos_data)
+        self.pharos_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.chem_targets_pharos)]
+        self.pharos_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_ids}
+        num_pharos_pos = len(self.pharos_pos_dict)
 
         self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
 
         common_essentials = self.data[self.data['common_essentials'] == 1]
         common_essentials = common_essentials[common_essentials['target'] == 0]
         common_essentials = common_essentials[common_essentials['pli_lof_constraint'] > 0.9]
-        negative_test_balance = common_essentials.sample(n=len(self.holdout_ids), random_state=42)
-        negative_test_ids = self.pat_ensg_ids[self.pat_ensg_ids.index.isin(negative_test_balance.index)]
+        # filter all ensgs from ensg_id that is not in var_pat_features.keys()
+        ensgs = self.ensg_ids[self.ensg_ids.isin(self.pat_ensg_ids)]
+        ce_ensg = ensgs[ensgs.index.isin(common_essentials.index)]
+        negative_test_ids = ce_ensg.sample(n=len(self.holdout_ids), random_state=42)
         num_negs = len(negative_test_ids)
-
-        self.data_neg = self.data[~self.data.index.isin(self.holdout_ids.index)]
 
         self.pfam_negs = negative_test_ids.sample(n=num_pfam_pos, random_state=42)
         negative_test_ids = negative_test_ids.drop(self.pfam_negs.index)
@@ -976,15 +973,15 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs])
         self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs])
 
-        self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
+        # self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
 
-        self.pfam_neg_data = self.data[self.data.index.isin(self.pfam_negs.index)]
-        self.rcnt_neg_data = self.data[self.data.index.isin(self.rcnt_negs.index)]
-        self.pharos_neg_data = self.data[self.data.index.isin(self.pharos_negs.index)]
+        self.pfam_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_negs}
+        self.rcnt_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_negs}
+        self.pharos_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_negs}
 
-        self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
-        self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
-        self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
+        # self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
+        # self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
+        # self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
 
     def variant_gh_data(self, config):
         print("Preparing GH data for variant-level embeddings...")
