@@ -260,7 +260,7 @@ def initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, tes
         lr=hyperparams['mlp']['lr_start'],
         batch_size=hyperparams['mlp']['batch_size'],
         optimizer=hyperparams['mlp']['optimizer'],
-        epochs=hyperparams['mlp']['epochs'],
+        epochs=hyperparams['mlp']['epochs'] + hyperparams['pathogenicity_embedding']['max_epochs'],
         dropout=hyperparams['mlp']['dropout'],
         width=hyperparams['mlp']['width'],
         weight_decay=hyperparams['mlp']['weight_decay'],
