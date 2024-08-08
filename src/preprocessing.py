@@ -979,6 +979,10 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.rcnt_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_negs}
         self.pharos_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_negs}
 
+        self.pfam_data = {**self.pfam_pos_dict, **self.pfam_neg_data}
+        self.rcnt_data = {**self.rcnt_pos_dict, **self.rcnt_neg_data}
+        self.pharos_data = {**self.pharos_pos_dict, **self.pharos_neg_data}
+
         # self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
         # self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
         # self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
@@ -1079,9 +1083,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             if np.isnan(pat_value):
                 continue
             if gene not in var_pat_features.keys():
-                var_pat_features[gene] = [[pat_value, pos, mutation_map[mut]]]
+                var_pat_features[gene] = torch.tensor([[pat_value, pos, mutation_map[mut]]], dtype=torch.float32)
             else:
-                var_pat_features[gene].append([pat_value, pos, mutation_map[mut]])
+                var_pat_features[gene].append(torch.tensor([pat_value, pos, mutation_map[mut]], dtype=torch.float32))
 
         # with open("../data/features/raw_miva_feature_matrix.pkl", 'rb') as f:
         #     feature_matrix = pkl.load(f)
