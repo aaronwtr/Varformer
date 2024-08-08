@@ -4,7 +4,6 @@ import yaml
 import torch.nn as nn
 import src.preprocessing as preprocessing
 import torch.nn.functional as F
-import pandas as pd
 
 from torch.utils.data import Dataset
 
