@@ -69,48 +69,78 @@ class BaseTargetIdentifier(torch.nn.Module):
         return logits, probabilities, binary_predictions
 
 
+class VarformerTargetIdentifier(BaseTargetIdentifier):
+    def __init__(self, config, num_features, num_mutations, max_variants, model_type="varformer"):
+        super(VarformerTargetIdentifier, self).__init__(config, num_features, model_type)
+
+        varformer_config = config['hyperparameters'][model_type]
+        self.transformer = Varformer(
+            num_mutations=num_mutations,
+            max_variants=max_variants,
+            d_model=varformer_config['d_model'],
+            nhead=varformer_config['nhead'],
+            num_layers=varformer_config['num_layers'],
+            dim_feedforward=varformer_config['dim_feedforward']
+        )
+
+        # Adjust the input size of the first linear layer of the BaseTargetIdentifier MLP
+        self.layers[0] = nn.Linear(varformer_config['d_model'], int(self.config['width']))
+
+    def forward(self, x, mask=None):
+        transformer_output = self.transformer(x, mask)
+        logits = self.layers(transformer_output).squeeze()
+        sigmoid = nn.Sigmoid()
+        probabilities = sigmoid(logits)
+        binary_predictions = (probabilities > float(self.config['threshold'])).float()
+        return logits, probabilities, binary_predictions
+
+
 class BaseLightningTargetIdentifier(pl.LightningModule):
-    def __init__(self, model, config, imbalance, model_type="mlp"):
+    def __init__(self, model, config, imbalance, model_type):
         super().__init__()
         self.imbalance = imbalance
         self.config = config['hyperparameters'][model_type]
         self.model = model
 
-    def forward(self, x):
-        return self.model(x)
+    def _common_step(self, batch, batch_idx, step_type):
+        if len(batch) == 3:  # For transformer
+            features, masks, labels = batch
+            logits, probas, bin_preds = self(features, masks)
+        else:  # For regular MLP
+            features, labels = batch
+            logits, probas, bin_preds = self(features)
 
-    def training_step(self, batch, batch_idx):
-        features, labels = batch
-        logits, probas, bin_preds = self(features)
-        class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))],
-                                    device=self.device)
+        if step_type == 'train':
+            class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))],
+                                        device=self.device)
+            loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
+        else:
+            loss = F.binary_cross_entropy_with_logits(logits, labels.float())
+
         labels = (labels > float(self.config['threshold'])).float()
 
-        loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
-
-        self.log('train_loss', loss)
-        self.log('train_acc', self.model.acc(bin_preds, labels))
-        self.log('train_auroc', self.model.auroc(bin_preds, labels.int()))
-        self.log('train_spearman', self.model.spearman(probas, labels.float()))
-        self.log('train_f1', self.model.f1(bin_preds, labels.long()))
+        self.log(f'{step_type}_loss', loss)
+        self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels))
+        self.log(f'{step_type}_auroc', self.model.auroc(bin_preds, labels.int()))
+        self.log(f'{step_type}_spearman', self.model.spearman(probas, labels.float()))
+        self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()))
 
         return loss
 
-    def validation_step(self, batch, batch_idx):
-        features, labels = batch
-        logits, probas, bin_preds = self(features)
-        loss = F.binary_cross_entropy_with_logits(logits, labels.float())
-        labels = (labels > float(self.config['threshold'])).float()
+    def training_step(self, batch, batch_idx):
+        return self._common_step(batch, batch_idx, 'train')
 
-        self.log('val_loss', loss)
-        self.log('val_acc', self.model.acc(bin_preds, labels))
-        self.log('val_auroc', self.model.auroc(bin_preds, labels.int()))
-        self.log('val_spearman', self.model.spearman(probas, labels.float()))
-        self.log('val_f1', self.model.f1(bin_preds, labels.long()))
+    def validation_step(self, batch, batch_idx):
+        return self._common_step(batch, batch_idx, 'val')
 
     def test_step(self, batch, batch_idx):
-        features, labels, test_source = batch
-        logits, probas, bin_preds = self(features)
+        if len(batch) == 4:  # For varformer
+            features, masks, labels, test_source = batch
+            logits, probas, bin_preds = self(features, masks)
+        else:  # For regular MLP
+            features, labels, test_source = batch
+            logits, probas, bin_preds = self(features)
+
         labels = (labels > float(self.config['threshold'])).float()
         test_source = test_source[0]
 
@@ -118,11 +148,6 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
         self.log(f'test_auroc_{test_source}', self.model.auroc(bin_preds, labels.int()))
         self.log(f'test_spearman_{test_source}', self.model.spearman(probas, labels.float()))
         self.log(f'test_f1_{test_source}', self.model.f1(bin_preds, labels.long()))
-
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        features = batch
-        logits, probas, bin_preds = self(features)
-        return probas
 
     def configure_optimizers(self):
         weight_decay = float(self.config.get('weight_decay', 0))
@@ -141,6 +166,63 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
 
         return optimizer
+
+
+class MLPLightningTargetIdentifier(BaseLightningTargetIdentifier):
+    def __init__(self, model, config, imbalance, model_type="mlp"):
+        super().__init__(model, config, imbalance, model_type)
+
+    def forward(self, x):
+        return self.model(x)
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        features = batch
+        logits, probas, bin_preds = self(features)
+        return probas
+
+
+class VarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
+    def __init__(self, model, config, imbalance, model_type="transformer"):
+        super().__init__(model, config, imbalance, model_type)
+
+    def forward(self, x, mask):
+        return self.model(x, mask)
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        features, masks = batch
+        logits, probas, bin_preds = self(features, masks)
+        return probas
+
+
+class VariantEmbedding(nn.Module):
+    def __init__(self, num_mutations, max_seq_length, d_model):
+        super(VariantEmbedding, self).__init__()
+        self.pathogenicity_embed = nn.Linear(1, d_model // 3)
+        self.position_embed = nn.Embedding(max_seq_length, d_model // 3)
+        self.mutation_embed = nn.Embedding(num_mutations, d_model // 3)
+        self.layer_norm = nn.LayerNorm(d_model)
+
+    def forward(self, pathogenicity, position, mutation):
+        path_emb = self.pathogenicity_embed(pathogenicity.unsqueeze(-1))
+        pos_emb = self.position_embed(position)
+        mut_emb = self.mutation_embed(mutation)
+        combined = torch.cat([path_emb, pos_emb, mut_emb], dim=-1)
+        return self.layer_norm(combined)
+
+
+class Varformer(nn.Module):
+    def __init__(self, num_mutations, d_model, nhead, num_layers, dim_feedforward, max_variants):
+        super(Varformer, self).__init__()
+        self.variant_embedding = VariantEmbedding(num_mutations, d_model)
+        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers)
+        self.classifier = nn.Linear(d_model, 1)
+
+    def forward(self, pathogenicity, position, mutation, src_mask):
+        src = self.variant_embedding(pathogenicity, position, mutation)
+        output = self.transformer_encoder(src, src_key_padding_mask=src_mask)
+        output = output.mean(dim=1)  # Global average pooling
+        return torch.sigmoid(self.classifier(output))
 
 
 class VariantRepresentationTargetIdentifier(pl.LightningModule):
