@@ -6,6 +6,7 @@ import src.preprocessing as preprocessing
 import torch.nn.functional as F
 
 from torch.utils.data import Dataset
+from typing import Dict, List, Tuple
 
 
 class ModuleDataProcessor:
@@ -80,6 +81,35 @@ class DrugTargetData(Dataset):
 
     def label_imbalance(self):
         return self.labels.sum() / len(self.labels)
+
+
+class VarFormerDataset(Dataset):
+    def __init__(self, genes: Dict[str, torch.Tensor], labels: Dict[str, int], max_variants: int):
+        self.genes = genes
+        self.labels = labels
+        self.max_variants = max_variants
+        self.gene_names = list(genes.keys())
+
+    def __len__(self) -> int:
+        return len(self.genes)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, int, str]:
+        gene_name = self.gene_names[idx]
+        gene = self.genes[gene_name]
+        label = self.labels[gene_name]
+
+        # Pad sequence if necessary
+        if gene.size(0) < self.max_variants:
+            padding = torch.zeros((self.max_variants - gene.size(0), gene.size(1)), dtype=gene.dtype)
+            gene = torch.cat([gene, padding], dim=0)
+        elif gene.size(0) > self.max_variants:
+            gene = gene[:self.max_variants]
+
+        # Create attention mask
+        mask = torch.zeros(self.max_variants, dtype=torch.bool)
+        mask[len(self.genes[gene_name]):] = True
+
+        return gene, mask, label, gene_name
 
 
 class DrugTargetVAEData(Dataset):
