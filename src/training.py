@@ -21,7 +21,7 @@ from typing import Dict, Union
 from tqdm import tqdm
 
 from dataloader import DrugTargetData, ModuleDataProcessor, DrugTargetVAEData
-from model import BaseTargetIdentifier, BaseLightningTargetIdentifier, VariantRepresentationTargetIdentifier
+from model import BaseTargetIdentifier, MLPLightningTargetIdentifier, VarformerLightningTargetIdentifier, VariantRepresentationTargetIdentifier
 from utils import df_col_to_dense
 from autoencoders.vae import VAE
 from puupl import training as puupl_training
@@ -246,7 +246,7 @@ def initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, tes
             imbalance=train_imbalance
         )
     else:
-        model = BaseLightningTargetIdentifier(model=mlp_pytorch, config=config, imbalance=train_imbalance)
+        model = MLPLightningTargetIdentifier(model=mlp_pytorch, config=config, imbalance=train_imbalance)
 
     if torch.cuda.is_available():
         accelerator = 'gpu'
