@@ -25,9 +25,6 @@ from Bio import SeqIO
 from torch.utils.data import DataLoader
 from shutil import copyfileobj
 
-from autoencoders.ae import AutoencoderTrainer
-from autoencoders.vae import VAETrainer
-from src.autoencoders import ae_training, vae_training
 from src.utils import featurise, load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx
 
 
@@ -927,11 +924,13 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         # Ground truth
         self.target = load_combined_labels()
+        self.labels = {key: 1 if key in self.target['Ensembl'].tolist() else 0 for key in self.var_pat_features.keys()}
 
         # TODO
         #  [X] Make a separate train and test dictionary
-        #  [ ] Make a dedicated Dataset for the data that can be integrated with a Transformer architecture
-        #  [ ] Make the VarFormer model
+        #  [X] Make a dedicated Dataset for the data that can be integrated with a Transformer architecture
+        #  [X] Make the VarFormer model
+        #  [ ] Train the Varformer model
 
         # Combine features and target
         # self.data = combine_features_and_labels(self.pat_ensg_ids, self.features, self.target)
@@ -983,6 +982,12 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.rcnt_data = {**self.rcnt_pos_dict, **self.rcnt_neg_data}
         self.pharos_data = {**self.pharos_pos_dict, **self.pharos_neg_data}
 
+        self.ensg_ids = self.pat_ensg_ids
+
+        # remove all the test genes from the data dictionary
+        self.data = {key: value for key, value in self.var_pat_features.items() if key not in self.holdout_ids.tolist()}
+        self.data['labels'] = self.labels
+
         # self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
         # self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
         # self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
@@ -994,7 +999,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         else:
             self.gh_data = pd.read_pickle('../data/elgh/gh_miva_data.pkl')
             max_pos = self.gh_data['Protein_pos_shard'].max()
-            if max_pos != config['io_dim']:
+            if max_pos != config['max_seq_len']:
                 print("Representation dimension has been changed, reprocessing GH data...")
                 self.variant_sharding(config)
                 if os.path.exists("../data/features/var_pat_features.pkl.gz"):
@@ -1008,9 +1013,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
 
         self.gh_data['Protein_position'] = self.gh_data['Protein_position'].astype(int)
-        io_dim = config['io_dim']
+        max_seq_len = config['max_seq_len']
         self.gh_data.loc[:, 'Protein_pos_shard'] = self.gh_data['Protein_position'].apply(
-            lambda x: (x - 1) % io_dim + 1)
+            lambda x: (x - 1) % max_seq_len + 1)
         cols = self.gh_data.columns.tolist()
         pp_idx = cols.index('Protein_position')
         cols = cols[:pp_idx] + [cols[-1]] + cols[pp_idx:-1]
@@ -1051,7 +1056,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             pkl.dump(self.gh_data, f)
 
         sym_list = self.gh_data['SYMBOL'].tolist()
-        prot_pos = self.gh_data['Protein_pos_shard'].tolist()
+        prot_pos = self.gh_data['Protein_position'].tolist()
         aas = self.gh_data['Amino_acids'].tolist()
         hgvsp = self.gh_data['HGVSp'].tolist()
         prot_pos = [str(pos) for pos in prot_pos]
@@ -1071,6 +1076,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.gh_data = self.gh_data.drop(columns=['combined'])
 
         mutation_map = self.missense_mutation_map()
+        gene_map = {gene: i for i, gene in enumerate(self.gh_data['Gene'].unique())}
 
         var_pat_features = {}
         for index, row in tqdm(self.gh_data.iterrows(), total=self.gh_data.shape[0]):
@@ -1078,37 +1084,17 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             ref_aa = row['AA_ref']
             alt_aa = row['AA_alt']
             mut = f"{ref_aa}>{alt_aa}"
-            pos = row['Protein_pos_shard']
+            # pos = row['Protein_pos_shard']
+            pos = row['Protein_position']
             pat_value = row['am_pathogenicity'] * row['AF']
             if np.isnan(pat_value):
                 continue
             if gene not in var_pat_features.keys():
-                var_pat_features[gene] = torch.tensor([[pat_value, pos, mutation_map[mut]]], dtype=torch.float32)
+                var_pat_features[gene] = [[pat_value, gene_map[gene], pos, mutation_map[mut]]]
             else:
-                var_pat_features[gene].append(torch.tensor([pat_value, pos, mutation_map[mut]], dtype=torch.float32))
+                var_pat_features[gene].append([pat_value, gene_map[gene], pos, mutation_map[mut]])
 
-        # with open("../data/features/raw_miva_feature_matrix.pkl", 'rb') as f:
-        #     feature_matrix = pkl.load(f)
-        #
-        # required_columns = ['pathogenicity', 'position', 'miva_identity']
-        # for col in required_columns:
-        #     if col not in feature_matrix.columns:
-        #         feature_matrix[col] = np.nan
-        # add_count = 0
-        # for ensg_id, values in tqdm(list(feature_dict.items())):
-        #     if ensg_id in feature_matrix['ENSG'].values:
-        #         add_count += 1
-        #         for i, col in enumerate(required_columns):
-        #             for value in values[:, i]:
-        #                 feature_matrix.loc[feature_matrix['ENSG'] == ensg_id, col] = value
-        #
-        # ensg_ids = feature_matrix["ENSG"]
-        # uniprot_ids = feature_matrix["UNIPROT"]
-        #
-        # # feature_matrix.drop_duplicates(subset="ENSG", inplace=True)
-        # feature_matrix.drop(["ENSG", "UNIPROT", "variant_id"], axis=1, inplace=True)
-
-        return {gene: np.array(features) for gene, features in var_pat_features.items()}
+        return {gene: torch.tensor(features, dtype=torch.float32) for gene, features in var_pat_features.items()}
 
     def variant_structure_input(self):
         af_data = self.alphafold_extractor()
@@ -1369,7 +1355,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             assert len(model_files) == 1
             model_file = model_files[0]
             model = AutoencoderTrainer.load_from_checkpoint(
-                model_dir + '/' + model_file, input_dim=hparams['io_dim'],
+                model_dir + '/' + model_file, input_dim=hparams['max_seq_len'],
                 encoding_dim=hparams['latent_dim'],
                 num_layers=hparams['num_layers'], nhead=hparams['nhead'],
                 reduction_type=hparams['reduction']
@@ -1380,7 +1366,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             assert len(model_files) == 1
             model_file = model_files[0]
             model = VAETrainer.load_from_checkpoint(
-                model_dir + '/' + model_file, input_dim=hparams['io_dim'],
+                model_dir + '/' + model_file, input_dim=hparams['max_seq_len'],
                 latent_dim=hparams['latent_dim']
             )
 
@@ -1388,7 +1374,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         with torch.no_grad():
             variant_pathogenicity = DataLoader(
-                dl.VariantPathogenicityData(data_dict=variant_am_features, reduct_dim=hparams['io_dim'],
+                dl.VariantPathogenicityData(data_dict=variant_am_features, reduct_dim=hparams['max_seq_len'],
                                             reduction_type=hparams['reduction']),
                 collate_fn=ae_training.padding,
                 shuffle=False
@@ -1652,9 +1638,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 if np.isnan(value):
                     continue
 
-                io_dim = self.config['hyperparameters']['pathogenicity_embedding']['io_dim']
+                max_seq_len = self.config['hyperparameters']['pathogenicity_embedding']['max_seq_len']
                 if gene not in var_pat_features.keys():
-                    matrix_shape = (21 * 21, io_dim)
+                    matrix_shape = (21 * 21, max_seq_len)
                     var_pat_matrix = np.zeros(matrix_shape, dtype=np.float32)
                     matrix_index = ref_idx * 21 + alt_idx
                     var_pat_matrix[matrix_index, pos - 1] = value
