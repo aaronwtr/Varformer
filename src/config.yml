@@ -35,7 +35,7 @@ hyperparameters:
     wandb: True
   pathogenicity_embedding:
     usage: True
-    io_dim: 512  # standard 4096
+    max_seq_len: 512  # standard 4096
     latent_dim: 256 # standard 256
     reduction: None # choose from "padding", "pooling" or None
     batch_size: 64 # standard 128
