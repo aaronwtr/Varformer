@@ -195,25 +195,28 @@ class VarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
 
 
 class VariantEmbedding(nn.Module):
-    def __init__(self, num_mutations, max_seq_length, d_model):
+    def __init__(self, num_genes, num_mutations, max_seq_length, d_model):
         super(VariantEmbedding, self).__init__()
-        self.pathogenicity_embed = nn.Linear(1, d_model // 3)
-        self.position_embed = nn.Embedding(max_seq_length, d_model // 3)
-        self.mutation_embed = nn.Embedding(num_mutations, d_model // 3)
+        self.pathogenicity_embed = nn.Linear(1, d_model // 4)
+        self.gene_embed = nn.Embedding(num_genes, d_model // 4)
+        self.position_embed = nn.Embedding(max_seq_length, d_model // 4)
+        self.mutation_embed = nn.Embedding(num_mutations, d_model // 4)
+        # self.shard_embed = nn.Embedding(max_shards, d_model // 5)
         self.layer_norm = nn.LayerNorm(d_model)
 
-    def forward(self, pathogenicity, position, mutation):
+    def forward(self, pathogenicity, gene, position, mutation):
         path_emb = self.pathogenicity_embed(pathogenicity.unsqueeze(-1))
+        gene_emb = self.gene_embed(gene)
         pos_emb = self.position_embed(position)
         mut_emb = self.mutation_embed(mutation)
-        combined = torch.cat([path_emb, pos_emb, mut_emb], dim=-1)
+        combined = torch.cat([path_emb, gene_emb, pos_emb, mut_emb], dim=-1)
         return self.layer_norm(combined)
 
 
 class Varformer(nn.Module):
     def __init__(self, num_mutations, d_model, nhead, num_layers, dim_feedforward, max_variants):
         super(Varformer, self).__init__()
-        self.variant_embedding = VariantEmbedding(num_mutations, d_model)
+        self.variant_embedding = VariantEmbedding(num_mutations, max_variants, d_model)
         encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers)
         self.classifier = nn.Linear(d_model, 1)
