@@ -83,12 +83,13 @@ class DrugTargetData(Dataset):
         return self.labels.sum() / len(self.labels)
 
 
-class VarFormerDataset(Dataset):
-    def __init__(self, genes: Dict[str, torch.Tensor], labels: Dict[str, int], max_variants: int):
-        self.genes = genes
-        self.labels = labels
+class VarformerDataset(Dataset):
+    def __init__(self, variant_data, max_variants: int):
+        self.genes = variant_data['data']
+        self.labels = variant_data['labels']
         self.max_variants = max_variants
-        self.gene_names = list(genes.keys())
+        self.gene_names = list(variant_data.keys())
+        self.test_source = variant_data.get('test_source', False)
 
     def __len__(self) -> int:
         return len(self.genes)
@@ -110,6 +111,13 @@ class VarFormerDataset(Dataset):
         mask[len(self.genes[gene_name]):] = True
 
         return gene, mask, label, gene_name
+
+    def label_imbalance(self):
+        if self.labels is not None:
+            label_list = list(self.labels.values())
+            return sum(label_list) / len(label_list)
+        else:
+            return 0
 
 
 class DrugTargetVAEData(Dataset):
