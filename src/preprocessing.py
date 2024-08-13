@@ -892,7 +892,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         print("Preparing variant features...")
-        self.variant_gh_data(config['hyperparameters']['pathogenicity_embedding'])
+        self.variant_gh_data(config['hyperparameters']['varformer'])
 
         print("Obtaining AlphaMissense pathogenicity embeddings...")
         if not os.path.exists("../data/features/var_pat_features.pkl"):
@@ -1076,6 +1076,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.gh_data = self.gh_data.drop(columns=['combined'])
 
         mutation_map = self.missense_mutation_map()
+        # save the mutation_map to a .pkl file
+        with open("../data/elgh/missense_mutation_map.pkl", 'wb') as f:
+            pkl.dump(mutation_map, f)
         gene_map = {gene: i for i, gene in enumerate(self.gh_data['Gene'].unique())}
 
         var_pat_features = {}
