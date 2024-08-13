@@ -70,17 +70,17 @@ class BaseTargetIdentifier(torch.nn.Module):
 
 
 class VarformerTargetIdentifier(BaseTargetIdentifier):
-    def __init__(self, config, num_features, num_mutations, max_variants, model_type="varformer"):
-        super(VarformerTargetIdentifier, self).__init__(config, num_features, model_type)
+    def __init__(self, config, num_features, num_genes, num_mutations, max_seq_len, model_type="varformer"):
+        super(VarformerTargetIdentifier, self).__init__(config, num_features, "mlp")
 
         varformer_config = config['hyperparameters'][model_type]
         self.transformer = Varformer(
+            num_genes=num_genes,
             num_mutations=num_mutations,
-            max_variants=max_variants,
+            max_seq_length=max_seq_len,
             d_model=varformer_config['d_model'],
             nhead=varformer_config['nhead'],
-            num_layers=varformer_config['num_layers'],
-            dim_feedforward=varformer_config['dim_feedforward']
+            num_layers=varformer_config['num_layers']
         )
 
         # Adjust the input size of the first linear layer of the BaseTargetIdentifier MLP
@@ -182,7 +182,7 @@ class MLPLightningTargetIdentifier(BaseLightningTargetIdentifier):
 
 
 class VarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
-    def __init__(self, model, config, imbalance, model_type="transformer"):
+    def __init__(self, model, config, imbalance, model_type="varformer"):
         super().__init__(model, config, imbalance, model_type)
 
     def forward(self, x, mask):
@@ -214,9 +214,11 @@ class VariantEmbedding(nn.Module):
 
 
 class Varformer(nn.Module):
-    def __init__(self, num_mutations, d_model, nhead, num_layers, dim_feedforward, max_variants):
+    def __init__(self, num_genes, num_mutations, max_seq_length, d_model, nhead, num_layers):
         super(Varformer, self).__init__()
-        self.variant_embedding = VariantEmbedding(num_mutations, max_variants, d_model)
+
+        dim_feedforward = int(d_model // 2)
+        self.variant_embedding = VariantEmbedding(num_genes, num_mutations, max_seq_length, d_model)
         encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers)
         self.classifier = nn.Linear(d_model, 1)
