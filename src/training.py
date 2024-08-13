@@ -11,6 +11,7 @@ import utils
 import lightning as pl
 import pandas as pd
 import numpy as np
+import pickle as pkl
 
 from pytorch_lightning.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
@@ -20,9 +21,9 @@ from sklearn.preprocessing import MinMaxScaler
 from typing import Dict, Union, Optional
 from tqdm import tqdm
 
-from dataloader import DrugTargetData, ModuleDataProcessor, DrugTargetVAEData, VarformerDataset
+from dataloader import DrugTargetData, ModuleDataProcessor, VarformerDataset
 from model import (BaseTargetIdentifier, MLPLightningTargetIdentifier, VarformerLightningTargetIdentifier,
-                   VariantRepresentationTargetIdentifier)
+                   VariantRepresentationTargetIdentifier, VarformerTargetIdentifier)
 
 
 def tune():
@@ -126,9 +127,9 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
                 drug_target_train_data,
                 max_variant_count
             ),
-            batch_size=hparams['pathogenicity_embedding']['batch_size'],
+            batch_size=hparams['varformer']['batch_size'],
             shuffle=True,
-            num_workers=hparams['pathogenicity_embedding']['num_workers']
+            num_workers=hparams['varformer']['num_workers']
         )
 
         val = DataLoader(
@@ -136,9 +137,9 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
                 drug_target_val_data,
                 max_variant_count
             ),
-            batch_size=hparams['pathogenicity_embedding']['batch_size'],
+            batch_size=hparams['varformer']['batch_size'],
             shuffle=True,
-            num_workers=hparams['pathogenicity_embedding']['num_workers']
+            num_workers=hparams['varformer']['num_workers']
         )
 
         test = {}
@@ -148,9 +149,9 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
                     drug_target_val_data,
                     max_variant_count
                 ),
-                batch_size=hparams['pathogenicity_embedding']['batch_size'],
+                batch_size=hparams['varformer']['batch_size'],
                 shuffle=True,
-                num_workers=hparams['pathogenicity_embedding']['num_workers']
+                num_workers=hparams['varformer']['num_workers']
             )
         label_imbalance = _train.dataset.label_imbalance()
     else:
@@ -212,13 +213,23 @@ def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_ge
 
     mlp_pytorch = BaseTargetIdentifier(config=config, num_features=num_features)
 
-    # TODO: Integrate varformer here
+    num_genes = len(list(labels.keys()))
+    with open("../data/elgh/missense_mutation_map.pkl", "rb") as f:
+        missense_map = pkl.load(f)
+    num_mutations = len(missense_map)
+
+    model = None
     if module_str == "pvc":
-        vae = VAE(input_dim=flattened_io_dim,
-                  latent_dim=hyperparams['pathogenicity_embedding']['latent_dim'])
-        model = VariantRepresentationTargetIdentifier(
-            vae, mlp_pytorch, config, num_features,
-            latent_dim=hyperparams['pathogenicity_embedding']['latent_dim'],
+        varformer = VarformerTargetIdentifier(
+            config=config,
+            num_features=num_features,
+            num_genes=num_genes,
+            num_mutations=num_mutations,
+            max_seq_len=hyperparams['varformer']['max_seq_len'],
+        )
+        VarformerLightningTargetIdentifier(
+            model=varformer,
+            config=config,
             imbalance=train_imbalance
         )
     else:
@@ -373,6 +384,7 @@ def kfold_train(
             module_str
         )
 
+        # TODO: Launch and monitor varformer training 
         if config['hyperparameters']['mlp']['wandb']:
             run = wandb.init(
                 project="drug-target-prediction",
