@@ -26,22 +26,24 @@ hyperparameters:
     lr_end: 1e-3
     epochs: 100
     width: 256
-    batch_size: 128
-    depth: 4
+    batch_size: 64
+    num_layers: 4
     threshold: 0.6
     dropout: 0.0
     num_workers: 0
     weight_decay: 0.0
-    wandb: True
+    wandb: False
   varformer:
     usage: True
+    optimizer: Adam
+    lr_start: 1e-3
     max_seq_len: 4096  # standard 4096
-    d_model: 1024 # standard 1024
+    d_model: 768 # standard 768
     reduction: None # choose from "padding", "pooling" or None
-    batch_size: 64 # standard 128
-    max_epochs: 20 # standard 20
-    num_layers: 1 # tunable hyperparam
+    batch_size: 64 # standard 64
     nhead: 1 # tunable hyperparam
+    num_encoder_layers: 1 # tunable hyperparam
+    shard_size: 512
     num_workers: 0
   plddt_autoencoder:
     usage: None
