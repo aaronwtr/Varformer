@@ -1079,7 +1079,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         # save the mutation_map to a .pkl file
         with open("../data/elgh/missense_mutation_map.pkl", 'wb') as f:
             pkl.dump(mutation_map, f)
-        gene_map = {gene: i for i, gene in enumerate(self.gh_data['Gene'].unique())}
 
         var_pat_features = {}
         for index, row in tqdm(self.gh_data.iterrows(), total=self.gh_data.shape[0]):
@@ -1093,9 +1092,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             if np.isnan(pat_value):
                 continue
             if gene not in var_pat_features.keys():
-                var_pat_features[gene] = [[pat_value, gene_map[gene], pos, mutation_map[mut]]]
+                var_pat_features[gene] = [[pat_value, pos, mutation_map[mut]]]
             else:
-                var_pat_features[gene].append([pat_value, gene_map[gene], pos, mutation_map[mut]])
+                var_pat_features[gene].append([pat_value, pos, mutation_map[mut]])
 
         return {gene: torch.tensor(features, dtype=torch.float32) for gene, features in var_pat_features.items()}
 

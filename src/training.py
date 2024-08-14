@@ -8,22 +8,22 @@ import wandb
 
 import utils
 
-import lightning as pl
+import pytorch_lightning as pl
 import pandas as pd
 import numpy as np
 import pickle as pkl
 
 from pytorch_lightning.loggers import WandbLogger
-from lightning.pytorch.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import MinMaxScaler
 from typing import Dict, Union, Optional
 from tqdm import tqdm
 
-from dataloader import DrugTargetData, ModuleDataProcessor, VarformerDataset
-from model import (BaseTargetIdentifier, MLPLightningTargetIdentifier, VarformerLightningTargetIdentifier,
-                   VariantRepresentationTargetIdentifier, VarformerTargetIdentifier)
+from dataloader import DrugTargetData, ModuleDataProcessor, ShardedVarformerDataset
+from models.target_identifier import BaseTargetIdentifier, ShardedVarformerTargetIdentifier
+from models.lightning import MLPLightningTargetIdentifier, ShardedVarformerLightningTargetIdentifier
 
 
 def tune():
@@ -123,9 +123,9 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
             }
 
         _train = DataLoader(
-            VarformerDataset(
+            ShardedVarformerDataset(
                 drug_target_train_data,
-                max_variant_count
+                hparams['varformer']['shard_size'],
             ),
             batch_size=hparams['varformer']['batch_size'],
             shuffle=True,
@@ -133,9 +133,9 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
         )
 
         val = DataLoader(
-            VarformerDataset(
+            ShardedVarformerDataset(
                 drug_target_val_data,
-                max_variant_count
+                hparams['varformer']['shard_size'],
             ),
             batch_size=hparams['varformer']['batch_size'],
             shuffle=True,
@@ -143,11 +143,11 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
         )
 
         test = {}
-        for key, data in drug_target_test_data.items():
+        for key, test_data in drug_target_test_data.items():
             test[key] = DataLoader(
-                VarformerDataset(
-                    drug_target_val_data,
-                    max_variant_count
+                ShardedVarformerDataset(
+                    test_data,
+                    hparams['varformer']['shard_size'],
                 ),
                 batch_size=hparams['varformer']['batch_size'],
                 shuffle=True,
@@ -220,20 +220,24 @@ def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_ge
 
     model = None
     if module_str == "pvc":
-        varformer = VarformerTargetIdentifier(
+        varformer = ShardedVarformerTargetIdentifier(
             config=config,
             num_features=num_features,
-            num_genes=num_genes,
             num_mutations=num_mutations,
-            max_seq_len=hyperparams['varformer']['max_seq_len'],
+            max_seq_len=hyperparams['varformer']['max_seq_len']
         )
-        VarformerLightningTargetIdentifier(
+
+        model = ShardedVarformerLightningTargetIdentifier(
             model=varformer,
             config=config,
             imbalance=train_imbalance
         )
     else:
-        model = MLPLightningTargetIdentifier(model=mlp_pytorch, config=config, imbalance=train_imbalance)
+        model = MLPLightningTargetIdentifier(
+            model=mlp_pytorch,
+            config=config,
+            imbalance=train_imbalance
+        )
 
     if torch.cuda.is_available():
         accelerator = 'gpu'
@@ -243,11 +247,11 @@ def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_ge
     # lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
     hyperparameters = dict(
-        depth=hyperparams['mlp']['depth'],
+        depth=hyperparams['mlp']['num_layers'],
         lr=hyperparams['mlp']['lr_start'],
         batch_size=hyperparams['mlp']['batch_size'],
         optimizer=hyperparams['mlp']['optimizer'],
-        epochs=hyperparams['mlp']['epochs'] + hyperparams['pathogenicity_embedding']['max_epochs'],
+        epochs=hyperparams['mlp']['epochs'],
         dropout=hyperparams['mlp']['dropout'],
         width=hyperparams['mlp']['width'],
         weight_decay=hyperparams['mlp']['weight_decay'],
@@ -384,7 +388,7 @@ def kfold_train(
             module_str
         )
 
-        # TODO: Launch and monitor varformer training 
+        # TODO: Launch and monitor varformer training
         if config['hyperparameters']['mlp']['wandb']:
             run = wandb.init(
                 project="drug-target-prediction",
