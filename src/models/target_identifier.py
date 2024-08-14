@@ -10,6 +10,7 @@ from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef, F1Score
 from sklearn.metrics import accuracy_score, roc_auc_score
 from scipy.stats import spearmanr
 from sklearn.model_selection import train_test_split
+from varformer import Varformer, ShardedVarformer, VariantAttention
 
 
 class BaseTargetIdentifier(torch.nn.Module):
@@ -70,12 +71,11 @@ class BaseTargetIdentifier(torch.nn.Module):
 
 
 class VarformerTargetIdentifier(BaseTargetIdentifier):
-    def __init__(self, config, num_features, num_genes, num_mutations, max_seq_len, model_type="varformer"):
+    def __init__(self, config, num_features, num_mutations, max_seq_len, model_type="varformer"):
         super(VarformerTargetIdentifier, self).__init__(config, num_features, "mlp")
 
         varformer_config = config['hyperparameters'][model_type]
-        self.transformer = Varformer(
-            num_genes=num_genes,
+        self.varformer = Varformer(
             num_mutations=num_mutations,
             max_seq_length=max_seq_len,
             d_model=varformer_config['d_model'],
@@ -87,8 +87,43 @@ class VarformerTargetIdentifier(BaseTargetIdentifier):
         self.layers[0] = nn.Linear(varformer_config['d_model'], int(self.config['width']))
 
     def forward(self, x, mask=None):
-        transformer_output = self.transformer(x, mask)
-        logits = self.layers(transformer_output).squeeze()
+        pat = x['pathogenicity']
+        pos = x['position']
+        mut = x['mutation']
+        varformer_output = self.varformer(pat, pos, mut, mask)
+        logits = self.layers(varformer_output).squeeze()
+        sigmoid = nn.Sigmoid()
+        probabilities = sigmoid(logits)
+        binary_predictions = (probabilities > float(self.config['threshold'])).float()
+        return logits, probabilities, binary_predictions
+
+
+class ShardedVarformerTargetIdentifier(BaseTargetIdentifier):
+    def __init__(self, config, num_features, num_mutations, max_seq_len, model_type="varformer"):
+        super(ShardedVarformerTargetIdentifier, self).__init__(config, num_features, "mlp")
+
+        varformer_config = config['hyperparameters'][model_type]
+        self.varformer = ShardedVarformer(
+            max_seq_len=max_seq_len,
+            num_muts=num_mutations,
+            d_model=varformer_config['d_model'],
+            nhead=varformer_config['nhead'],
+            num_encoder_layers=varformer_config['num_layers']
+        )
+        self.aggregator = GeneAggregator(varformer_config['d_model'], varformer_config['nhead'])
+
+        # Adjust the input size of the first linear layer of the BaseTargetIdentifier MLP
+        self.layers[0] = nn.Linear(varformer_config['d_model'], int(self.config['width']))
+
+    def forward(self, x, mask=None):
+        shard_embeds = self.varformer(
+            x['pathogenicity'],
+            x['position'],
+            x['mutation'],
+            mask
+        )
+        gene_embed = self.aggregator(shard_embeds)
+        logits = self.layers(gene_embed).squeeze()
         sigmoid = nn.Sigmoid()
         probabilities = sigmoid(logits)
         binary_predictions = (probabilities > float(self.config['threshold'])).float()
@@ -103,8 +138,14 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
         self.model = model
 
     def _common_step(self, batch, batch_idx, step_type):
-        if len(batch) == 3:  # For transformer
-            features, masks, labels = batch
+        if len(batch) > 2:  # For transformer
+            features = {key: batch[key] for key in ['pathogenicity', 'position', 'mutation']}
+            labels = batch['labels']
+            masks = batch['mask']
+            gene_ids = batch['gene_id']
+            shard_id = batch['shard_id']
+            total_shards = batch['total_shards']
+
             logits, probas, bin_preds = self(features, masks)
         else:  # For regular MLP
             features, labels = batch
@@ -194,40 +235,80 @@ class VarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
         return probas
 
 
-class VariantEmbedding(nn.Module):
-    def __init__(self, num_genes, num_mutations, max_seq_length, d_model):
-        super(VariantEmbedding, self).__init__()
-        self.pathogenicity_embed = nn.Linear(1, d_model // 4)
-        self.gene_embed = nn.Embedding(num_genes, d_model // 4)
-        self.position_embed = nn.Embedding(max_seq_length, d_model // 4)
-        self.mutation_embed = nn.Embedding(num_mutations, d_model // 4)
-        # self.shard_embed = nn.Embedding(max_shards, d_model // 5)
-        self.layer_norm = nn.LayerNorm(d_model)
+class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
+    def __init__(self, model, config, imbalance, model_type="varformer"):
+        super().__init__(model, config, imbalance, model_type)
+        self.model = model
+        self.accumulated_shards = {}
 
-    def forward(self, pathogenicity, gene, position, mutation):
-        path_emb = self.pathogenicity_embed(pathogenicity.unsqueeze(-1))
-        gene_emb = self.gene_embed(gene)
-        pos_emb = self.position_embed(position)
-        mut_emb = self.mutation_embed(mutation)
-        combined = torch.cat([path_emb, gene_emb, pos_emb, mut_emb], dim=-1)
-        return self.layer_norm(combined)
+    def forward(self, x, mask):
+        return self.model(x, mask)
+
+    def training_step(self, batch, batch_idx):
+        shard_embeds = self(batch)
+
+        # Accumulate shard embeddings
+        for i, (gene_id, shard_id) in enumerate(zip(batch['gene_id'], batch['shard_id'])):
+            if gene_id not in self.accumulated_shards:
+                self.accumulated_shards[gene_id] = {}
+            self.accumulated_shards[gene_id][shard_id] = shard_embeds[i]
+
+        # Process genes with all shards present
+        complete_genes = []
+        for gene_id, shards in self.accumulated_shards.items():
+            if len(shards) == batch['total_shards'][batch['gene_id'] == gene_id][0]:
+                gene_embed = self.model.aggregator(torch.stack(list(shards.values())))
+                complete_genes.append((gene_id, gene_embed))
+                del self.accumulated_shards[gene_id]
+
+        if complete_genes:
+            gene_ids, gene_embeds = zip(*complete_genes)
+            gene_embeds = torch.stack(gene_embeds)
+
+            # Compute loss based on your specific task
+            # TODO: make sure the below is the targetidentifier
+            logits, probas, bin_preds = self.model.layers(gene_embeds).squeeze()
+            class_weight = torch.tensor([1 if batch['labels'][i] == 0 else self.imbalance for i in range(len(batch['labels']))],
+                                        device=self.device)
+            loss = F.binary_cross_entropy_with_logits(logits, batch['labels'].float(), weight=class_weight)
+            self.log('train_loss', loss)
+            return loss
+        else:
+            return None  # Skip the optimizer step when no complete genes are available
+
+    def on_train_epoch_end(self):
+        # Clear accumulated shards at the end of each epoch
+        self.accumulated_shards.clear()
+
+    def configure_optimizers(self):
+        weight_decay = float(self.config.get('weight_decay', 0))
+        if self.config['optimizer'] == "Adam":
+            optimizer = torch.optim.Adam(self.parameters(), lr=float(self.config['lr_start']),
+                                         weight_decay=weight_decay)
+        elif self.config['optimizer'] == "SGD":
+            optimizer = torch.optim.SGD(self.parameters(), lr=float(self.config['lr_start']), weight_decay=weight_decay)
+        elif self.config['optimizer'] == "RMSprop":
+            optimizer = torch.optim.RMSprop(self.parameters(), lr=float(self.config['lr_start']),
+                                            weight_decay=weight_decay)
+        elif self.config['optimizer'] == "AdamW":
+            optimizer = torch.optim.AdamW(self.parameters(), lr=float(self.config['lr_start']),
+                                          weight_decay=weight_decay)
+        else:
+            raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
+
+        return optimizer
 
 
-class Varformer(nn.Module):
-    def __init__(self, num_genes, num_mutations, max_seq_length, d_model, nhead, num_layers):
-        super(Varformer, self).__init__()
+class GeneAggregator(nn.Module):
+    def __init__(self, d_model, nhead=8):
+        super().__init__()
+        self.attention = VariantAttention(d_model, nhead)
 
-        dim_feedforward = int(d_model // 2)
-        self.variant_embedding = VariantEmbedding(num_genes, num_mutations, max_seq_length, d_model)
-        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers)
-        self.classifier = nn.Linear(d_model, 1)
-
-    def forward(self, pathogenicity, position, mutation, src_mask):
-        src = self.variant_embedding(pathogenicity, position, mutation)
-        output = self.transformer_encoder(src, src_key_padding_mask=src_mask)
-        output = output.mean(dim=1)  # Global average pooling
-        return torch.sigmoid(self.classifier(output))
+    def forward(self, shard_embeds):
+        # shard_embeds shape: (num_shards, d_model)
+        shard_embeds = shard_embeds.unsqueeze(1)  # (num_shards, 1, d_model)
+        output = self.attention(shard_embeds, shard_embeds, shard_embeds)
+        return output.mean(0)
 
 
 class VariantRepresentationTargetIdentifier(pl.LightningModule):
