@@ -996,11 +996,12 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         print("Preparing GH data for variant-level embeddings...")
         if not os.path.exists("../data/elgh/gh_miva_data.pkl"):
             self.variant_sharding(config)
+
         else:
             self.gh_data = pd.read_pickle('../data/elgh/gh_miva_data.pkl')
             max_pos = self.gh_data['Protein_pos_shard'].max()
             if max_pos != config['max_seq_len']:
-                print("Representation dimension has been changed, reprocessing GH data...")
+                print("Max sequence len dimension has been changed, reprocessing GH data...")
                 self.variant_sharding(config)
                 if os.path.exists("../data/features/var_pat_features.pkl.gz"):
                     os.remove("../data/features/var_pat_features.pkl.gz")
@@ -1086,8 +1087,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             ref_aa = row['AA_ref']
             alt_aa = row['AA_alt']
             mut = f"{ref_aa}>{alt_aa}"
-            # pos = row['Protein_pos_shard']
-            pos = row['Protein_position']
+            pos = row['Protein_pos_shard']
+            # pos = row['Protein_position']
             pat_value = row['am_pathogenicity'] * row['AF']
             if np.isnan(pat_value):
                 continue
