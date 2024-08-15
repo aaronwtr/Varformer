@@ -122,6 +122,7 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
         shard_embeds = self(batch, mask=batch['mask'])
 
         # Accumulate shard embeddings
+        # TODO: debug this
         for i, (gene_id, shard_id) in enumerate(zip(batch['gene_id'], batch['shard_id'])):
             if gene_id not in self.accumulated_shards:
                 self.accumulated_shards[gene_id] = {}
