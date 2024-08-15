@@ -80,7 +80,6 @@ class ShardedVarformer(nn.Module):
 
     def forward(self, pathogenicity, position, mutation, mask):
         pat_embed = self.pathogenicity_embed(pathogenicity.unsqueeze(-1))
-        max_pos = position.max()
         pos_embed = self.position_embed(position)
         mut_embed = self.mutation_embed(mutation)
 
