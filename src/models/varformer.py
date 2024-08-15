@@ -80,7 +80,7 @@ class ShardedVarformer(nn.Module):
 
     def forward(self, pathogenicity, position, mutation, mask):
         pat_embed = self.pathogenicity_embed(pathogenicity.unsqueeze(-1))
-        # TODO: Debug this (just added mask to 122 lightning.py)
+        max_pos = position.max()
         pos_embed = self.position_embed(position)
         mut_embed = self.mutation_embed(mutation)
 
