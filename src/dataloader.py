@@ -105,6 +105,7 @@ class ShardedVarformerDataset(Dataset):
                     'pathogenicity': features[start:end, 0],
                     'position': features[start:end, 1],
                     'mutation': features[start:end, 2],
+                    'gene': features[start:end, 3],
                     'total_shards': num_shards
                 })
 
@@ -115,10 +116,11 @@ class ShardedVarformerDataset(Dataset):
         shard = self.sharded_data[idx]
         num_variants = len(shard['pathogenicity'])
 
-        # TODO: ADD LOGIC FOR PADDING HERE
+        # TODO: ADD LOGIC FOR PADDING HERE (CHECK IF NECESSARY)
         pathogenicity = F.pad(shard['pathogenicity'].clone().detach(), (0, self.shard_size - num_variants))
         position = F.pad(shard['position'].clone().detach(), (0, self.shard_size - num_variants))
         mutation = F.pad(shard['mutation'].clone().detach(), (0, self.shard_size - num_variants))
+        gene = F.pad(shard['gene'].clone().detach(),  (0, self.shard_size - num_variants))
 
         # Create mask (1 for actual data, 0 for padding)
         mask = torch.cat([torch.ones(num_variants), torch.zeros(self.shard_size - num_variants)])
@@ -127,6 +129,7 @@ class ShardedVarformerDataset(Dataset):
             'pathogenicity': pathogenicity.float(),
             'position': position.int(),
             'mutation': mutation.int(),
+            'gene': gene.int(),
             'mask': mask.float(),
             'gene_id': shard['gene_id'],
             'shard_id': shard['shard_id'],
