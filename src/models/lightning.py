@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
+import numpy as np
 
 
 class BaseLightningTargetIdentifier(pl.LightningModule):
@@ -13,14 +14,14 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
 
     def _common_step(self, batch, batch_idx, step_type):
         if len(batch) > 2:  # For transformer
-            features = {key: batch[key] for key in ['pathogenicity', 'position', 'mutation']}
+            features = {key: batch[key] for key in ['pathogenicity', 'position', 'mutation', 'gene']}
             labels = batch['labels']
             masks = batch['mask']
             gene_ids = batch['gene_id']
             shard_id = batch['shard_id']
             total_shards = batch['total_shards']
 
-            logits, probas, bin_preds = self(features, masks)
+            logits, probas, bin_preds, _ = self(features, masks)
         else:  # For regular MLP
             features, labels = batch
             logits, probas, bin_preds = self(features)
@@ -49,6 +50,7 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
         return self._common_step(batch, batch_idx, 'val')
 
     def test_step(self, batch, batch_idx):
+        # TODO: debug when varformer testing
         if len(batch) == 4:  # For varformer
             features, masks, labels, test_source = batch
             logits, probas, bin_preds = self(features, masks)
@@ -119,42 +121,18 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
         return self.model(x, mask)
 
     def training_step(self, batch, batch_idx):
-        shard_embeds = self(batch, mask=batch['mask'])
+        _, _, _, shard_embeds = self(batch, mask=batch['mask'])
 
-        # Accumulate shard embeddings
-        # TODO: debug this
-        for i, (gene_id, shard_id) in enumerate(zip(batch['gene_id'], batch['shard_id'])):
-            if gene_id not in self.accumulated_shards:
-                self.accumulated_shards[gene_id] = {}
-            self.accumulated_shards[gene_id][shard_id] = shard_embeds[i]
-
-        # Process genes with all shards present
-        complete_genes = []
-        for gene_id, shards in self.accumulated_shards.items():
-            if len(shards) == batch['total_shards'][batch['gene_id'] == gene_id][0]:
-                gene_embed = self.model.aggregator(torch.stack(list(shards.values())))
-                complete_genes.append((gene_id, gene_embed))
-                del self.accumulated_shards[gene_id]
-
-        if complete_genes:
-            gene_ids, gene_embeds = zip(*complete_genes)
-            gene_embeds = torch.stack(gene_embeds)
-
-            # Compute loss based on your specific task
-            # TODO: make sure the below is the targetidentifier
-            logits, probas, bin_preds = self.model.layers(gene_embeds).squeeze()
-            class_weight = torch.tensor([1 if batch['labels'][i] == 0 else self.imbalance for i in range(len(batch['labels']))],
-                                        device=self.device)
-            loss = F.binary_cross_entropy_with_logits(logits, batch['labels'].float(), weight=class_weight)
-            self.log('train_loss', loss)
-            return loss
-        else:
-            return None  # Skip the optimizer step when no complete genes are available
-
-    def on_train_epoch_end(self):
-        # Clear accumulated shards at the end of each epoch
-        self.accumulated_shards.clear()
-
+        labels = torch.tensor([int(label) for label in batch['labels']], dtype=torch.float32, device=self.device)
+        # Feed embeddings through the TargetID MLP
+        logits = self.model.layers(shard_embeds).squeeze()
+        class_weight = torch.tensor([1 if label == 0 else self.imbalance for label in labels],
+                                    device=self.device)
+        loss = F.binary_cross_entropy_with_logits(logits, labels, weight=class_weight)
+        self.log('train_loss', loss)
+        return loss
+        # else:
+        #     return None  # Skip the optimizer step when no complete genes are available
     def configure_optimizers(self):
         weight_decay = float(self.config.get('weight_decay', 0))
         if self.config['optimizer'] == "Adam":
