@@ -83,7 +83,8 @@ class VarformerTargetIdentifier(BaseTargetIdentifier):
         pat = x['pathogenicity']
         pos = x['position']
         mut = x['mutation']
-        varformer_output = self.varformer(pat, pos, mut, mask)
+        gene = x['gene']
+        varformer_output = self.varformer(pat, pos, mut, gene, mask)
         logits = self.layers(varformer_output).squeeze()
         sigmoid = nn.Sigmoid()
         probabilities = sigmoid(logits)
@@ -92,13 +93,14 @@ class VarformerTargetIdentifier(BaseTargetIdentifier):
 
 
 class ShardedVarformerTargetIdentifier(BaseTargetIdentifier):
-    def __init__(self, config, num_features, num_mutations, max_seq_len, model_type="varformer"):
+    def __init__(self, config, num_features, num_mutations, max_seq_len, num_genes, model_type="varformer"):
         super(ShardedVarformerTargetIdentifier, self).__init__(config, num_features, "mlp")
 
         varformer_config = config['hyperparameters'][model_type]
         self.varformer = ShardedVarformer(
             max_seq_len=max_seq_len,
             num_muts=num_mutations,
+            num_genes=num_genes,
             d_model=varformer_config['d_model'],
             nhead=varformer_config['nhead'],
             num_encoder_layers=varformer_config['num_encoder_layers']
@@ -112,15 +114,10 @@ class ShardedVarformerTargetIdentifier(BaseTargetIdentifier):
         self.layers[0] = nn.Linear(varformer_config['d_model'], config['hyperparameters']['mlp']['width'])
 
     def forward(self, x, mask=None):
-        shard_embeds = self.varformer(
-            x['pathogenicity'],
-            x['position'],
-            x['mutation'],
-            mask
-        )
-        gene_embeds = self.aggregator(shard_embeds)
+        shard_embeds = self.varformer(x['pathogenicity'], x['position'], x['mutation'], x['gene'], mask)
+        gene_embeds = self.aggregator(shard_embeds).squeeze(1)
         logits = self.layers(gene_embeds).squeeze()
         sigmoid = nn.Sigmoid()
         probabilities = sigmoid(logits)
         binary_predictions = (probabilities > float(self.config['threshold'])).float()
-        return logits, probabilities, binary_predictions
+        return logits, probabilities, binary_predictions, shard_embeds

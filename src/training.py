@@ -213,7 +213,7 @@ def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_ge
 
     mlp_pytorch = BaseTargetIdentifier(config=config, num_features=num_features)
 
-    num_genes = len(list(labels.keys()))
+    num_genes = max([train_raw[gene].shape[0] for gene in train_raw.keys()])
     with open("../data/elgh/missense_mutation_map.pkl", "rb") as f:
         missense_map = pkl.load(f)
     num_mutations = len(missense_map)
@@ -224,7 +224,8 @@ def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_ge
             config=config,
             num_features=num_features,
             num_mutations=num_mutations,
-            max_seq_len=hyperparams['varformer']['max_seq_len']
+            max_seq_len=hyperparams['varformer']['max_seq_len'],
+            num_genes=num_genes
         )
 
         model = ShardedVarformerLightningTargetIdentifier(
@@ -438,7 +439,8 @@ def kfold_train(
                 log_every_n_steps=1,
                 logger=False,
                 enable_checkpointing=True,
-                callbacks=[checkpoint_callback]
+                callbacks=[checkpoint_callback],
+                detect_anomaly=True
             )
 
             trainer.fit(mlp_lightning, _train, val)

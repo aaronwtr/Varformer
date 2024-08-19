@@ -922,6 +922,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         # self.num_features = config['hyperparameters']['pathogenicity_embedding']['latent_dim']
 
+        # Only keep thousand samples for testing purposes
+        self.var_pat_features = {key: value for key, value in list(self.var_pat_features.items())[:1000]}
+
         # Ground truth
         self.target = load_combined_labels()
         self.labels = {key: 1 if key in self.target['Ensembl'].tolist() else 0 for key in self.var_pat_features.keys()}
@@ -1081,6 +1084,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         with open("../data/elgh/missense_mutation_map.pkl", 'wb') as f:
             pkl.dump(mutation_map, f)
 
+        gene_map = {gene: i for i, gene in enumerate(self.gh_data['Gene'].unique())}
+
         var_pat_features = {}
         for index, row in tqdm(self.gh_data.iterrows(), total=self.gh_data.shape[0]):
             gene = row['Gene']
@@ -1093,9 +1098,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             if np.isnan(pat_value):
                 continue
             if gene not in var_pat_features.keys():
-                var_pat_features[gene] = [[pat_value, pos, mutation_map[mut]]]
+                var_pat_features[gene] = [[pat_value, pos, mutation_map[mut], gene_map[gene]]]
             else:
-                var_pat_features[gene].append([pat_value, pos, mutation_map[mut]])
+                var_pat_features[gene].append([pat_value, pos, mutation_map[mut], gene_map[gene]])
 
         return {gene: torch.tensor(features, dtype=torch.float32) for gene, features in var_pat_features.items()}
 
