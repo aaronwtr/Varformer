@@ -32,12 +32,11 @@ class VAE(nn.Module):
         return eps * std + mu
 
     @staticmethod
-    def loss_function(recon_x, x, mu, logvar):
-        # Use MSE loss for reconstruction
-        # recon_loss = nn.functional.mse_loss(recon_x, x, reduction='sum')
-
-        # Use BCE loss for reconstruction
-        recon_loss = nn.functional.binary_cross_entropy(recon_x, x, reduction='sum')
+    def loss_function(recon_x, x, mu, logvar, loss_type='bce'):
+        if loss_type == 'bce':
+            recon_loss = nn.functional.binary_cross_entropy(recon_x, x, reduction='sum')
+        else:
+            recon_loss = nn.functional.mse_loss(recon_x, x, reduction='sum')
 
         # KL divergence
         kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())

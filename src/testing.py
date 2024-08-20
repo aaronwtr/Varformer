@@ -4,7 +4,6 @@ import yaml
 from pytorch_lightning import Trainer
 from torch.utils.data import TensorDataset, DataLoader
 from preprocessing import GeneCharacterisationPreprocessor
-from model import BaseLightningTargetIdentifier
 
 
 def load_model(model_path):

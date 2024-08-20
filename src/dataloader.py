@@ -4,9 +4,9 @@ import yaml
 import torch.nn as nn
 import preprocessing as preprocessing
 import torch.nn.functional as F
-import pandas as pd
 
 from torch.utils.data import Dataset
+from typing import Dict, List, Tuple
 
 
 class ModuleDataProcessor:
@@ -83,6 +83,119 @@ class DrugTargetData(Dataset):
         return self.labels.sum() / len(self.labels)
 
 
+class ShardedVarformerDataset(Dataset):
+    def __init__(self, data, test_source=0, shard_size=512):
+        self.shard_size = shard_size
+        self.gene_data = data['data']
+        self.labels = data['labels']
+        self.gene_names = list(self.gene_data.keys())
+        self.test_source = test_source
+        self.sharded_data = []
+
+        for gene, features in self.gene_data.items():
+            num_variants = features.size(0)
+            num_shards = (num_variants + shard_size - 1) // shard_size  # Ceiling division
+
+            for i in range(num_shards):
+                start = i * shard_size
+                end = min((i + 1) * shard_size, num_variants)
+
+                self.sharded_data.append({
+                    'gene_id': gene,
+                    'shard_id': i,
+                    'pathogenicity': features[start:end, 0],
+                    'position': features[start:end, 1],
+                    'mutation': features[start:end, 2],
+                    'gene': features[start:end, 3],
+                    'total_shards': num_shards,
+                    'test_source': test_source
+                })
+
+    def __len__(self):
+        return len(self.sharded_data)
+
+    def __getitem__(self, idx):
+        shard = self.sharded_data[idx]
+        num_variants = len(shard['pathogenicity'])
+
+        # TODO: ADD LOGIC FOR PADDING HERE (CHECK IF NECESSARY)
+        pathogenicity = F.pad(shard['pathogenicity'].clone().detach(), (0, self.shard_size - num_variants))
+        position = F.pad(shard['position'].clone().detach(), (0, self.shard_size - num_variants))
+        mutation = F.pad(shard['mutation'].clone().detach(), (0, self.shard_size - num_variants))
+        gene = F.pad(shard['gene'].clone().detach(),  (0, self.shard_size - num_variants))
+
+        # Create mask (1 for actual data, 0 for padding)
+        mask = torch.cat([torch.ones(num_variants), torch.zeros(self.shard_size - num_variants)])
+
+        return {
+            'pathogenicity': pathogenicity.float(),
+            'position': position.int(),
+            'mutation': mutation.int(),
+            'gene': gene.int(),
+            'mask': mask.float(),
+            'gene_id': shard['gene_id'],
+            'shard_id': shard['shard_id'],
+            'total_shards': shard['total_shards'],
+            'labels': self.labels[shard['gene_id']],
+            'test_source': shard['test_source']
+        }
+
+    def label_imbalance(self):
+        if self.labels is not None:
+            label_list = list(self.labels.values())
+            return sum(label_list) / len(label_list)
+        else:
+            return 0
+
+
+class VarformerDataset(Dataset):
+    def __init__(self, variant_data, max_variants: int):
+        self.genes = variant_data['data']
+        self.labels = variant_data['labels']
+        self.max_variants = max_variants
+        self.gene_names = list(self.genes.keys())
+        self.test_source = variant_data.get('test_source', False)
+
+    def __len__(self) -> int:
+        return len(self.genes)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, int, str]:
+        gene_name = self.gene_names[idx]
+        variant_features = self.genes[gene_name]
+        label = self.labels[gene_name]
+
+        pat_feat = self.padding(variant_features[:, 0])
+        pos_feat = self.padding(variant_features[:, 1])
+        mut_feat = self.padding(variant_features[:, 2])
+
+        features = {
+            'pathogenicity': pat_feat,
+            'position': pos_feat,
+            'mutation': mut_feat
+        }
+
+        # Create attention mask
+        mask = torch.zeros(self.max_variants, dtype=torch.bool)
+        mask[len(self.genes[gene_name]):] = True
+
+        return features, mask, label, gene_name
+
+    def label_imbalance(self):
+        if self.labels is not None:
+            label_list = list(self.labels.values())
+            return sum(label_list) / len(label_list)
+        else:
+            return 0
+
+    def padding(self, features):
+        if features.size(0) < self.max_variants:
+            padding = torch.zeros((self.max_variants - features.size(0)), dtype=features.dtype)
+            features = torch.cat([features, padding], dim=0)
+        elif features.size(0) > self.max_variants:
+            features = features[:self.max_variants]
+        return features
+
+
 class DrugTargetVAEData(Dataset):
     def __init__(self, drug_target_data, reduct_dim, reduction_type="padding"):
         # Drug Target Data
@@ -92,7 +205,7 @@ class DrugTargetVAEData(Dataset):
         self.test_source = drug_target_data.get('test_source', False)
 
         # Variant Pathogenicity Data
-        self.variant_pathogenicities = [torch.tensor(v, dtype=torch.float32) for v in drug_target_data['data']]
+        # self.variant_pathogenicities = [torch.tensor(v, dtype=torch.float32) for v in drug_target_data['data']]
         self.reduction_type = reduction_type
         self.reduct_dim = reduct_dim
 
@@ -101,8 +214,7 @@ class DrugTargetVAEData(Dataset):
 
     def __getitem__(self, index):
         label = self.labels[index] if self.labels is not None else torch.tensor(0.0)
-
-        variant_data = self.variant_pathogenicities[index]
+        variant_data = self.features[index]
         variant_features = self.reduction(variant_data)
 
         if self.test_source is False:
@@ -115,8 +227,10 @@ class DrugTargetVAEData(Dataset):
             x = self.padding(x)
         elif self.reduction_type == "pooling":
             x = self.pooling(x)
+        elif self.reduction_type == "None":
+            return x
         else:
-            raise ValueError("Invalid reduction type. Expected 'padding' or 'pooling'.")
+            raise ValueError("Invalid reduction type. Expected 'padding', 'pooling' or 'None'.")
         return x
 
     def padding(self, x):
