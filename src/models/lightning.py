@@ -12,35 +12,44 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
         self.config = config['hyperparameters'][model_type]
         self.model = model
 
+    def _log(self, labels, step_type, loss, bin_preds, probas, test_source=None):
+        if step_type in ['train', 'val']:
+            self.log(f'{step_type}_loss', loss)
+            self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels))
+            self.log(f'{step_type}_auroc', self.model.auroc(bin_preds, labels.int()))
+            self.log(f'{step_type}_spearman', self.model.spearman(probas, labels.float()))
+            self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()))
+        else:
+            self.log(f'{step_type}_{test_source}_acc', self.model.acc(bin_preds, labels))
+            self.log(f'{step_type}_{test_source}_auroc', self.model.auroc(bin_preds, labels.int()))
+            self.log(f'{step_type}_{test_source}_spearman', self.model.spearman(probas, labels.float()))
+            self.log(f'{step_type}_{test_source}_f1', self.model.f1(bin_preds, labels.long()))
+
     def _common_step(self, batch, batch_idx, step_type):
         if len(batch) > 2:  # For transformer
             features = {key: batch[key] for key in ['pathogenicity', 'position', 'mutation', 'gene']}
             labels = batch['labels']
             masks = batch['mask']
-            gene_ids = batch['gene_id']
-            shard_id = batch['shard_id']
-            total_shards = batch['total_shards']
+            test_source = batch['test_source'][0]
 
             logits, probas, bin_preds, _ = self(features, masks)
         else:  # For regular MLP
             features, labels = batch
+            test_source = None
             logits, probas, bin_preds = self(features)
 
+        labels = (labels > float(self.mlp_config['threshold'])).float()
         if step_type == 'train':
             class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))],
                                         device=self.device)
             loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
+            self._log(labels, step_type, loss, bin_preds, probas)
+        elif step_type == 'val':
+            loss = F.binary_cross_entropy_with_logits(logits, labels.float())
+            self._log(labels, step_type, loss, bin_preds, probas)
         else:
             loss = F.binary_cross_entropy_with_logits(logits, labels.float())
-
-        labels = (labels > float(self.mlp_config['threshold'])).float()
-
-        self.log(f'{step_type}_loss', loss)
-        self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels))
-        self.log(f'{step_type}_auroc', self.model.auroc(bin_preds, labels.int()))
-        self.log(f'{step_type}_spearman', self.model.spearman(probas, labels.float()))
-        self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()))
-
+            self._log(labels, step_type, loss, bin_preds, probas, test_source)
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -50,21 +59,7 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
         return self._common_step(batch, batch_idx, 'val')
 
     def test_step(self, batch, batch_idx):
-        # TODO: debug when varformer testing
-        if len(batch) == 4:  # For varformer
-            features, masks, labels, test_source = batch
-            logits, probas, bin_preds = self(features, masks)
-        else:  # For regular MLP
-            features, labels, test_source = batch
-            logits, probas, bin_preds = self(features)
-
-        labels = (labels > float(self.config['threshold'])).float()
-        test_source = test_source[0]
-
-        self.log(f'test_acc_{test_source}', self.model.acc(bin_preds, labels))
-        self.log(f'test_auroc_{test_source}', self.model.auroc(bin_preds, labels.int()))
-        self.log(f'test_spearman_{test_source}', self.model.spearman(probas, labels.float()))
-        self.log(f'test_f1_{test_source}', self.model.f1(bin_preds, labels.long()))
+        return self._common_step(batch, batch_idx, 'test')
 
     def configure_optimizers(self):
         weight_decay = float(self.config.get('weight_decay', 0))
@@ -133,6 +128,7 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
         return loss
         # else:
         #     return None  # Skip the optimizer step when no complete genes are available
+
     def configure_optimizers(self):
         weight_decay = float(self.config.get('weight_decay', 0))
         if self.config['optimizer'] == "Adam":
