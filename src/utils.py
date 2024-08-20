@@ -504,9 +504,11 @@ def df_col_to_dense(x):
     print("Types unwrapped: \n")
     print(unique_types)
     if issparse(x):
-        return np.array(x.todense()).flatten()
+        _x = np.array(x.todense()).flatten()
+        return _x
     elif isinstance(x, np.matrix):
-        return np.array(x).flatten()
+        _x = np.array(x).flatten()
+        return _x
     return x
 
 

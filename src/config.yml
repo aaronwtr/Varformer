@@ -24,24 +24,26 @@ hyperparameters:
     optimizer: Adam
     lr_start: 1e-3
     lr_end: 1e-3
-    epochs: 100
+    epochs: 20
     width: 256
-    batch_size: 256
-    depth: 4
+    batch_size: 64
+    num_layers: 4
     threshold: 0.6
-    dropout: 0.5
+    dropout: 0.0
     num_workers: 0
-    weight_decay: 0.1
-  pathogenicity_embedding:
+    weight_decay: 0.0
+    wandb: True
+  varformer:
     usage: True
-    io_dim: 4096  # standard 4096
-    latent_dim: 512 # standard 256
-    reduction: "padding" # choose from "padding" or "pooling"
-    batch_size: 128 # standard 128
-    max_epochs: 100 # standard 20
-    ae_type: "vae" # choose from "vae" or "ae"
-    num_layers: 2 # tunable hyperparam
-    nhead: 2 # tunable hyperparam
+    optimizer: Adam
+    lr_start: 1e-3
+    max_seq_len: 4096  # standard 4096
+    d_model: 1024 # standard 768
+    reduction: None # choose from "padding", "pooling" or None
+    batch_size: 512 # standard 64 (increase as last hyperparam until memory is filled)
+    nhead: 1 # tunable hyperparam
+    num_encoder_layers: 1 # tunable hyperparam
+    shard_size: 768
     num_workers: 0
   plddt_autoencoder:
     usage: None

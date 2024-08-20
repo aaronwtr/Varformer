@@ -8,24 +8,22 @@ import wandb
 
 import utils
 
-import lightning as pl
+import pytorch_lightning as pl
 import pandas as pd
 import numpy as np
+import pickle as pkl
 
 from pytorch_lightning.loggers import WandbLogger
-from lightning.pytorch.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import MinMaxScaler
-from typing import Dict, Union
+from typing import Dict, Union, Optional
 from tqdm import tqdm
 
-from dataloader import DrugTargetData, ModuleDataProcessor, DrugTargetVAEData
-from model import BaseTargetIdentifier, BaseLightningTargetIdentifier, VariantRepresentationTargetIdentifier
-from utils import df_col_to_dense
-from autoencoders.vae import VAE
-from puupl import training as puupl_training
-# from plot import umap, plot_embedding_distribution
+from dataloader import DrugTargetData, ModuleDataProcessor, ShardedVarformerDataset
+from models.target_identifier import BaseTargetIdentifier, ShardedVarformerTargetIdentifier
+from models.lightning import MLPLightningTargetIdentifier, ShardedVarformerLightningTargetIdentifier
 
 
 def tune():
@@ -86,109 +84,86 @@ def objective(trial: optuna.trial.Trial) -> float:
     return trainer.callback_metrics["val_auroc"].item()
 
 
-def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_raw, config, module_str):
+def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test_raw, config, module_str):
     hparams = config['hyperparameters']
 
-    train_raw['pathogenicity'] = train_raw['pathogenicity'].apply(df_col_to_dense)
-    print("\n\n\n")
-    print("Val raw shape: ", val_raw['pathogenicity'].shape)
-    print("\n\n\n")
-    print("Val raw: ", val_raw['pathogenicity'])
-    val_raw['pathogenicity'] = val_raw['pathogenicity'].apply(df_col_to_dense)
+    if module_str == "pvc":
+        all_genes = list(labels.keys())
 
-    # train_raw['pathogenicity'] = train_raw['pathogenicity'].transform(df_col_to_dense)
-    # val_raw['pathogenicity'] = val_raw['pathogenicity'].transform(df_col_to_dense)
+        variant_counts = {}
+        for gene in all_genes:
+            count = 0
+            if gene in train_raw:
+                count += train_raw[gene].shape[0]
+            if gene in val_raw:
+                count += val_raw[gene].shape[0]
+            if gene in test_raw:
+                count += test_raw[gene].shape[0]
+            variant_counts[gene] = count
 
-    # chunk_size = 1000  # Adjust based on your available memory
-    # for start in tqdm(range(0, len(train_raw), chunk_size)):
-    #     end = start + chunk_size
-    #     train_raw.iloc[start:end, train_raw.columns.get_loc('pathogenicity')] = train_raw.iloc[start:end,
-    #                                                                             train_raw.columns.get_loc(
-    #                                                                                 'pathogenicity')].apply(
-    #         df_col_to_dense)
+        variant_sizes = list(variant_counts.values())
+        max_variant_count = max(variant_sizes)
 
-    # Normalize the training data
-    train_norm_raw = train_raw.iloc[:, :-1].values
-    train_norm = np.vstack(train_norm_raw[:, 0])
-    scaler = MinMaxScaler()
-    train_norm = scaler.fit_transform(train_norm)
-
-    val_norm_raw = val_raw.iloc[:, :-1].values
-    val_norm = np.vstack(val_norm_raw[:, 0])
-    val_norm = scaler.transform(val_norm)
-
-    # for start in tqdm(range(0, len(val_raw), chunk_size)):
-    #     end = start + chunk_size
-    #     val_raw.loc[start:end, 'pathogenicity'] = val_raw.loc[start:end, 'pathogenicity'].apply(df_col_to_dense)
-    #     val_raw.iloc[start:end, val_raw.columns.get_loc('pathogenicity')] = val_raw.iloc[start:end,
-    #                                                                             val_raw.columns.get_loc(
-    #                                                                                 'pathogenicity')].apply(
-    #         df_col_to_dense)
-
-    # train_tst = val_raw.iloc[-100:, :]
-    #
-    # for row in train_tst.iterrows():
-    #     # find which vectors in the pathogenicity column contain non-zero values
-    #     vec = row[1]['pathogenicity']
-    #     print('joe')
-
-    drug_target_train_data = {
-        'data': train_norm,
-        'labels': train_raw.iloc[:, -1].values,
-        'gene_names': train_genes
-    }
-
-    drug_target_val_data = {
-        'data': val_norm,
-        'labels': val_raw.iloc[:, -1].values,
-        'gene_names': val_genes
-    }
-
-    drug_target_test_data = {}
-    for key, raw in test_raw.items():
-        test_norm_raw = raw.iloc[:, :-1].values
-        test_norm = np.vstack(test_norm_raw[:, 0])
-        test_norm = scaler.transform(test_norm)
-        drug_target_test_data[key] = {
-            'data': test_norm,
-            'labels': raw.iloc[:, -1].values,
-            'gene_names': test_genes[key],
-            'test_source': key
+        drug_target_train_data = {
+            'data': train_raw,
+            'labels': labels
         }
 
-    if module_str == "pvc":
+        drug_target_val_data = {
+            'data': val_raw,
+            'labels': labels
+        }
+
+        drug_target_test_data = {}
+        for key, test_raw in test_raw.items():
+            drug_target_test_data[key] = {
+                'data': test_raw,
+                'labels': labels,
+                'test_source': key
+            }
+
         _train = DataLoader(
-            DrugTargetVAEData(
+            ShardedVarformerDataset(
                 drug_target_train_data,
-                reduct_dim=hparams['pathogenicity_embedding']['io_dim']
+                shard_size=hparams['varformer']['shard_size'],
             ),
-            batch_size=hparams['pathogenicity_embedding']['batch_size'],
+            batch_size=hparams['varformer']['batch_size'],
             shuffle=True,
-            num_workers=hparams['pathogenicity_embedding']['num_workers']
+            num_workers=hparams['varformer']['num_workers']
         )
 
         val = DataLoader(
-            DrugTargetVAEData(
+            ShardedVarformerDataset(
                 drug_target_val_data,
-                reduct_dim=hparams['pathogenicity_embedding']['io_dim']
+                shard_size=hparams['varformer']['shard_size'],
             ),
-            batch_size=hparams['pathogenicity_embedding']['batch_size'],
-            shuffle=False,
-            num_workers=hparams['pathogenicity_embedding']['num_workers']
+            batch_size=hparams['varformer']['batch_size'],
+            shuffle=True,
+            num_workers=hparams['varformer']['num_workers']
         )
 
         test = {}
-        for key, data in drug_target_test_data.items():
+        for key, test_data in drug_target_test_data.items():
             test[key] = DataLoader(
-                DrugTargetVAEData(
-                    data,
-                    reduct_dim=hparams['pathogenicity_embedding']['io_dim']
+                ShardedVarformerDataset(
+                    test_data,
+                    shard_size=hparams['varformer']['shard_size'],
+                    test_source=key
                 ),
-                batch_size=hparams['pathogenicity_embedding']['batch_size'],
-                shuffle=False,
-                num_workers=hparams['pathogenicity_embedding']['num_workers']
+                batch_size=hparams['varformer']['batch_size'],
+                shuffle=True,
+                num_workers=hparams['varformer']['num_workers']
             )
+        label_imbalance = _train.dataset.label_imbalance()
     else:
+        val_norm = val_raw.iloc[:, :-1].values
+        train_norm = train_raw.iloc[:, :-1].values
+
+        scaler = MinMaxScaler()
+
+        train_norm = scaler.fit_transform(train_norm)
+        val_norm = scaler.transform(val_norm)
+
         _train = DataLoader(
             DrugTargetData(
                 data=train_norm,
@@ -202,7 +177,7 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
 
         val = DataLoader(
             DrugTargetData(
-                data=scaler.transform(val_raw.iloc[:, :-1].values),
+                data=val_norm,
                 labels=val_raw.iloc[:, -1].values,
                 gene_names=val_genes
             ),
@@ -226,42 +201,45 @@ def normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test_
                 num_workers=int(hparams['mlp']['num_workers'])
             )
 
-    # if isinstance(_train.dataset, DrugTargetData):
-    label_imbalance = _train.dataset.label_imbalance().item()
-
-    # else:
-    #     train_dtd = DataLoader(
-    #         DrugTargetData(
-    #             data=train_norm,
-    #             labels=train_raw.iloc[:, -1].values,
-    #             gene_names=gene_names_train
-    #         ),
-    #         batch_size=int(hparams['mlp']['batch_size']),
-    #         shuffle=True,
-    #         num_workers=int(hparams['mlp']['num_workers'])
-    #     )
-    #     label_imbalance = train_dtd.dataset.label_imbalance().item()
+        label_imbalance = _train.dataset.label_imbalance().item()
 
     return _train, val, test, label_imbalance
 
 
-def initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, test, num_features, config, module_str):
+def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test, num_features, config,
+                     module_str):
     hyperparams = config['hyperparameters']
-    _train, val, test, train_imbalance = normalise_data(train_raw, val_raw, train_genes, val_genes, test_genes, test,
-                                                        config, module_str)
+    _train, val, test, train_imbalance = normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_genes,
+                                                        test, config, module_str)
 
     mlp_pytorch = BaseTargetIdentifier(config=config, num_features=num_features)
 
+    num_genes = max([train_raw[gene].shape[0] for gene in train_raw.keys()])
+    with open("../data/elgh/missense_mutation_map.pkl", "rb") as f:
+        missense_map = pkl.load(f)
+    num_mutations = len(missense_map)
+
+    model = None
     if module_str == "pvc":
-        vae = VAE(input_dim=hyperparams['pathogenicity_embedding']['io_dim'],
-                  latent_dim=hyperparams['pathogenicity_embedding']['latent_dim'])
-        model = VariantRepresentationTargetIdentifier(
-            vae, mlp_pytorch, config, num_features,
-            latent_dim=hyperparams['pathogenicity_embedding']['latent_dim'],
+        varformer = ShardedVarformerTargetIdentifier(
+            config=config,
+            num_features=num_features,
+            num_mutations=num_mutations,
+            max_seq_len=hyperparams['varformer']['max_seq_len'],
+            num_genes=num_genes
+        )
+
+        model = ShardedVarformerLightningTargetIdentifier(
+            model=varformer,
+            config=config,
             imbalance=train_imbalance
         )
     else:
-        model = BaseLightningTargetIdentifier(model=mlp_pytorch, config=config, imbalance=train_imbalance)
+        model = MLPLightningTargetIdentifier(
+            model=mlp_pytorch,
+            config=config,
+            imbalance=train_imbalance
+        )
 
     if torch.cuda.is_available():
         accelerator = 'gpu'
@@ -271,7 +249,7 @@ def initialise_model(train_raw, val_raw, train_genes, val_genes, test_genes, tes
     # lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
     hyperparameters = dict(
-        depth=hyperparams['mlp']['depth'],
+        depth=hyperparams['mlp']['num_layers'],
         lr=hyperparams['mlp']['lr_start'],
         batch_size=hyperparams['mlp']['batch_size'],
         optimizer=hyperparams['mlp']['optimizer'],
@@ -300,20 +278,21 @@ def train(tag="Training"):
     )
 
     if tag == "Standard Training":
-        wandb_logger = WandbLogger(
-            project="drug-target-prediction",
-            tags=[f"depth{config['mlp']['depth']}-nn"],
-            log_model="all"
-        )
-        wandb_logger.log_hyperparams(hyperparameters)
-        run_name = wandb_logger.experiment.name
-        checkpoint_callback = ModelCheckpoint(
-            monitor='epoch',
-            dirpath='checkpoints',
-            filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}',
-            save_top_k=1,
-            mode='max',
-        )
+        if config['hyperparameters']['mlp']['wandb']:
+            wandb_logger = WandbLogger(
+                project="drug-target-prediction",
+                tags=[f"depth{config['mlp']['depth']}-nn"],
+                log_model="all"
+            )
+            wandb_logger.log_hyperparams(hyperparameters)
+            run_name = wandb_logger.experiment.name
+            checkpoint_callback = ModelCheckpoint(
+                monitor='epoch',
+                dirpath='checkpoints',
+                filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}',
+                save_top_k=1,
+                mode='max',
+            )
 
         utils.set_seed(42)
         trainer = pl.Trainer(
@@ -346,7 +325,7 @@ def train(tag="Training"):
 
 
 def kfold_train(
-        data: pd.DataFrame,
+        data: Union[pd.DataFrame, dict],
         genes: pd.DataFrame,
         test_genes: Dict[str, pd.DataFrame],
         test_data: Dict[str, pd.DataFrame],
@@ -368,7 +347,6 @@ def kfold_train(
 
     group = f"distillation-1-{model_type}-{module_str}"
     if not os.path.isdir(f'checkpoints/{group}'):
-        os.mkdir('checkpoints')
         os.mkdir(f'checkpoints/{group}')
     else:
         i = 1
@@ -377,12 +355,24 @@ def kfold_train(
             group = f"distillation-{i}-{model_type}-{module_str}"
         os.mkdir(f'checkpoints/{group}')
 
+    if isinstance(data, dict):
+        labels = data['labels']
+        data.pop('labels')
+    else:
+        labels = None   # labels are included in the dataframe itself
+
     for fold, (train_indices, val_indices) in enumerate(kfold.split(data)):
         print(f"Training fold {fold + 1}/{num_splits}")
-        
-        # Split the data
-        train_raw = data.iloc[train_indices, :]
-        val_raw = data.iloc[val_indices, :]
+
+        if isinstance(data, dict):
+            train_ids = genes.iloc[train_indices].tolist()
+            val_ids = genes.iloc[val_indices].tolist()
+
+            train_raw = {k: v for k, v in data.items() if k in train_ids}
+            val_raw = {k: v for k, v in data.items() if k in val_ids}
+        else:
+            train_raw = data.iloc[train_indices, :]
+            val_raw = data.iloc[val_indices, :]
 
         train_genes = genes.iloc[train_indices]
         val_genes = genes.iloc[val_indices]
@@ -390,6 +380,7 @@ def kfold_train(
         mlp_lightning, _train, val, test, hyperparameters, accelerator = initialise_model(
             train_raw,
             val_raw,
+            labels,
             train_genes,
             val_genes,
             test_genes,
@@ -399,38 +390,64 @@ def kfold_train(
             module_str
         )
 
-        run = wandb.init(
-            project="drug-target-prediction",
-            tags=[f"distillation-fold{fold + 1}"],
-            config=hyperparameters,
-            group=f"{group}"
-        )
+        # TODO: Launch and monitor varformer training
+        if config['hyperparameters']['mlp']['wandb']:
+            run = wandb.init(
+                project="drug-target-prediction",
+                tags=[f"distillation-fold{fold + 1}"],
+                config=hyperparameters,
+                group=f"{group}"
+            )
+            run_name = wandb.run.name
 
-        run_name = wandb.run.name
-        checkpoint_callback = ModelCheckpoint(
-            monitor='epoch',
-            dirpath=f'checkpoints/{group}',
-            filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}-' + f'fold{fold}',
-            save_top_k=1,
-            mode='max'
-        )
+            checkpoint_callback = ModelCheckpoint(
+                monitor='epoch',
+                dirpath=f'checkpoints/{group}',
+                filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}-' + f'fold{fold}',
+                save_top_k=1,
+                mode='max'
+            )
 
-        utils.set_seed(42)
-        trainer = pl.Trainer(
-            max_epochs=int(config['hyperparameters']['mlp']['epochs']),
-            accelerator=accelerator,
-            enable_progress_bar=True,
-            log_every_n_steps=1,
-            logger=WandbLogger(wandb.run),
-            callbacks=[checkpoint_callback]
-        )
+            utils.set_seed(42)
+            trainer = pl.Trainer(
+                max_epochs=int(config['hyperparameters']['mlp']['epochs']),
+                accelerator=accelerator,
+                enable_progress_bar=True,
+                log_every_n_steps=1,
+                logger=WandbLogger(wandb.run),
+                callbacks=[checkpoint_callback]
+            )
 
-        trainer.fit(mlp_lightning, _train, val)
-        trainer.test(ckpt_path="best", dataloaders=test["pfam"])
-        trainer.test(ckpt_path="best", dataloaders=test["rcnt"])
-        trainer.test(ckpt_path="best", dataloaders=test["pharos"])
+            trainer.fit(mlp_lightning, _train, val)
+            trainer.test(ckpt_path="best", dataloaders=test["pfam"])
+            trainer.test(ckpt_path="best", dataloaders=test["rcnt"])
+            trainer.test(ckpt_path="best", dataloaders=test["pharos"])
 
-        run.finish()
+            run.finish()
+        else:
+            utils.set_seed(42)
+            checkpoint_callback = ModelCheckpoint(
+                monitor='epoch',
+                dirpath=f'checkpoints/{group}',
+                save_top_k=1,
+                mode='max'
+            )
+
+            trainer = pl.Trainer(
+                max_epochs=int(config['hyperparameters']['mlp']['epochs']),
+                accelerator=accelerator,
+                enable_progress_bar=True,
+                log_every_n_steps=1,
+                logger=False,
+                enable_checkpointing=True,
+                callbacks=[checkpoint_callback],
+                detect_anomaly=True
+            )
+
+            trainer.fit(mlp_lightning, _train, val)
+            trainer.test(ckpt_path="best", dataloaders=test["pfam"])
+            trainer.test(ckpt_path="best", dataloaders=test["rcnt"])
+            trainer.test(ckpt_path="best", dataloaders=test["pharos"])
 
 
 def kfold_teacher(ensemble=False, **modules):
@@ -457,7 +474,7 @@ def kfold_teacher(ensemble=False, **modules):
     if not ensemble:
         for module, preprocessor in data.items():
             if modules[module]:
-                train_df = preprocessor.data
+                train = preprocessor.data
                 # umap(train_df)
                 genes = preprocessor.ensg_ids
                 num_features = preprocessor.num_features
@@ -479,7 +496,7 @@ def kfold_teacher(ensemble=False, **modules):
                     "rcnt": rcnt_genes,
                     "pharos": pharos_genes
                 }
-                kfold_train(train_df, genes, test_genes, test_data, num_features, config, model_type="teacher",
+                kfold_train(train, genes, test_genes, test_data, num_features, config, model_type="teacher",
                             modules=module, norm=norm)
     else:
         # TODO: Implement ensemble training
