@@ -15,7 +15,7 @@ import gzip
 import scipy.sparse as sparse
 import pandas as pd
 import numpy as np
-import src.dataloader as dl
+import dataloader as dl
 
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,7 +25,7 @@ from Bio import SeqIO
 from torch.utils.data import DataLoader
 from shutil import copyfileobj
 
-from src.utils import featurise, load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx
+from utils import featurise, load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx
 
 
 class GeneCharacterisationPreprocessor:
@@ -175,9 +175,9 @@ class GeneCharacterisationPreprocessor:
         # self.pharos_ids_all = self.pharos_ids_all.reindex(self.pharos_data.index)
         # self.pharos_data = pd.concat([self.pharos_ids_all, self.pharos_data], axis=1)
         #
-        # self.pfam_data.to_pickle('../data/test_data/pfam_data.pkl')
-        # self.rcnt_data.to_pickle('../data/test_data/rcnt_data.pkl')
-        # self.pharos_data.to_pickle('../data/test_data/pharos_data.pkl')
+        # self.pfam_data.to_pickle('data/test_data/pfam_data.pkl')
+        # self.rcnt_data.to_pickle('data/test_data/rcnt_data.pkl')
+        # self.pharos_data.to_pickle('data/test_data/pharos_data.pkl')
 
         total_holdout = num_pfam_pos + num_rcnt_pos + num_pharos_pos + num_negs
 
@@ -752,8 +752,8 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
 
     def tissue_expression_feature_extractor(self):
         # check if the tissue expression data has already been processed
-        if os.path.exists('../data/features/tissue_specificity_features.pkl'):
-            with open('../data/features/tissue_specificity_features.pkl', 'rb') as f:
+        if os.path.exists('data/features/tissue_specificity_features.pkl'):
+            with open('data/features/tissue_specificity_features.pkl', 'rb') as f:
                 self.tissue_specificity_features = pkl.load(f)
             return
         else:
@@ -771,7 +771,7 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
                     gene_tissue_dict[gene] = [tissue]
 
             self.tissue_specificity_features = gene_tissue_dict
-            with open('../data/features/tissue_specificity_features.pkl', 'wb') as f:
+            with open('data/features/tissue_specificity_features.pkl', 'wb') as f:
                 pkl.dump(gene_tissue_dict, f)
 
     def combine_go_features(self):
@@ -782,7 +782,7 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
             "subcellular_locations": self.protein_atlas_features['subcellular_locations']
         }
 
-        with open('../data/features/raw_miva_feature_matrix.pkl', 'rb') as f:
+        with open('data/features/raw_miva_feature_matrix.pkl', 'rb') as f:
             feature_matrix = pkl.load(f)
 
         for feature, values in ensg_features.items():
@@ -1056,7 +1056,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         print("Combining AlphaMissense data with GH data...")
         self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
         # save gh_data
-        with open("../data/alphamissense/gh_am_data_full.pkl", 'wb') as f:
+        with open("data/alphamissense/gh_am_data_full.pkl", 'wb') as f:
             pkl.dump(self.gh_data, f)
 
         sym_list = self.gh_data['SYMBOL'].tolist()
@@ -1455,7 +1455,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         uniprot_ids = self.gh_data["UNIPROT"].unique().tolist()
         uniprot_ids = [uni for uni in uniprot_ids if str(uni) != 'nan']
         uniprot_ids = [uni.split('.')[0] for uni in uniprot_ids]
-        if not os.path.exists('../data/cache/uniprot_ids.pkl'):
+        if not os.path.exists('data/cache/uniprot_ids.pkl'):
             uni_to_gene = {}
             for index, row in self.gh_data.iterrows():
                 gene = row['Gene']
@@ -1466,22 +1466,22 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 uni_to_gene[uni] = gene
 
             # write the uniprot ids to a pkl file
-            with open('../data/cache/uniprot_ids.pkl', 'wb') as fp:
+            with open('data/cache/uniprot_ids.pkl', 'wb') as fp:
                 pkl.dump(uni_to_gene, fp)
         else:
-            with open('../data/cache/uniprot_ids.pkl', 'rb') as fp:
+            with open('data/cache/uniprot_ids.pkl', 'rb') as fp:
                 uni_to_gene = pkl.load(fp)
 
-        if not os.path.exists('../data/alphafold/alphafold_cifs'):
+        if not os.path.exists('data/alphafold/alphafold_cifs'):
             self.download_af_cifs()
         extracted_values = {}
-        if os.path.exists('../data/features/alphafold_features.pkl'):
-            with open('../data/features/alphafold_features.pkl', 'rb') as fp:
+        if os.path.exists('data/features/alphafold_features.pkl'):
+            with open('data/features/alphafold_features.pkl', 'rb') as fp:
                 features = pkl.load(fp)
                 return features
         else:
-            if os.path.exists('../data/alphafold/alphafold_features_temp.pkl'):
-                with open('../data/alphafold/alphafold_features_temp.pkl', 'rb') as fp:
+            if os.path.exists('data/alphafold/alphafold_features_temp.pkl'):
+                with open('data/alphafold/alphafold_features_temp.pkl', 'rb') as fp:
                     extracted_values = pkl.load(fp)
             else:
                 for qualifier in tqdm(uniprot_ids):
@@ -1544,14 +1544,14 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                         extracted_values[qualifier]['coordinates'] = []
 
                 # write the extracted values to a pkl file
-                with open('../data/alphafold/temp_extracted_values.pkl', 'wb') as fp:
+                with open('data/alphafold/temp_extracted_values.pkl', 'wb') as fp:
                     pkl.dump(extracted_values, fp)
 
                 for uni, info in tqdm(extracted_values.items(), total=len(extracted_values)):
                     seq = info['sequence']
                     if not seq:
                         continue
-                    cif_file_path = f"../data/alphafold/alphafold_cifs/AF-{uni}-F1-model_v4.cif"
+                    cif_file_path = f"data/alphafold/alphafold_cifs/AF-{uni}-F1-model_v4.cif"
                     coords = []
                     curr_aa_id = 1
                     with open(cif_file_path, "r") as cif_file:
@@ -1568,7 +1568,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                     extracted_values[uni]['coordinates'] = coords
 
             extracted_values = {uni_to_gene[uniprot]: values for uniprot, values in extracted_values.items()}
-            with open('../data/features/alphafold_features.pkl', 'wb') as fp:
+            with open('data/features/alphafold_features.pkl', 'wb') as fp:
                 pkl.dump(extracted_values, fp)
             return extracted_values
 
@@ -1579,13 +1579,13 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         url = "https://alphafold.ebi.ac.uk/files/AF-{id}-F1-model_v4.cif"
 
-        folder = "../data/alphafold/alphafold_cifs"
+        folder = "data/alphafold/alphafold_cifs"
         if not os.path.exists(folder):
             os.makedirs(folder)
 
         for uni_id in tqdm(uniprot_ids):
             # check if uni_id occurs in swissprot_cif_v4 folder, if so copy it to alphafold_cifs
-            if os.path.exists(f"../data/alphafold/alphafold_cifs/AF-{uni_id}-F1-model_v4.cif"):
+            if os.path.exists(f"data/alphafold/alphafold_cifs/AF-{uni_id}-F1-model_v4.cif"):
                 continue
             file_url = url.format(id=uni_id)
             file_name = os.path.basename(file_url)
@@ -1603,15 +1603,15 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         """
         # check if gh_am_data.pkl exists yet
         print("Combining AM and GH data...")
-        if not os.path.exists("../data/features/var_pat_features.pkl.gz"):
-            am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
+        if not os.path.exists("data/features/var_pat_features.pkl.gz"):
+            am = pd.read_csv("data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
             am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
 
             am = am[['am_pathogenicity', 'variant_id']]
             print("Combining AlphaMissense data with GH data...")
             self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
             # save gh_data
-            with open("../data/alphamissense/gh_am_data_full.pkl", 'wb') as f:
+            with open("data/alphamissense/gh_am_data_full.pkl", 'wb') as f:
                 pkl.dump(self.gh_data, f)
 
             sym_list = self.gh_data['SYMBOL'].tolist()
@@ -1665,11 +1665,11 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             # for gene, var_pat_matrix in var_pat_features.items():
             #     var_pat_features[gene] = var_pat_matrix.tocsr()
 
-            with gzip.open('../data/features/var_pat_features.pkl.gz', 'wb') as f:
+            with gzip.open('data/features/var_pat_features.pkl.gz', 'wb') as f:
                 pkl.dump(var_pat_features, f)
             return var_pat_features
         else:
-            with gzip.open('../data/features/var_pat_features.pkl.gz', 'rb') as f:
+            with gzip.open('data/features/var_pat_features.pkl.gz', 'rb') as f:
                 return pkl.load(f)
 
     def __pathogenicity_feature_extractor(self):
@@ -1680,7 +1680,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
         self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
 
-        am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
+        am = pd.read_csv("data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
 
         am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
         self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
@@ -1876,7 +1876,7 @@ class __MissenseVariantPreprocessor:
             self.variant_data['variant_id'] = self.variant_data['#CHROM'] + '_' + self.variant_data['POS'].astype(str) + \
                                               '_' + self.variant_data['REF'] + '_' + self.variant_data['ALT']
             am = am[['am_pathogenicity', 'variant_id']]
-            vp_pretrained_data = pd.read_csv("../data/VariPred/varipred_output_data_pretrained.csv", sep="\t")
+            vp_pretrained_data = pd.read_csv("data/VariPred/varipred_output_data_pretrained.csv", sep="\t")
             vp_pretrained_data = vp_pretrained_data.rename(columns={'target_id': 'varipred_id', 'probability':
                 'vp_pathogenicity'})
             # remove the classification column from the pretrained data
@@ -1889,7 +1889,7 @@ class __MissenseVariantPreprocessor:
 
         if preprocess:
             self.process_variants_proteomic()
-        elif len(os.listdir('../data/VariPred/input')) == self.config['varipred']['num_batches']:
+        elif len(os.listdir('data/VariPred/input')) == self.config['varipred']['num_batches']:
             print("Variants already processed.")
         else:
             print('Not all variants are preprocessed yet. Put the preprocess flag to True in the MissenseVariantLoader '
@@ -1900,7 +1900,7 @@ class __MissenseVariantPreprocessor:
 
             # raw_data here is dummy file, normally should be done on cluster for all batch files
 
-            raw_data = pd.read_csv("../data/elgh/train_batch_mivas/variant_data_396.csv")
+            raw_data = pd.read_csv("data/elgh/train_batch_mivas/variant_data_396.csv")
             train = self.train_test_val_loader(raw_data)
             utils.run_shell_script(self.config['paths']['VP_TRAINING_PATH'])
 
@@ -1917,13 +1917,13 @@ class __MissenseVariantPreprocessor:
 
         varipred_output = utils.preprocess_varipred_output(self.config['paths']['VP_OUTPUT_PATH'])
 
-        if os.path.exists("../data/elgh/varipred_elgh_data.csv"):
-            self.variant_data = pd.read_csv("../data/elgh/varipred_elgh_data.csv", sep="\t")
+        if os.path.exists("data/elgh/varipred_elgh_data.csv"):
+            self.variant_data = pd.read_csv("data/elgh/varipred_elgh_data.csv", sep="\t")
         else:
             self.variant_data = utils.combine_varipred_elgh(varipred_output, self.variant_data)
 
         if evaluation:
-            clinvar_data = pd.read_csv("../data/clinvar/variant_summary.txt", sep="\t")
+            clinvar_data = pd.read_csv("data/clinvar/variant_summary.txt", sep="\t")
             utils.varipred_evaluation(self.variant_data, clinvar_data, posthoc=False)
 
     def load_gh_data(self):
@@ -1940,7 +1940,7 @@ class __MissenseVariantPreprocessor:
 
     @staticmethod
     def load_am_data():
-        am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
+        am = pd.read_csv("data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
         return am
 
     @staticmethod
@@ -1984,10 +1984,10 @@ class __MissenseVariantPreprocessor:
         sequence_table = pd.DataFrame(sequence_table, columns=["target_id", "aa_index", "wt_aa", "mt_aa", "wt_seq",
                                                                "mt_seq"])
         variants_id = str(self.elgh_path.split("_")[-1].split(".")[0])
-        sequence_table.to_csv(f"../data/VariPred/input/variants_{variants_id}.csv", index=False)
+        sequence_table.to_csv(f"data/VariPred/input/variants_{variants_id}.csv", index=False)
 
     def train_test_val_loader(self, data, downsampling=True):
-        train_files = os.listdir("../data/VariPred/train/")
+        train_files = os.listdir("data/VariPred/train/")
         if len(train_files) != 1000:
             data = data[["vp_cv_id", "UNIPARC", "Protein_position", "Amino_acids", "ClinSigSimple"]]
             wt_aa = data["Amino_acids"].str.split("/", expand=True)[0]
@@ -2014,43 +2014,43 @@ class __MissenseVariantPreprocessor:
                                           columns=["target_id", "uniparc_id", "aa_index", "wt_aa", "mt_aa",
                                                    "wt_seq", "mt_seq", "label"])
             variants_id = str(self.elgh_path.split("_")[-1].split(".")[0])
-            sequence_table.to_csv(f"../data/VariPred/train/variants_{variants_id}.csv", index=False)
+            sequence_table.to_csv(f"data/VariPred/train/variants_{variants_id}.csv", index=False)
         else:
-            if not os.path.exists("../data/VariPred/all_train.csv"):
+            if not os.path.exists("data/VariPred/all_train.csv"):
                 utils.combine_train_files()
-            elif not os.path.exists("../data/VariPred/train.csv"):
-                raw_train = pd.read_csv("../data/VariPred/all_train.csv")
+            elif not os.path.exists("data/VariPred/train.csv"):
+                raw_train = pd.read_csv("data/VariPred/all_train.csv")
                 df = raw_train.copy()
                 df = df[df.target_id != 'target_id']
                 df = df.rename(columns={'target_id': 'seq_id'})
                 train, test = train_test_split(df, test_size=0.1, random_state=555, stratify=df['label'])
-                train.to_csv("../data/VariPred/train.csv", index=False)
-                # val.to_csv("../data/VariPred/val.csv", index=False)
-                test.to_csv("../data/VariPred/test.csv", index=False)
+                train.to_csv("data/VariPred/train.csv", index=False)
+                # val.to_csv("data/VariPred/val.csv", index=False)
+                test.to_csv("data/VariPred/test.csv", index=False)
                 print(f"Train and test data loaded with size: {len(train)} and {len(test)}")
                 return train, test
-            elif downsampling and not os.path.exists("../data/VariPred/train_downsample.csv"):
-                train = pd.read_csv("../data/VariPred/train.csv")
-                test = pd.read_csv("../data/VariPred/test.csv")
-                # val = pd.read_csv("../data/VariPred/test.csv")
+            elif downsampling and not os.path.exists("data/VariPred/train_downsample.csv"):
+                train = pd.read_csv("data/VariPred/train.csv")
+                test = pd.read_csv("data/VariPred/test.csv")
+                # val = pd.read_csv("data/VariPred/test.csv")
                 train = utils.downsampler(train)
                 test = utils.downsampler(test)
                 # val = utils.downsampler(val)
-                train.to_csv("../data/VariPred/train_downsample.csv", index=False)
-                test.to_csv("../data/VariPred/test_downsample.csv", index=False)
-                # val.to_csv("../data/VariPred/val_downsample.csv", index=False)
+                train.to_csv("data/VariPred/train_downsample.csv", index=False)
+                test.to_csv("data/VariPred/test_downsample.csv", index=False)
+                # val.to_csv("data/VariPred/val_downsample.csv", index=False)
                 print(f"Train and test data downsampled with sizes: {len(train)} {len(test)}")
                 return train, test
             elif downsampling:
-                train = pd.read_csv("../data/VariPred/train_downsample.csv")
-                # val = pd.read_csv("../data/VariPred/val_downsample.csv")
-                test = pd.read_csv("../data/VariPred/test_downsample.csv")
+                train = pd.read_csv("data/VariPred/train_downsample.csv")
+                # val = pd.read_csv("data/VariPred/val_downsample.csv")
+                test = pd.read_csv("data/VariPred/test_downsample.csv")
                 print(f"Downsampled train and test data loaded with sizes: {len(train)}, {len(test)}")
                 return train, test
             else:
-                train = pd.read_csv("../data/VariPred/train.csv")
-                val = pd.read_csv("../data/VariPred/val.csv")
-                test = pd.read_csv("../data/VariPred/test.csv")
+                train = pd.read_csv("data/VariPred/train.csv")
+                val = pd.read_csv("data/VariPred/val.csv")
+                test = pd.read_csv("data/VariPred/test.csv")
                 print(f"Train and test data loaded with sizes: {len(train)}, {len(val)}, {len(test)}")
                 return train, val, test
 

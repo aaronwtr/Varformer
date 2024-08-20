@@ -14,16 +14,22 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
 
     def _log(self, labels, step_type, loss, bin_preds, probas, test_source=None):
         if step_type in ['train', 'val']:
-            self.log(f'{step_type}_loss', loss)
-            self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels))
-            self.log(f'{step_type}_auroc', self.model.auroc(bin_preds, labels.int()))
-            self.log(f'{step_type}_spearman', self.model.spearman(probas, labels.float()))
-            self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()))
+            self.log(f'{step_type}_loss', loss, batch_size=labels.shape[0])
+            self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels), batch_size=labels.shape[0])
+            self.log(f'{step_type}_auroc', self.model.auroc(bin_preds, labels.int()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_spearman', self.model.spearman(probas, labels.float()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()), batch_size=labels.shape[0])
         else:
-            self.log(f'{step_type}_{test_source}_acc', self.model.acc(bin_preds, labels))
-            self.log(f'{step_type}_{test_source}_auroc', self.model.auroc(bin_preds, labels.int()))
-            self.log(f'{step_type}_{test_source}_spearman', self.model.spearman(probas, labels.float()))
-            self.log(f'{step_type}_{test_source}_f1', self.model.f1(bin_preds, labels.long()))
+            self.log(f'{step_type}_{test_source}_acc', self.model.acc(bin_preds, labels),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_{test_source}_auroc', self.model.auroc(bin_preds, labels.int()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_{test_source}_spearman', self.model.spearman(probas, labels.float()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_{test_source}_f1', self.model.f1(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
 
     def _common_step(self, batch, batch_idx, step_type):
         if len(batch) > 2:  # For transformer

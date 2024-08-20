@@ -77,7 +77,7 @@ def split_data(data_path, num_batches):
     variant_data = variant_data[train_cols]
     batches = np.array_split(variant_data, num_batches)
     for i, batch in enumerate(batches):
-        batch.to_csv(f"data/elgh/train_batch_mivas/variant_data_{i + 1}.csv")
+        batch.to_csv(f"../data/elgh/train_batch_mivas/variant_data_{i + 1}.csv")
 
 
 def find_error_files(path):
@@ -87,7 +87,7 @@ def find_error_files(path):
     output_files = sorted(output_files)
     input_files = np.arange(1, 1001)
     missing_files = np.setdiff1d(input_files, output_files)
-    np.savetxt("data/VariPred/missing_vp_train_files.txt", missing_files, fmt="%d")
+    np.savetxt("../data/VariPred/missing_vp_train_files.txt", missing_files, fmt="%d")
     print(len(missing_files))
 
 
@@ -170,8 +170,8 @@ def clinvar_filtering(clinvar_data):
     """
     Filters the ClinVar data to only contain rows assembled with GRCh38 and are missense variants.
     """
-    if os.path.exists("data/clinvar/clinvar_filtered.csv"):
-        return pd.read_csv("data/clinvar/clinvar_filtered.csv", sep="\t")
+    if os.path.exists("../data/clinvar/clinvar_filtered.csv"):
+        return pd.read_csv("../data/clinvar/clinvar_filtered.csv", sep="\t")
     else:
         columns = ["Name", "GeneSymbol", "Chromosome", "Start", "ReferenceAlleleVCF", "AlternateAlleleVCF",
                    "ClinSigSimple"]
@@ -523,7 +523,7 @@ def _convert_to_dense(indices, shape):
 
 def featurise(features: dict, feature_name: Optional[str] = '') -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     sparse_feature_dict = {}
-    with open("data/features/raw_miva_feature_matrix.pkl", 'rb') as f:
+    with open("../data/features/raw_miva_feature_matrix.pkl", 'rb') as f:
         feature_matrix = pkl.load(f)
 
     if isinstance(next(iter(features.values())), csr_matrix):
@@ -567,14 +567,14 @@ def featurise(features: dict, feature_name: Optional[str] = '') -> Tuple[pd.Data
 
 
 def load_fda_labels() -> pd.DataFrame:
-    return pd.read_excel("data/FDA_approved_drug_targets_2023_Q3.xlsx")
+    return pd.read_excel("../data/FDA_approved_drug_targets_2023_Q3.xlsx")
 
 
 def load_combined_labels() -> pd.DataFrame:
     """
     Load the HPA/manual FDA and citeline labels pkl file
     """
-    with open("data/labels/citeline_manual_labels.pkl", "rb") as f:
+    with open("../data/labels/citeline_manual_labels.pkl", "rb") as f:
         labels = pkl.load(f)
     return labels
 
@@ -647,7 +647,6 @@ def three_letter_aa_to_idx(aa: str) -> int:
     return three_letter_aa_to_idx_map[aa]
 
 
-
 def aa1_to_aa3(single_code):
     amino_acids = {
         'A': 'ALA',
@@ -675,6 +674,7 @@ def aa1_to_aa3(single_code):
     # Convert input to uppercase
     single_code = single_code.upper()
     return amino_acids.get(single_code, 'Unknown')
+
 
 #################################### ARCHIVE ####################################
 

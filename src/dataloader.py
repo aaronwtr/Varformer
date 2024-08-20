@@ -17,7 +17,7 @@ class ModuleDataProcessor:
         self.pvc = pvc
         self.psc = psc
 
-        with open("src/config.yml", 'r') as stream:
+        with open("config.yml", 'r') as stream:
             self.config = yaml.safe_load(stream)
 
     def process(self):

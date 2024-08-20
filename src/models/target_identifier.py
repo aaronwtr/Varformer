@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef, F1Score
-from src.models.varformer import Varformer, ShardedVarformer, GeneAggregator
+from models.varformer import Varformer, ShardedVarformer, GeneAggregator
 
 
 class BaseTargetIdentifier(torch.nn.Module):
