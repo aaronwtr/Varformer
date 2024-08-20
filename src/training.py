@@ -125,7 +125,7 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
         _train = DataLoader(
             ShardedVarformerDataset(
                 drug_target_train_data,
-                hparams['varformer']['shard_size'],
+                shard_size=hparams['varformer']['shard_size'],
             ),
             batch_size=hparams['varformer']['batch_size'],
             shuffle=True,
@@ -135,7 +135,7 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
         val = DataLoader(
             ShardedVarformerDataset(
                 drug_target_val_data,
-                hparams['varformer']['shard_size'],
+                shard_size=hparams['varformer']['shard_size'],
             ),
             batch_size=hparams['varformer']['batch_size'],
             shuffle=True,
@@ -147,7 +147,8 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
             test[key] = DataLoader(
                 ShardedVarformerDataset(
                     test_data,
-                    hparams['varformer']['shard_size'],
+                    shard_size=hparams['varformer']['shard_size'],
+                    test_source=key
                 ),
                 batch_size=hparams['varformer']['batch_size'],
                 shuffle=True,

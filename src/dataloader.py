@@ -84,11 +84,12 @@ class DrugTargetData(Dataset):
 
 
 class ShardedVarformerDataset(Dataset):
-    def __init__(self, data, shard_size=512):
+    def __init__(self, data, test_source=0, shard_size=512):
         self.shard_size = shard_size
         self.gene_data = data['data']
         self.labels = data['labels']
         self.gene_names = list(self.gene_data.keys())
+        self.test_source = test_source
         self.sharded_data = []
 
         for gene, features in self.gene_data.items():
@@ -106,7 +107,8 @@ class ShardedVarformerDataset(Dataset):
                     'position': features[start:end, 1],
                     'mutation': features[start:end, 2],
                     'gene': features[start:end, 3],
-                    'total_shards': num_shards
+                    'total_shards': num_shards,
+                    'test_source': test_source
                 })
 
     def __len__(self):
@@ -134,7 +136,8 @@ class ShardedVarformerDataset(Dataset):
             'gene_id': shard['gene_id'],
             'shard_id': shard['shard_id'],
             'total_shards': shard['total_shards'],
-            'labels': self.labels[shard['gene_id']]
+            'labels': self.labels[shard['gene_id']],
+            'test_source': shard['test_source']
         }
 
     def label_imbalance(self):
