@@ -86,15 +86,6 @@ class ShardedVarformer(nn.Module):
         pat_embed = self.pathogenicity_embed(pathogenicity.unsqueeze(-1))
         pos_embed = self.position_embed(position)
         mut_embed = self.mutation_embed(mutation)
-        # get the gene ids from the first element of each row
-        gene_ = gene[:, 0].tolist()
-        for gene_id in gene_:
-            if gene_id > self.num_genes:
-                print(gene_id)
-                print(self.num_genes)
-                print(type(gene_id))
-                print(type(self.num_genes))
-                print('joe')
         gene_embed = self.gene_embed(gene)
 
         x = torch.cat([pat_embed, pos_embed, mut_embed, gene_embed], dim=-1)
