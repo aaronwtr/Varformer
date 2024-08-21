@@ -138,7 +138,7 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
                 shard_size=hparams['varformer']['shard_size'],
             ),
             batch_size=hparams['varformer']['batch_size'],
-            shuffle=True,
+            shuffle=False,
             num_workers=hparams['varformer']['num_workers']
         )
 
@@ -151,7 +151,7 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
                     test_source=key
                 ),
                 batch_size=hparams['varformer']['batch_size'],
-                shuffle=True,
+                shuffle=False,
                 num_workers=hparams['varformer']['num_workers']
             )
         label_imbalance = _train.dataset.label_imbalance()
@@ -391,6 +391,7 @@ def kfold_train(
         )
 
         # TODO: Launch and monitor varformer training
+        #  > Debug in lightning.py
         if config['hyperparameters']['mlp']['wandb']:
             run = wandb.init(
                 project="drug-target-prediction",
@@ -419,9 +420,9 @@ def kfold_train(
             )
 
             trainer.fit(mlp_lightning, _train, val)
-            trainer.test(ckpt_path="best", dataloaders=test["pfam"])
-            trainer.test(ckpt_path="best", dataloaders=test["rcnt"])
-            trainer.test(ckpt_path="best", dataloaders=test["pharos"])
+            trainer.test(ckpt_path='best', dataloaders=test["pfam"])
+            trainer.test(ckpt_path='best', dataloaders=test["rcnt"])
+            trainer.test(ckpt_path='best', dataloaders=test["pharos"])
 
             run.finish()
         else:
@@ -441,17 +442,17 @@ def kfold_train(
                 logger=False,
                 enable_checkpointing=True,
                 callbacks=[checkpoint_callback],
-                detect_anomaly=True
             )
 
             trainer.fit(mlp_lightning, _train, val)
-            trainer.test(ckpt_path="best", dataloaders=test["pfam"])
-            trainer.test(ckpt_path="best", dataloaders=test["rcnt"])
-            trainer.test(ckpt_path="best", dataloaders=test["pharos"])
+            trainer.test(ckpt_path='best', dataloaders=test["pfam"])
+            trainer.test(ckpt_path='best', dataloaders=test["rcnt"])
+            trainer.test(ckpt_path='best', dataloaders=test["pharos"])
 
 
 def kfold_teacher(ensemble=False, **modules):
     pl.seed_everything(42)
+    torch.set_float32_matmul_precision('medium')
 
     print("Training teacher model...\n")
 
