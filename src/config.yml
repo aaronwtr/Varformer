@@ -24,10 +24,10 @@ hyperparameters:
     optimizer: Adam
     lr_start: 1e-3
     lr_end: 1e-3
-    epochs: 20
+    epochs: 2
     width: 256
     batch_size: 64
-    num_layers: 4
+    num_layers: 1
     threshold: 0.6
     dropout: 0.0
     num_workers: 0
@@ -40,7 +40,7 @@ hyperparameters:
     max_seq_len: 4096  # standard 4096
     d_model: 1024 # standard 768
     reduction: None # choose from "padding", "pooling" or None
-    batch_size: 512 # standard 64 (increase as last hyperparam until memory is filled)
+    batch_size: 64 # standard 64 (increase as last hyperparam until memory is filled)
     nhead: 1 # tunable hyperparam
     num_encoder_layers: 1 # tunable hyperparam
     shard_size: 768
