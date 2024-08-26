@@ -20,7 +20,6 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
             self.log(f'{step_type}_spearman', self.model.spearman(probas, labels.float()), batch_size=labels.size(0))
             self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()), batch_size=labels.size(0))
         else:
-            # TODO: DEBUG WHY THERE ARE JUST TWO SAMPLES IN TEST DATA
             self.log(f'{step_type}_{test_source}_acc', self.model.acc(bin_preds, labels),
                      batch_size=labels.size(0))
             self.log(f'{step_type}_{test_source}_auroc', self.model.auroc(bin_preds, labels.int()),
