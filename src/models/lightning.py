@@ -22,14 +22,19 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
                      batch_size=labels.shape[0])
             self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()), batch_size=labels.shape[0])
         else:
-            self.log(f'{step_type}_{test_source}_acc', self.model.acc(bin_preds, labels),
+            self.log(f'{step_type}_acc_{test_source}', self.model.acc(bin_preds, labels),
                      batch_size=labels.shape[0])
-            self.log(f'{step_type}_{test_source}_auroc', self.model.auroc(bin_preds, labels.int()),
+            self.log(f'{step_type}_auroc_{test_source}', self.model.auroc(bin_preds, labels.int()),
                      batch_size=labels.shape[0])
-            self.log(f'{step_type}_{test_source}_spearman', self.model.spearman(probas, labels.float()),
+            self.log(f'{step_type}_spearman_{test_source}', self.model.spearman(probas, labels.float()),
                      batch_size=labels.shape[0])
-            self.log(f'{step_type}_{test_source}_f1', self.model.f1(bin_preds, labels.long()),
+            self.log(f'{step_type}_f1_{test_source}', self.model.f1(bin_preds, labels.long()),
                      batch_size=labels.shape[0])
+            self.logger.experiment.log({
+                f'{step_type}_{test_source}_predictions': bin_preds.detach().cpu().numpy(),
+                f'{step_type}_{test_source}_probas': probas.detach().cpu().numpy(),
+                f'{step_type}_{test_source}_labels': labels.detach().cpu().numpy()
+            })
 
     def _common_step(self, batch, batch_idx, step_type):
         if len(batch) > 2:  # For transformer
@@ -54,7 +59,7 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
             loss = F.binary_cross_entropy_with_logits(logits, labels.float())
             self._log(labels, step_type, loss, bin_preds, probas)
         else:
-            loss = F.binary_cross_entropy_with_logits(logits, labels.float())
+            loss = None
             self._log(labels, step_type, loss, bin_preds, probas, test_source)
         return loss
 
@@ -121,19 +126,60 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
     def forward(self, x, mask):
         return self.model(x, mask)
 
-    def training_step(self, batch, batch_idx):
-        _, _, _, shard_embeds = self(batch, mask=batch['mask'])
+    def _log(self, labels, step_type, loss, bin_preds, probas, test_source=None):
+        if step_type in ['train', 'val']:
+            self.log(f'{step_type}_loss', loss, batch_size=labels.shape[0])
+            self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels), batch_size=labels.shape[0])
+            self.log(f'{step_type}_auroc', self.model.auroc(bin_preds, labels.int()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_spearman', self.model.spearman(probas, labels.float()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()), batch_size=labels.shape[0])
+        else:
+            self.log(f'{step_type}_acc_{test_source}', self.model.acc(bin_preds, labels),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_auroc_{test_source}', self.model.auroc(bin_preds, labels.int()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_spearman_{test_source}', self.model.spearman(probas, labels.float()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_f1_{test_source}', self.model.f1(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.logger.experiment.log({
+                f'{step_type}_{test_source}_predictions': bin_preds.detach().cpu().numpy(),
+                f'{step_type}_{test_source}_probas': probas.detach().cpu().numpy(),
+                f'{step_type}_{test_source}_labels': labels.detach().cpu().numpy()
+            })
 
-        labels = torch.tensor([int(label) for label in batch['labels']], dtype=torch.float32, device=self.device)
-        # Feed embeddings through the TargetID MLP
-        logits = self.model.layers(shard_embeds).squeeze()
-        class_weight = torch.tensor([1 if label == 0 else self.imbalance for label in labels],
-                                    device=self.device)
-        loss = F.binary_cross_entropy_with_logits(logits, labels, weight=class_weight)
-        self.log('train_loss', loss)
+    def _common_step(self, batch, batch_idx, step_type):
+        features = {key: batch[key] for key in ['pathogenicity', 'position', 'mutation', 'gene']}
+        labels = batch['labels']
+        masks = batch['mask']
+        test_source = batch['test_source'][0]
+
+        logits, probas, bin_preds, _ = self(features, masks)
+
+        labels = (labels > float(self.mlp_config['threshold'])).float()
+        if step_type == 'train':
+            class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))],
+                                        device=self.device)
+            loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
+            self._log(labels, step_type, loss, bin_preds, probas)
+        elif step_type == 'val':
+            loss = F.binary_cross_entropy_with_logits(logits, labels.float())
+            self._log(labels, step_type, loss, bin_preds, probas)
+        else:
+            loss = None
+            self._log(labels, step_type, loss, bin_preds, probas, test_source)
         return loss
-        # else:
-        #     return None  # Skip the optimizer step when no complete genes are available
+
+    def training_step(self, batch, batch_idx):
+        return self._common_step(batch, batch_idx, 'train')
+
+    def validation_step(self, batch, batch_idx):
+        return self._common_step(batch, batch_idx, 'val')
+
+    def test_step(self, batch, batch_idx):
+        return self._common_step(batch, batch_idx, 'test')
 
     def configure_optimizers(self):
         weight_decay = float(self.config.get('weight_decay', 0))
@@ -152,3 +198,10 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
 
         return optimizer
+
+    def initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                # You can choose a different initialization method
+                init.xavier_normal_(m.weight)
+                init.zeros_(m.bias)
