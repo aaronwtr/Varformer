@@ -922,9 +922,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         # self.num_features = config['hyperparameters']['pathogenicity_embedding']['latent_dim']
 
-        # Only keep thousand samples for testing purposes
-        # self.var_pat_features = {key: value for key, value in list(self.var_pat_features.items())[:1000]}
-
         # Ground truth
         self.target = load_combined_labels()
         self.labels = {key: 1 if key in self.target['Ensembl'].tolist() else 0 for key in self.var_pat_features.keys()}

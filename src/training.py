@@ -28,10 +28,10 @@ from models.lightning import MLPLightningTargetIdentifier, ShardedVarformerLight
 
 def tune():
     study = optuna.create_study(
-        study_name="gdtp_mlp",
+        study_name="gdtp_varformer",
         direction="maximize"
     )
-    n_trials = 100
+    n_trials = 1000
 
     study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
 
@@ -64,24 +64,42 @@ def tune():
 def objective(trial: optuna.trial.Trial) -> float:
     with open("config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
-
     config = config['hyperparameters']
 
-    config['mlp']['depth'] = trial.suggest_int('depth', 2, 54, step=4)
-    config['mlp']['width'] = trial.suggest_int('width', 4, 260, step=16)
-    config['mlp']['dropout'] = trial.suggest_float('dropout', 0.0, 0.5, step=0.1)
-    config['mlp']['threshold'] = trial.suggest_float('threshold', 0.2, 0.8, step=0.05)
-    config['mlp']['weight_decay'] = trial.suggest_categorical('weight_decay', [0.0, 0.001, 0.01, 0.1])
+    varformer = config['varformer']['usage']
+    if not varformer:
+        config['mlp']['depth'] = trial.suggest_int('depth', 2, 54, step=4)
+        config['mlp']['width'] = trial.suggest_int('width', 4, 260, step=16)
+        config['mlp']['dropout'] = trial.suggest_float('dropout', 0.0, 0.5, step=0.1)
+        config['mlp']['threshold'] = trial.suggest_float('threshold', 0.2, 0.8, step=0.05)
+        config['mlp']['weight_decay'] = trial.suggest_categorical('weight_decay', [0.0, 0.001, 0.01, 0.1])
 
-    trainer = train(tag="Tuning")
+        trainer = train(tag="Tuning")
 
-    width_depth_ratio = config['mlp']['width'] / config['mlp']['depth']
-    total_params = sum(p.numel() for p in trainer.model.parameters())
+        width_depth_ratio = config['mlp']['width'] / config['mlp']['depth']
+        total_params = sum(p.numel() for p in trainer.model.parameters())
 
-    trial.set_user_attr('width_depth_ratio', width_depth_ratio)
-    trial.set_user_attr('total_params', total_params)
+        trial.set_user_attr('width_depth_ratio', width_depth_ratio)
+        trial.set_user_attr('total_params', total_params)
 
-    return trainer.callback_metrics["val_auroc"].item()
+        return trainer.callback_metrics["val_auroc"].item()
+    else:
+        # TODO: fix this
+        config = config['varformer']
+        config['max_seq_len'] = trial.suggest_int('max_seq_len', 512, 4096, step=512)
+        config['d_model'] = trial.suggest_int('d_model', 64, 512, step=64)
+        config['nhead'] = trial.suggest_int('nhead', 4, 16, step=4)
+        config['dropout'] = trial.suggest_float('dropout', 0.0, 0.5, step=0.1)
+        config['threshold'] = trial.suggest_float('threshold', 0.2, 0.8, step=0.05)
+        config['weight_decay'] = trial.suggest_categorical('weight_decay', [0.0, 0.001, 0.01, 0.1])
+        config['lr_start'] = trial.suggest_float('lr_start', 1e-5, 1e-2, log=True)
+
+        trainer = kfold_teacher(pvc=True)
+        # total_params = sum(p.numel() for p in trainer.model.parameters())
+        #
+        # trial.set_user_attr('total_params', total_params)
+
+        return trainer.callback_metrics["val_auroc"].item()
 
 
 def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test_raw, config, module_str):
@@ -102,7 +120,6 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
             variant_counts[gene] = count
 
         variant_sizes = list(variant_counts.values())
-        max_variant_count = max(variant_sizes)
 
         drug_target_train_data = {
             'data': train_raw,
@@ -144,13 +161,14 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
 
         test = {}
         for key, test_data in drug_target_test_data.items():
+            test_dataset = ShardedVarformerDataset(
+                test_data,
+                shard_size=hparams['varformer']['shard_size'],
+                test_source=key
+            )
             test[key] = DataLoader(
-                ShardedVarformerDataset(
-                    test_data,
-                    shard_size=hparams['varformer']['shard_size'],
-                    test_source=key
-                ),
-                batch_size=hparams['varformer']['batch_size'],
+                test_dataset,
+                batch_size=len(test_dataset),
                 shuffle=False,
                 num_workers=hparams['varformer']['num_workers']
             )
@@ -333,9 +351,9 @@ def kfold_train(
         config: dict,
         model_type: str,
         modules: Union[str, Dict[str, bool]],
-        norm: bool = True
+        tune: bool = True
 ):
-    num_splits = 5
+    num_splits = 2
     kfold = KFold(n_splits=num_splits, shuffle=True, random_state=42)
 
     if isinstance(modules, str):
@@ -417,13 +435,15 @@ def kfold_train(
                 logger=WandbLogger(wandb.run),
                 callbacks=[checkpoint_callback]
             )
+            if tune:
+                return trainer
+            else:
+                trainer.fit(mlp_lightning, _train, val)
+                trainer.test(dataloaders=test["pfam"])
+                trainer.test(dataloaders=test["rcnt"])
+                trainer.test(dataloaders=test["pharos"])
 
-            trainer.fit(mlp_lightning, _train, val)
-            trainer.test(dataloaders=test["pfam"])
-            trainer.test(dataloaders=test["rcnt"])
-            trainer.test(dataloaders=test["pharos"])
-
-            run.finish()
+                run.finish()
         else:
             utils.set_seed(42)
             checkpoint_callback = ModelCheckpoint(
@@ -442,7 +462,6 @@ def kfold_train(
                 enable_checkpointing=True,
                 callbacks=[checkpoint_callback]
             )
-
             trainer.fit(mlp_lightning, _train, val)
             trainer.test(dataloaders=test["pfam"])
             trainer.test(dataloaders=test["rcnt"])
@@ -496,8 +515,9 @@ def kfold_teacher(ensemble=False, **modules):
                     "rcnt": rcnt_genes,
                     "pharos": pharos_genes
                 }
-                kfold_train(train, genes, test_genes, test_data, num_features, config, model_type="teacher",
-                            modules=module, norm=norm)
+                trainer = kfold_train(train, genes, test_genes, test_data, num_features, config, model_type="teacher",
+                                      modules=module, tune=True)
+                return trainer
     else:
         # TODO: Implement ensemble training
         pass
