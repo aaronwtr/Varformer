@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import numpy as np
 
 
 class VariantEmbedding(nn.Module):
@@ -75,32 +76,43 @@ class Varformer(nn.Module):
 
 
 class ShardedVarformer(nn.Module):
-    def __init__(self, max_seq_len, num_muts, num_genes, dropout, d_model=128, nhead=2, num_encoder_layers=2):
+    def __init__(self, max_seq_len, num_muts, num_genes, dropout, shard_size, nhead=2, num_encoder_layers=2):
         super(ShardedVarformer, self).__init__()
         self.num_genes = num_genes
-        self.pathogenicity_embed = nn.Linear(1, d_model // 4)
-        self.position_embed = nn.Embedding(max_seq_len + 1, d_model // 4)
-        self.mutation_embed = nn.Embedding(num_muts + 1, d_model // 4)
-        self.gene_embed = nn.Embedding(num_genes + 1, d_model // 4)
+        d_model = shard_size
+
+        self.pathogenicity_embed = nn.Sequential(
+            nn.Linear(shard_size, d_model // 3),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model // 3, d_model // 3)
+        )
+
+        self.position_embed = nn.Embedding(max_seq_len + 1, d_model // 3)
+        self.mutation_embed = nn.Embedding(num_muts + 1, d_model // 3)
+        self.gene_embed = nn.Embedding(num_genes + 1, d_model // 3)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
 
         self.layer_norm = nn.LayerNorm(d_model)
+
         self.dropout = nn.Dropout(dropout)
 
         self.variant_transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model, nhead),
-            num_encoder_layers
+            nn.TransformerEncoderLayer(
+                d_model=d_model,
+                nhead=nhead,
+                dim_feedforward=2 * d_model,
+                activation="gelu"),
+            num_layers=num_encoder_layers
         )
 
-        self.shard_aggregation = nn.Linear(d_model, d_model)
-
     def forward(self, pathogenicity, position, mutation, gene, mask):
-        pat_embed = self.pathogenicity_embed(pathogenicity.unsqueeze(-1))
+        pat_features = self.pathogenicity_embed(pathogenicity)
         pos_embed = self.position_embed(position)
         mut_embed = self.mutation_embed(mutation)
         gene_embed = self.gene_embed(gene)
 
-        x = torch.cat([pat_embed, pos_embed, mut_embed, gene_embed], dim=-1)
+        x = torch.cat([pos_embed, mut_embed, gene_embed], dim=-1)
 
         x = self.layer_norm(x)
         x = self.dropout(x)
@@ -121,4 +133,8 @@ class ShardedVarformer(nn.Module):
 
         # Use the <CLS> token representation for classification
         cls_output = output[0, :, :]
+
+        # Combine the gene embeddings and pathogenicity features
+        # output = torch.cat([pat_features, cls_output], dim=-1)
+
         return cls_output
