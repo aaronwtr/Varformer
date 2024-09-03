@@ -21,13 +21,13 @@ varipred:
 
 hyperparameters:
   mlp:
-    optimizer: Adam
-    lr_start: 1e-3
+    optimizer: AdamW
+    lr_start: 1e-5
     lr_end: 1e-3
-    epochs: 50
+    epochs: 100
     width: 256
-    batch_size: 128
-    num_layers: 4
+    batch_size: 256
+    num_layers: 1
     threshold: 0.5
     dropout: 0.5
     num_workers: 0
@@ -35,14 +35,13 @@ hyperparameters:
     wandb: True
   varformer:
     usage: True
-    optimizer: Adam
-    lr_start: 1e-3
+    optimizer: AdamW
+    lr_start: 1e-4
     max_seq_len: 4096  # standard 4096
-    d_model: 512
     dropout: 0.5
     weight_decay: 0.1
     reduction: None # choose from "padding", "pooling" or None
-    batch_size: 128 # standard 64 (increase as last hyperparam until memory is filled)
+    batch_size: 256 # standard 256 (increase as last hyperparam until memory is filled)
     nhead: 1 # tunable hyperparam
     num_encoder_layers: 1 # tunable hyperparam
     shard_size: 768

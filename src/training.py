@@ -119,8 +119,6 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
                 count += test_raw[gene].shape[0]
             variant_counts[gene] = count
 
-        variant_sizes = list(variant_counts.values())
-
         drug_target_train_data = {
             'data': train_raw,
             'labels': labels
@@ -350,10 +348,9 @@ def kfold_train(
         num_features: int,
         config: dict,
         model_type: str,
-        modules: Union[str, Dict[str, bool]],
-        tune: bool = True
+        modules: Union[str, Dict[str, bool]]
 ):
-    num_splits = 2
+    num_splits = 5
     kfold = KFold(n_splits=num_splits, shuffle=True, random_state=42)
 
     if isinstance(modules, str):
@@ -435,15 +432,14 @@ def kfold_train(
                 logger=WandbLogger(wandb.run),
                 callbacks=[checkpoint_callback]
             )
-            if tune:
-                return trainer
-            else:
-                trainer.fit(mlp_lightning, _train, val)
-                trainer.test(dataloaders=test["pfam"])
-                trainer.test(dataloaders=test["rcnt"])
-                trainer.test(dataloaders=test["pharos"])
 
-                run.finish()
+            trainer.fit(mlp_lightning, _train, val)
+            trainer.test(dataloaders=test["pfam"])
+            trainer.test(dataloaders=test["rcnt"])
+            trainer.test(dataloaders=test["pharos"])
+
+            run.finish()
+
         else:
             utils.set_seed(42)
             checkpoint_callback = ModelCheckpoint(
@@ -515,9 +511,8 @@ def kfold_teacher(ensemble=False, **modules):
                     "rcnt": rcnt_genes,
                     "pharos": pharos_genes
                 }
-                trainer = kfold_train(train, genes, test_genes, test_data, num_features, config, model_type="teacher",
-                                      modules=module, tune=True)
-                return trainer
+                kfold_train(train, genes, test_genes, test_data, num_features, config, model_type="teacher",
+                                      modules=module)
     else:
         # TODO: Implement ensemble training
         pass

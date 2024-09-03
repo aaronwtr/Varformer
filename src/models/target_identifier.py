@@ -102,17 +102,15 @@ class ShardedVarformerTargetIdentifier(BaseTargetIdentifier):
             num_muts=num_mutations,
             num_genes=num_genes,
             dropout=float(varformer_config['dropout']),
-            d_model=varformer_config['d_model'],
+            shard_size=varformer_config['shard_size'],
             nhead=varformer_config['nhead'],
             num_encoder_layers=varformer_config['num_encoder_layers']
         )
         # self.aggregator = GeneAggregator(varformer_config['d_model'], varformer_config['nhead'])
 
-        assert int(self.config['width']) < varformer_config['d_model'], \
-            "The width of the MLP must be smaller than d_model of the Varformer! Adjust config."
-
+        # d_model = varformer_config['shard_size'] // 3 + varformer_config['shard_size']
         # Adjust the input size of the first linear layer of the BaseTargetIdentifier MLP
-        self.layers[0] = nn.Linear(varformer_config['d_model'], config['hyperparameters']['mlp']['width'])
+        self.layers[0] = nn.Linear(varformer_config['shard_size'], config['hyperparameters']['mlp']['width'])
 
     def forward(self, x, mask=None):
         shard_embeds = self.varformer(x['pathogenicity'], x['position'], x['mutation'], x['gene'], mask)
