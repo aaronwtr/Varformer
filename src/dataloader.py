@@ -94,7 +94,7 @@ class ShardedVarformerDataset(Dataset):
 
         for gene, features in self.gene_data.items():
             num_variants = features.size(0)
-            num_shards = (num_variants + shard_size - 1) // shard_size  # Ceiling division
+            num_shards = (num_variants + shard_size - 1) // shard_size
 
             for i in range(num_shards):
                 start = i * shard_size
@@ -118,7 +118,6 @@ class ShardedVarformerDataset(Dataset):
         shard = self.sharded_data[idx]
         num_variants = len(shard['pathogenicity'])
 
-        # TODO: ADD LOGIC FOR PADDING HERE (CHECK IF NECESSARY)
         pathogenicity = F.pad(shard['pathogenicity'].clone().detach(), (0, self.shard_size - num_variants))
         position = F.pad(shard['position'].clone().detach(), (0, self.shard_size - num_variants))
         mutation = F.pad(shard['mutation'].clone().detach(), (0, self.shard_size - num_variants))
