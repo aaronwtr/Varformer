@@ -101,11 +101,12 @@ class ShardedVarformerTargetIdentifier(BaseTargetIdentifier):
             max_seq_len=max_seq_len,
             num_muts=num_mutations,
             num_genes=num_genes,
+            dropout=float(varformer_config['dropout']),
             d_model=varformer_config['d_model'],
             nhead=varformer_config['nhead'],
             num_encoder_layers=varformer_config['num_encoder_layers']
         )
-        self.aggregator = GeneAggregator(varformer_config['d_model'], varformer_config['nhead'])
+        # self.aggregator = GeneAggregator(varformer_config['d_model'], varformer_config['nhead'])
 
         assert int(self.config['width']) < varformer_config['d_model'], \
             "The width of the MLP must be smaller than d_model of the Varformer! Adjust config."
@@ -115,8 +116,8 @@ class ShardedVarformerTargetIdentifier(BaseTargetIdentifier):
 
     def forward(self, x, mask=None):
         shard_embeds = self.varformer(x['pathogenicity'], x['position'], x['mutation'], x['gene'], mask)
-        gene_embeds = self.aggregator(shard_embeds).squeeze(1)
-        logits = self.layers(gene_embeds).squeeze()
+        # gene_embeds = self.aggregator(shard_embeds).squeeze(1)
+        logits = self.layers(shard_embeds).squeeze()
         sigmoid = nn.Sigmoid()
         probabilities = sigmoid(logits)
         binary_predictions = (probabilities > float(self.config['threshold'])).float()
