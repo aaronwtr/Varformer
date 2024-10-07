@@ -3,24 +3,28 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 import numpy as np
 
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+
 
 class BaseLightningTargetIdentifier(pl.LightningModule):
-    def __init__(self, model, config, imbalance, model_type):
+    def __init__(self, model, config, imbalance):
         super().__init__()
         self.imbalance = imbalance
-        self.mlp_config = config['hyperparameters']['mlp']
-        self.config = config['hyperparameters'][model_type]
+        self.config = config['hyperparameters']
         self.model = model
 
     def _log(self, labels, step_type, loss, bin_preds, probas, test_source=None):
         if step_type in ['train', 'val']:
             self.log(f'{step_type}_loss', loss, batch_size=labels.shape[0])
             self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels), batch_size=labels.shape[0])
-            self.log(f'{step_type}_auroc', self.model.auroc(bin_preds, labels.int()),
+            self.log(f'{step_type}_auroc', self.model.auroc(probas, labels.int()),
                      batch_size=labels.shape[0])
             self.log(f'{step_type}_spearman', self.model.spearman(probas, labels.float()),
                      batch_size=labels.shape[0])
-            self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()), batch_size=labels.shape[0])
+            self.log(f'{step_type}_recall', self.model.recall(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_recall@10', self.model.recall_at_10(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
         else:
             self.log(f'{step_type}_acc_{test_source}', self.model.acc(bin_preds, labels),
                      batch_size=labels.shape[0])
@@ -28,7 +32,9 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
                      batch_size=labels.shape[0])
             self.log(f'{step_type}_spearman_{test_source}', self.model.spearman(probas, labels.float()),
                      batch_size=labels.shape[0])
-            self.log(f'{step_type}_f1_{test_source}', self.model.f1(bin_preds, labels.long()),
+            self.log(f'{step_type}_recall_{test_source}', self.model.recall(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_recall@10_{test_source}', self.model.recall_at_10(bin_preds, labels.long()),
                      batch_size=labels.shape[0])
             self.logger.experiment.log({
                 f'{step_type}_{test_source}_predictions': bin_preds.detach().cpu().numpy(),
@@ -49,7 +55,7 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
             test_source = None
             logits, probas, bin_preds = self(features)
 
-        labels = (labels > float(self.mlp_config['threshold'])).float()
+        labels = (labels > float(self.config['threshold'])).float()
         if step_type == 'train':
             class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))],
                                         device=self.device)
@@ -92,8 +98,8 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
 
 
 class MLPLightningTargetIdentifier(BaseLightningTargetIdentifier):
-    def __init__(self, model, config, imbalance, model_type="mlp"):
-        super().__init__(model, config, imbalance, model_type)
+    def __init__(self, model, config, imbalance):
+        super().__init__(model, config, imbalance)
 
     def forward(self, x):
         return self.model(x)
@@ -105,8 +111,8 @@ class MLPLightningTargetIdentifier(BaseLightningTargetIdentifier):
 
 
 class VarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
-    def __init__(self, model, config, imbalance, model_type="varformer"):
-        super().__init__(model, config, imbalance, model_type)
+    def __init__(self, model, config, imbalance):
+        super().__init__(model, config, imbalance)
 
     def forward(self, x, mask):
         return self.model(x, mask)
@@ -118,8 +124,8 @@ class VarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
 
 
 class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
-    def __init__(self, model, config, imbalance, model_type="varformer"):
-        super().__init__(model, config, imbalance, model_type)
+    def __init__(self, model, config, imbalance):
+        super().__init__(model, config, imbalance)
         self.model = model
         self.accumulated_shards = {}
 
@@ -128,22 +134,31 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
 
     def _log(self, labels, step_type, loss, bin_preds, probas, test_source=None):
         if step_type in ['train', 'val']:
-            self.log(f'{step_type}_loss', loss, batch_size=labels.shape[0])
-            self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels), batch_size=labels.shape[0])
-            self.log(f'{step_type}_auroc', self.model.auroc(bin_preds, labels.int()),
-                     batch_size=labels.shape[0])
+            if bin_preds.shape != labels.shape:
+                bin_preds = bin_preds.unsqueeze(0)
+                probas = probas.unsqueeze(0)
+            self.log(f'{step_type}_loss', loss, batch_size=labels.shape[0], sync_dist=True)
+            self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels), batch_size=labels.shape[0],
+                     sync_dist=True)
+            self.log(f'{step_type}_auroc', self.model.auroc(probas, labels.int()),
+                     batch_size=labels.shape[0], sync_dist=True)
             self.log(f'{step_type}_spearman', self.model.spearman(probas, labels.float()),
-                     batch_size=labels.shape[0])
-            self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()), batch_size=labels.shape[0])
+                     batch_size=labels.shape[0], sync_dist=True)
+            self.log(f'{step_type}_recall', self.model.recall(bin_preds, labels.long()),
+                     batch_size=labels.shape[0], sync_dist=True)
+            self.log(f'{step_type}_recall@10', self.model.recall_at_10(bin_preds, labels.long()),
+                     batch_size=labels.shape[0], sync_dist=True)
         else:
             self.log(f'{step_type}_acc_{test_source}', self.model.acc(bin_preds, labels),
-                     batch_size=labels.shape[0])
-            self.log(f'{step_type}_auroc_{test_source}', self.model.auroc(bin_preds, labels.int()),
-                     batch_size=labels.shape[0])
+                     batch_size=labels.shape[0], sync_dist=True)
+            self.log(f'{step_type}_auroc_{test_source}', self.model.auroc(probas, labels.int()),
+                     batch_size=labels.shape[0], sync_dist=True)
             self.log(f'{step_type}_spearman_{test_source}', self.model.spearman(probas, labels.float()),
-                     batch_size=labels.shape[0])
-            self.log(f'{step_type}_f1_{test_source}', self.model.f1(bin_preds, labels.long()),
-                     batch_size=labels.shape[0])
+                     batch_size=labels.shape[0], sync_dist=True)
+            self.log(f'{step_type}_recall', self.model.recall(bin_preds, labels.long()),
+                     batch_size=labels.shape[0], sync_dist=True)
+            self.log(f'{step_type}_recall@10', self.model.recall_at_10(bin_preds, labels.long()),
+                     batch_size=labels.shape[0], sync_dist=True)
             self.logger.experiment.log({
                 f'{step_type}_{test_source}_predictions': bin_preds.detach().cpu().numpy(),
                 f'{step_type}_{test_source}_probas': probas.detach().cpu().numpy(),
@@ -158,13 +173,15 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
 
         logits, probas, bin_preds, _ = self(features, masks)
 
-        labels = (labels > float(self.mlp_config['threshold'])).float()
+        labels = (labels > float(self.config['threshold'])).float()
         if step_type == 'train':
             class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))],
                                         device=self.device)
             loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
             self._log(labels, step_type, loss, bin_preds, probas)
         elif step_type == 'val':
+            if logits.shape != labels.shape:
+                logits = logits.unsqueeze(0)    # For the case where the batch size is 1
             loss = F.binary_cross_entropy_with_logits(logits, labels.float())
             self._log(labels, step_type, loss, bin_preds, probas)
         else:
@@ -197,11 +214,13 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
         else:
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
 
-        return optimizer
+        print("Learning rate passed to optimizer: ", float(self.config['lr_start']))
+        lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=int(self.config['T_0']),
+                                                   eta_min=float(self.config['lr_end']))
+        return [optimizer], [{'scheduler': lr_scheduler, 'interval': 'step'}]
 
     def initialize_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Linear):
-                # You can choose a different initialization method
                 init.xavier_normal_(m.weight)
                 init.zeros_(m.bias)

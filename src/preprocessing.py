@@ -864,7 +864,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
     it generates and processes embeddings of AlphaFold's residue-wise pLDDT score.
     """
 
-    def __init__(self, config, gcp=None):
+    def __init__(self, config, gcp=None, tune=False):
         if not gcp:
             super().__init__(config)
             self.gcp_data = self.data
@@ -892,7 +892,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         print("Preparing variant features...")
-        self.variant_gh_data(config['hyperparameters']['varformer'])
+        self.variant_gh_data(config['hyperparameters'])
 
         print("Obtaining AlphaMissense pathogenicity embeddings...")
         if not os.path.exists("../data/features/var_pat_features.pkl"):
@@ -936,57 +936,62 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         # self.data = combine_features_and_labels(self.pat_ensg_ids, self.features, self.target)
         self.pat_ensg_ids = pd.Series(list(self.var_pat_features.keys()))
 
-        # Get test data and remove from train feature matrix
-        self.pfam_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.drgbl_targets_pfam)]
-        self.pfam_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_ids}
-        num_pfam_pos = len(self.pfam_pos_dict)
+        if not tune:
+            # Get test data and remove from train feature matrix
+            self.pfam_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.drgbl_targets_pfam)]
+            self.pfam_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_ids}
+            num_pfam_pos = len(self.pfam_pos_dict)
 
-        self.rcnt_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.rcnt_targets_fda)]
-        self.rcnt_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_ids}
-        num_rcnt_pos = len(self.rcnt_pos_dict)
+            self.rcnt_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.rcnt_targets_fda)]
+            self.rcnt_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_ids}
+            num_rcnt_pos = len(self.rcnt_pos_dict)
 
-        self.pharos_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.chem_targets_pharos)]
-        self.pharos_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_ids}
-        num_pharos_pos = len(self.pharos_pos_dict)
+            self.pharos_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.chem_targets_pharos)]
+            self.pharos_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_ids}
+            num_pharos_pos = len(self.pharos_pos_dict)
 
-        self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
+            self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
 
-        common_essentials = self.data[self.data['common_essentials'] == 1]
-        common_essentials = common_essentials[common_essentials['target'] == 0]
-        common_essentials = common_essentials[common_essentials['pli_lof_constraint'] > 0.9]
-        # filter all ensgs from ensg_id that is not in var_pat_features.keys()
-        ensgs = self.ensg_ids[self.ensg_ids.isin(self.pat_ensg_ids)]
-        ce_ensg = ensgs[ensgs.index.isin(common_essentials.index)]
-        negative_test_ids = ce_ensg.sample(n=len(self.holdout_ids), random_state=42)
-        num_negs = len(negative_test_ids)
+            common_essentials = self.data[self.data['common_essentials'] == 1]
+            common_essentials = common_essentials[common_essentials['target'] == 0]
+            common_essentials = common_essentials[common_essentials['pli_lof_constraint'] > 0.9]
+            # filter all ensgs from ensg_id that is not in var_pat_features.keys()
+            ensgs = self.ensg_ids[self.ensg_ids.isin(self.pat_ensg_ids)]
+            ce_ensg = ensgs[ensgs.index.isin(common_essentials.index)]
+            negative_test_ids = ce_ensg.sample(n=len(self.holdout_ids), random_state=42)
+            num_negs = len(negative_test_ids)
 
-        self.pfam_negs = negative_test_ids.sample(n=num_pfam_pos, random_state=42)
-        negative_test_ids = negative_test_ids.drop(self.pfam_negs.index)
+            self.pfam_negs = negative_test_ids.sample(n=num_pfam_pos, random_state=42)
+            negative_test_ids = negative_test_ids.drop(self.pfam_negs.index)
 
-        self.rcnt_negs = negative_test_ids.sample(n=num_rcnt_pos, random_state=42)
-        negative_test_ids = negative_test_ids.drop(self.rcnt_negs.index)
+            self.rcnt_negs = negative_test_ids.sample(n=num_rcnt_pos, random_state=42)
+            negative_test_ids = negative_test_ids.drop(self.rcnt_negs.index)
 
-        self.pharos_negs = negative_test_ids.sample(n=num_pharos_pos, random_state=42)
+            self.pharos_negs = negative_test_ids.sample(n=num_pharos_pos, random_state=42)
 
-        self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs])
-        self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs])
-        self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs])
+            self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs])
+            self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs])
+            self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs])
 
-        # self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
+            # self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
 
-        self.pfam_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_negs}
-        self.rcnt_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_negs}
-        self.pharos_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_negs}
+            self.pfam_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_negs}
+            self.rcnt_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_negs}
+            self.pharos_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_negs}
 
-        self.pfam_data = {**self.pfam_pos_dict, **self.pfam_neg_data}
-        self.rcnt_data = {**self.rcnt_pos_dict, **self.rcnt_neg_data}
-        self.pharos_data = {**self.pharos_pos_dict, **self.pharos_neg_data}
+            self.pfam_data = {**self.pfam_pos_dict, **self.pfam_neg_data}
+            self.rcnt_data = {**self.rcnt_pos_dict, **self.rcnt_neg_data}
+            self.pharos_data = {**self.pharos_pos_dict, **self.pharos_neg_data}
 
-        self.ensg_ids = self.pat_ensg_ids
+            self.ensg_ids = self.pat_ensg_ids
 
-        # remove all the test genes from the data dictionary
-        self.data = {key: value for key, value in self.var_pat_features.items() if key not in self.holdout_ids.tolist()}
-        self.data['labels'] = self.labels
+            # remove all the test genes from the data dictionary
+            self.data = {key: value for key, value in self.var_pat_features.items()
+                         if key not in self.holdout_ids.tolist()}
+            self.data['labels'] = self.labels
+        else:
+            self.data = self.var_pat_features
+            self.data['labels'] = self.labels
 
         # self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
         # self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
@@ -1003,9 +1008,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             if max_pos != config['max_seq_len']:
                 print("Max sequence len dimension has been changed, reprocessing GH data...")
                 self.variant_sharding(config)
-                if os.path.exists("../data/features/var_pat_features.pkl.gz"):
-                    os.remove("../data/features/var_pat_features.pkl.gz")
-                    os.remove("../data/cache/variant_pathogenicity_features.pkl")
+                if os.path.exists("../data/features/var_pat_features.pkl"):
+                    os.remove("../data/features/var_pat_features.pkl")
 
     def variant_sharding(self, config):
         self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
@@ -1045,15 +1049,15 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         embedding.
         """
         print("Combining AM and GH data...")
-
-        am = pd.read_csv("../data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
+        self.config = config['paths']
+        am = pd.read_csv(self.config['paths']['AM_PATH'], sep='\t')
         am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
 
         am = am[['am_pathogenicity', 'variant_id']]
         print("Combining AlphaMissense data with GH data...")
         self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
         # save gh_data
-        with open("data/alphamissense/gh_am_data_full.pkl", 'wb') as f:
+        with open("../data/alphamissense/gh_am_data_full.pkl", 'wb') as f:
             pkl.dump(self.gh_data, f)
 
         sym_list = self.gh_data['SYMBOL'].tolist()
@@ -1089,7 +1093,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             ref_aa = row['AA_ref']
             alt_aa = row['AA_alt']
             mut = f"{ref_aa}>{alt_aa}"
-            pos = row['Protein_pos_shard']
+            pos = row['Protein_pos_shard'] - 1.0    # 0-indexed
             # pos = row['Protein_position']
             pat_value = row['am_pathogenicity'] * row['AF']
             if np.isnan(pat_value):

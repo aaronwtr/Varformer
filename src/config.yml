@@ -6,6 +6,8 @@ paths:
   VP_TRAINING_PATH: "../models/VariPred/VariPred/train_VariPred.sh"
   VP_OUTPUT_PATH: "../data/VariPred/finetuned_output_1/"
   AF_PATH: "../data/alphafold/alphafold_cifs/"
+  # AM_PATH: "../data/alphamissense/AlphaMissense_hg38.tsv"
+  AM_PATH: "/data/scratch/bty174/genomic_drug_targeting/data/alphamissense/AlphaMissense_hg38.tsv"  # for cluster
   COMMON_ESSENTIALS_PATH: "../data/depmap/CRISPRInferredCommonEssentials.csv" # 23Q2 release
   GENE_DRUG_EVIDENCE_PATH: "../data/pharmgkb/clinicalAnnotations/clinical_annotations.tsv"
   PROTEIN_ATLAS_FEATURES: "../data/hpa/proteinatlas.tsv"
@@ -20,30 +22,25 @@ varipred:
   num_batches: 1000
 
 hyperparameters:
-  mlp:
-    optimizer: Adam
-    lr_start: 1e-3
-    lr_end: 1e-3
-    epochs: 50
-    width: 256
-    batch_size: 128
-    num_layers: 4
-    threshold: 0.5
-    dropout: 0.5
-    num_workers: 0
-    weight_decay: 0.1
-    wandb: True
-  varformer:
-    usage: True
-    optimizer: Adam
-    lr_start: 1e-3
-    max_seq_len: 4096  # standard 4096
-    d_model: 512
-    dropout: 0.5
-    weight_decay: 0.1
-    reduction: None # choose from "padding", "pooling" or None
-    batch_size: 128 # standard 64 (increase as last hyperparam until memory is filled)
-    nhead: 1 # tunable hyperparam
-    num_encoder_layers: 1 # tunable hyperparam
-    shard_size: 768
-    num_workers: 0
+  # mlp
+  optimizer: AdamW
+  lr_start: 1e-4
+  lr_end: 1e-6
+  epochs: 6500
+  width: 256
+  batch_size: 128
+  num_layers: 4
+  threshold: 0.5
+  dropout: 0.1
+  num_workers: 0
+  weight_decay: 0.01
+  wandb: True
+  # varformer
+  varformer_usage: True
+  max_seq_len: 1024
+  reduction: None # choose from "padding", "pooling" or None
+  nhead: 1 # tunable hyperparam
+  num_encoder_layers: 1 # tunable hyperparam
+  d_model: 768
+  T_0: 200
+  precision: "bf16"
