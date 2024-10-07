@@ -252,3 +252,5 @@ data/genes_health_presentation/consequence_counts.pdf
 data/genes_health_presentation/
 
 src/archive/split_esm_embedding/
+
+src/models/archive/

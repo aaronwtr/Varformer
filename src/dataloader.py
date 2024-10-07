@@ -40,19 +40,9 @@ class ModuleDataProcessor:
         print("Gene ontology features preprocessed!\n")
         return gop
 
-    def open_pvc_data(self, gc_data):
-        pvc = preprocessing.PopulationVariantPreprocessor(config=self.config, gcp=gc_data)
+    def open_pvc_data(self, gc_data, tune=False):
+        pvc = preprocessing.PopulationVariantPreprocessor(config=self.config, gcp=gc_data, tune=tune)
         print("Population variants preprocessed!\n")
-
-        # pathcty_embds = vgep.pathogenicity_embeddings
-        #
-        # pthcty_df = pd.DataFrame.from_dict(pathcty_embds, orient='index')
-        #
-        # pthcty_df = pthcty_df.reset_index()
-        # pthcty_df = pthcty_df.rename(columns={'index': 'ENSG'})
-        #
-        # pthcty_df = pthcty_df.rename(columns={i: f"pathogenicity_{i}" for i in range(0, pthcty_df.shape[1] - 1)})
-
         return pvc
 
 
@@ -83,101 +73,40 @@ class DrugTargetData(Dataset):
         return self.labels.sum() / len(self.labels)
 
 
-class ShardedVarformerDataset(Dataset):
-    def __init__(self, data, test_source=0, shard_size=512):
-        self.shard_size = shard_size
-        self.gene_data = data['data']
-        self.labels = data['labels']
-        self.gene_names = list(self.gene_data.keys())
-        self.test_source = test_source
-        self.sharded_data = []
-
-        for gene, features in self.gene_data.items():
-            num_variants = features.size(0)
-            num_shards = (num_variants + shard_size - 1) // shard_size
-
-            for i in range(num_shards):
-                start = i * shard_size
-                end = min((i + 1) * shard_size, num_variants)
-
-                self.sharded_data.append({
-                    'gene_id': gene,
-                    'shard_id': i,
-                    'pathogenicity': features[start:end, 0],
-                    'position': features[start:end, 1],
-                    'mutation': features[start:end, 2],
-                    'gene': features[start:end, 3],
-                    'total_shards': num_shards,
-                    'test_source': test_source
-                })
-
-    def __len__(self):
-        return len(self.sharded_data)
-
-    def __getitem__(self, idx):
-        shard = self.sharded_data[idx]
-        num_variants = len(shard['pathogenicity'])
-
-        pathogenicity = F.pad(shard['pathogenicity'].clone().detach(), (0, self.shard_size - num_variants))
-        position = F.pad(shard['position'].clone().detach(), (0, self.shard_size - num_variants))
-        mutation = F.pad(shard['mutation'].clone().detach(), (0, self.shard_size - num_variants))
-        gene = F.pad(shard['gene'].clone().detach(),  (0, self.shard_size - num_variants))
-
-        # Create mask (1 for actual data, 0 for padding)
-        mask = torch.cat([torch.ones(num_variants), torch.zeros(self.shard_size - num_variants)])
-
-        return {
-            'pathogenicity': pathogenicity.float(),
-            'position': position.int(),
-            'mutation': mutation.int(),
-            'gene': gene.int(),
-            'mask': mask.float(),
-            'gene_id': shard['gene_id'],
-            'shard_id': shard['shard_id'],
-            'total_shards': shard['total_shards'],
-            'labels': self.labels[shard['gene_id']],
-            'test_source': shard['test_source']
-        }
-
-    def label_imbalance(self):
-        if self.labels is not None:
-            label_list = list(self.labels.values())
-            return sum(label_list) / len(label_list)
-        else:
-            return 0
-
-
 class VarformerDataset(Dataset):
-    def __init__(self, variant_data, max_variants: int):
-        self.genes = variant_data['data']
+    def __init__(self, variant_data, max_variants: int, test_source=False):
         self.labels = variant_data['labels']
+        self.variant_features = variant_data['data']
         self.max_variants = max_variants
-        self.gene_names = list(self.genes.keys())
-        self.test_source = variant_data.get('test_source', False)
+        self.gene_names = list(self.variant_features.keys())
+        self.test_source = test_source
 
     def __len__(self) -> int:
-        return len(self.genes)
+        return len(self.variant_features)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, int, str]:
         gene_name = self.gene_names[idx]
-        variant_features = self.genes[gene_name]
-        label = self.labels[gene_name]
+        variants_for_gene = self.variant_features[gene_name]
+        gene_label = self.labels[gene_name]
 
-        pat_feat = self.padding(variant_features[:, 0])
-        pos_feat = self.padding(variant_features[:, 1])
-        mut_feat = self.padding(variant_features[:, 2])
-
-        features = {
-            'pathogenicity': pat_feat,
-            'position': pos_feat,
-            'mutation': mut_feat
-        }
+        pat_feat = self.padding(variants_for_gene[:, 0])
+        position = self.padding(variants_for_gene[:, 1])
+        mut_feat = self.padding(variants_for_gene[:, 2])
+        gene = self.padding(variants_for_gene[:, 3])
 
         # Create attention mask
         mask = torch.zeros(self.max_variants, dtype=torch.bool)
-        mask[len(self.genes[gene_name]):] = True
+        mask[len(variants_for_gene):] = 1.0
 
-        return features, mask, label, gene_name
+        return {
+            'pathogenicity': pat_feat.float(),
+            'position': position.int(),
+            'mutation': mut_feat.int(),
+            'gene': gene.int(),
+            'mask': mask.float(),
+            'labels': gene_label,
+            'test_source': self.test_source
+        }
 
     def label_imbalance(self):
         if self.labels is not None:
@@ -199,7 +128,8 @@ class DrugTargetVAEData(Dataset):
     def __init__(self, drug_target_data, reduct_dim, reduction_type="padding"):
         # Drug Target Data
         self.features = torch.tensor(drug_target_data['data'], dtype=torch.float32)
-        self.labels = torch.tensor(drug_target_data['labels'], dtype=torch.float32) if 'labels' in drug_target_data else None
+        self.labels = torch.tensor(drug_target_data['labels'],
+                                   dtype=torch.float32) if 'labels' in drug_target_data else None
         self.gene_names = drug_target_data['gene_names']
         self.test_source = drug_target_data.get('test_source', False)
 
