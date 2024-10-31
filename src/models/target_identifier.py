@@ -64,6 +64,53 @@ class BaseTargetIdentifier(torch.nn.Module):
         return logits, probabilities, binary_predictions
 
 
+class MultiInputTargetIdentifier(BaseTargetIdentifier):
+    def __init__(self, config, num_features_gc, num_features_go, num_features_pvc):
+        super(MultiInputTargetIdentifier, self).__init__(config, num_features_gc + num_features_go + num_features_pvc)
+
+        self.gc_branch = nn.Sequential(
+            nn.Linear(num_features_gc, int(self.config['width'])),
+            nn.BatchNorm1d(int(self.config['width'])),
+            nn.ReLU(),
+            nn.Dropout(p=float(self.config['dropout']))
+        )
+
+        self.go_branch = nn.Sequential(
+            nn.Linear(num_features_go, int(self.config['width'])),
+            nn.BatchNorm1d(int(self.config['width'])),
+            nn.ReLU(),
+            nn.Dropout(p=float(self.config['dropout']))
+        )
+
+        self.pvc_branch = nn.Sequential(
+            nn.Linear(num_features_pvc, int(self.config['width'])),
+            nn.BatchNorm1d(int(self.config['width'])),
+            nn.ReLU(),
+            nn.Dropout(p=float(self.config['dropout']))
+        )
+
+        combined_input_size = int(self.config['width']) * 3
+        self.classification_branch = nn.Sequential(
+            nn.Linear(combined_input_size, int(self.config['width'])),
+            nn.BatchNorm1d(int(self.config['width'])),
+            nn.ReLU(),
+            nn.Dropout(p=float(self.config['dropout'])),
+            nn.Linear(int(self.config['width']), 1)
+        )
+
+    def forward(self, x, mask=None):
+        gc_features = self.gc_branch(x['gc'])
+        go_features = self.go_branch(x['go'])
+        pvc_features = self.pvc_branch(x['pvc'])
+
+        combined_features = torch.cat([gc_features, go_features, pvc_features], dim=-1)
+        logits = self.classification_branch(combined_features).squeeze()
+        sigmoid = nn.Sigmoid()
+        probabilities = sigmoid(logits)
+        binary_predictions = (probabilities > float(self.config['threshold'])).float()
+        return logits, probabilities, binary_predictions
+
+
 class ShardedVarformerTargetIdentifier(BaseTargetIdentifier):
     def __init__(self, config, num_features, num_mutations, max_seq_len, num_genes, model_type="varformer"):
         super(ShardedVarformerTargetIdentifier, self).__init__(config, num_features, "mlp")

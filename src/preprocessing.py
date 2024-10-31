@@ -189,6 +189,7 @@ class GeneCharacterisationPreprocessor:
 
         # Remove holdout data from training data
         self.data = self.full_data[~self.full_data.index.isin(self.all_test_ids.index)]
+        self.labels = self.data['target']
 
         # Explore the data
         # plot.umap(self.data)
@@ -590,7 +591,7 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
     def __init__(self, config, gcp=None):
         self.protein_atlas_feature_names = None
         if not gcp:
-            super().__init__(config)
+            super(GeneOntologyPreprocessor, self).__init__(config)
             self.gcp_data = self.data
             self.full_gcp_data = self.full_data
             self.gcp_pfam_pos = self.pfam_pos_data
@@ -612,6 +613,16 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
             self.gcp_pfam_neg = gcp.pfam_neg_data
             self.gcp_rcnt_neg = gcp.rcnt_neg_data
             self.gcp_pharos_neg = gcp.pharos_neg_data
+            self.pfam_ids = gcp.pfam_ids
+            self.rcnt_ids = gcp.rcnt_ids
+            self.pharos_ids = gcp.pharos_ids
+            self.pfam_neg_data = gcp.pfam_neg_data
+            self.rcnt_neg_data = gcp.rcnt_neg_data
+            self.pharos_neg_data = gcp.pharos_neg_data
+            self.pfam_ids_all = gcp.pfam_ids_all
+            self.rcnt_ids_all = gcp.rcnt_ids_all
+            self.pharos_ids_all = gcp.pharos_ids_all
+            self.drgbl_targets_pfam = gcp.drgbl_targets_pfam
             # self.gcp_acmg = gcp.acmg_data
 
         print("Gene Ontology Preprocessor booting up...")
@@ -752,8 +763,8 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
 
     def tissue_expression_feature_extractor(self):
         # check if the tissue expression data has already been processed
-        if os.path.exists('data/features/tissue_specificity_features.pkl'):
-            with open('data/features/tissue_specificity_features.pkl', 'rb') as f:
+        if os.path.exists('../data/features/tissue_specificity_features.pkl'):
+            with open('../data/features/tissue_specificity_features.pkl', 'rb') as f:
                 self.tissue_specificity_features = pkl.load(f)
             return
         else:
@@ -771,7 +782,7 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
                     gene_tissue_dict[gene] = [tissue]
 
             self.tissue_specificity_features = gene_tissue_dict
-            with open('data/features/tissue_specificity_features.pkl', 'wb') as f:
+            with open('../data/features/tissue_specificity_features.pkl', 'wb') as f:
                 pkl.dump(gene_tissue_dict, f)
 
     def combine_go_features(self):
@@ -782,7 +793,7 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
             "subcellular_locations": self.protein_atlas_features['subcellular_locations']
         }
 
-        with open('data/features/raw_miva_feature_matrix.pkl', 'rb') as f:
+        with open('../data/features/raw_miva_feature_matrix.pkl', 'rb') as f:
             feature_matrix = pkl.load(f)
 
         for feature, values in ensg_features.items():
@@ -888,6 +899,10 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             self.gcp_pfam_neg = gcp.pfam_neg_data
             self.gcp_rcnt_neg = gcp.rcnt_neg_data
             self.gcp_pharos_neg = gcp.pharos_neg_data
+            self.drgbl_targets_pfam = gcp.drgbl_targets_pfam
+            self.rcnt_targets_fda = gcp.rcnt_targets_fda
+            self.chem_targets_pharos = gcp.chem_targets_pharos
+            self.ensg_ids = gcp.ensg_ids
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -926,12 +941,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.target = load_combined_labels()
         self.labels = {key: 1 if key in self.target['Ensembl'].tolist() else 0 for key in self.var_pat_features.keys()}
 
-        # TODO
-        #  [X] Make a separate train and test dictionary
-        #  [X] Make a dedicated Dataset for the data that can be integrated with a Transformer architecture
-        #  [X] Make the VarFormer model
-        #  [ ] Train the Varformer model
-
         # Combine features and target
         # self.data = combine_features_and_labels(self.pat_ensg_ids, self.features, self.target)
         self.pat_ensg_ids = pd.Series(list(self.var_pat_features.keys()))
@@ -952,7 +961,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
             self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
 
-            common_essentials = self.data[self.data['common_essentials'] == 1]
+            common_essentials = self.gcp_data[self.gcp_data['common_essentials'] == 1]
             common_essentials = common_essentials[common_essentials['target'] == 0]
             common_essentials = common_essentials[common_essentials['pli_lof_constraint'] > 0.9]
             # filter all ensgs from ensg_id that is not in var_pat_features.keys()

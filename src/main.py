@@ -10,7 +10,7 @@ def main(mode="training"):
     elif mode == "tuning":
         training.tune()
     elif mode == "kfold_teacher":
-        training.kfold_teacher(pvc=True)
+        training.kfold_teacher(pvc=True, go=True, gc=True)
     elif mode == "kfold_student":
         training.kfold_student()
     elif mode == "testing":
@@ -21,7 +21,7 @@ def main(mode="training"):
 
 
 if __name__ == "__main__":
-    main(mode="tuning")
+    main(mode="kfold_teacher")
 
     # TODO:
     #  MLP model
