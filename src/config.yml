@@ -21,6 +21,7 @@ paths:
 varipred:
   num_batches: 1000
 
+# TODO: Implement early stopping and model checkpointing
 hyperparameters:
   # mlp
   optimizer: AdamW
