@@ -2,14 +2,14 @@ import torch
 
 import torch.nn as nn
 
-from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef, F1Score
-from src.models.varformer import Varformer, ShardedVarformer, GeneAggregator
+from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef, Recall
+from models.varformer import ShardedVarformer
 
 
 class BaseTargetIdentifier(torch.nn.Module):
     def __init__(self, config, num_features, model_type="mlp"):
         super(BaseTargetIdentifier, self).__init__()
-        self.config = config['hyperparameters'][model_type]
+        self.config = config['hyperparameters']
         self.layers = []
         layer_sizes = [num_features] + [int(self.config['width'])] * int(self.config['num_layers'])
         layer_size_prev = layer_sizes[0]
@@ -27,9 +27,10 @@ class BaseTargetIdentifier(torch.nn.Module):
 
         self.init_weights = self.initialise_weights()
 
-        self.acc = Accuracy(task="binary", threshold=config['hyperparameters'][model_type]['threshold'])
+        self.acc = Accuracy(task="binary", threshold=config['hyperparameters']['threshold'])
         self.auroc = AUROC(task="binary")
-        self.f1 = F1Score(task="binary", threshold=config['hyperparameters'][model_type]['threshold'])
+        self.recall = Recall(task="binary", threshold=config['hyperparameters']['threshold'])
+        self.recall_at_10 = Recall(task="binary", threshold=config['hyperparameters']['threshold'], top_k=10)
         self.spearman = SpearmanCorrCoef()
 
     def initialise_weights(self, seed=None):
@@ -63,29 +64,47 @@ class BaseTargetIdentifier(torch.nn.Module):
         return logits, probabilities, binary_predictions
 
 
-class VarformerTargetIdentifier(BaseTargetIdentifier):
-    def __init__(self, config, num_features, num_mutations, max_seq_len, model_type="varformer"):
-        super(VarformerTargetIdentifier, self).__init__(config, num_features, "mlp")
+class MultiInputTargetIdentifier(BaseTargetIdentifier):
+    def __init__(self, config, num_features_gc, num_features_go, num_features_pvc):
+        super(MultiInputTargetIdentifier, self).__init__(config, num_features_gc + num_features_go + num_features_pvc)
 
-        varformer_config = config['hyperparameters'][model_type]
-        self.varformer = Varformer(
-            num_mutations=num_mutations,
-            max_seq_length=max_seq_len,
-            d_model=varformer_config['d_model'],
-            nhead=varformer_config['nhead'],
-            num_layers=varformer_config['num_layers']
+        self.gc_branch = nn.Sequential(
+            nn.Linear(num_features_gc, int(self.config['width'])),
+            nn.BatchNorm1d(int(self.config['width'])),
+            nn.ReLU(),
+            nn.Dropout(p=float(self.config['dropout']))
         )
 
-        # Adjust the input size of the first linear layer of the BaseTargetIdentifier MLP
-        self.layers[0] = nn.Linear(varformer_config['d_model'], int(self.config['width']))
+        self.go_branch = nn.Sequential(
+            nn.Linear(num_features_go, int(self.config['width'])),
+            nn.BatchNorm1d(int(self.config['width'])),
+            nn.ReLU(),
+            nn.Dropout(p=float(self.config['dropout']))
+        )
+
+        self.pvc_branch = nn.Sequential(
+            nn.Linear(num_features_pvc, int(self.config['width'])),
+            nn.BatchNorm1d(int(self.config['width'])),
+            nn.ReLU(),
+            nn.Dropout(p=float(self.config['dropout']))
+        )
+
+        combined_input_size = int(self.config['width']) * 3
+        self.classification_branch = nn.Sequential(
+            nn.Linear(combined_input_size, int(self.config['width'])),
+            nn.BatchNorm1d(int(self.config['width'])),
+            nn.ReLU(),
+            nn.Dropout(p=float(self.config['dropout'])),
+            nn.Linear(int(self.config['width']), 1)
+        )
 
     def forward(self, x, mask=None):
-        pat = x['pathogenicity']
-        pos = x['position']
-        mut = x['mutation']
-        gene = x['gene']
-        varformer_output = self.varformer(pat, pos, mut, gene, mask)
-        logits = self.layers(varformer_output).squeeze()
+        gc_features = self.gc_branch(x['gc'])
+        go_features = self.go_branch(x['go'])
+        pvc_features = self.pvc_branch(x['pvc'])
+
+        combined_features = torch.cat([gc_features, go_features, pvc_features], dim=-1)
+        logits = self.classification_branch(combined_features).squeeze()
         sigmoid = nn.Sigmoid()
         probabilities = sigmoid(logits)
         binary_predictions = (probabilities > float(self.config['threshold'])).float()
@@ -96,28 +115,25 @@ class ShardedVarformerTargetIdentifier(BaseTargetIdentifier):
     def __init__(self, config, num_features, num_mutations, max_seq_len, num_genes, model_type="varformer"):
         super(ShardedVarformerTargetIdentifier, self).__init__(config, num_features, "mlp")
 
-        varformer_config = config['hyperparameters'][model_type]
+        varformer_config = config['hyperparameters']
         self.varformer = ShardedVarformer(
             max_seq_len=max_seq_len,
             num_muts=num_mutations,
-            num_genes=num_genes,
+            dropout=float(varformer_config['dropout']),
             d_model=varformer_config['d_model'],
             nhead=varformer_config['nhead'],
             num_encoder_layers=varformer_config['num_encoder_layers']
         )
-        self.aggregator = GeneAggregator(varformer_config['d_model'], varformer_config['nhead'])
+        # self.aggregator = GeneAggregator(varformer_config['d_model'], varformer_config['nhead'])
 
-        assert int(self.config['width']) < varformer_config['d_model'], \
-            "The width of the MLP must be smaller than d_model of the Varformer! Adjust config."
-
+        # d_model = varformer_config['shard_size'] // 3 + varformer_config['shard_size']
         # Adjust the input size of the first linear layer of the BaseTargetIdentifier MLP
-        self.layers[0] = nn.Linear(varformer_config['d_model'], config['hyperparameters']['mlp']['width'])
+        self.layers[0] = nn.Linear(varformer_config['d_model'], config['hyperparameters']['width'])
 
     def forward(self, x, mask=None):
-        shard_embeds = self.varformer(x['pathogenicity'], x['position'], x['mutation'], x['gene'], mask)
-        gene_embeds = self.aggregator(shard_embeds).squeeze(1)
+        gene_embeds = self.varformer(x['pathogenicity'], x['position'], x['mutation'], mask)
         logits = self.layers(gene_embeds).squeeze()
         sigmoid = nn.Sigmoid()
         probabilities = sigmoid(logits)
         binary_predictions = (probabilities > float(self.config['threshold'])).float()
-        return logits, probabilities, binary_predictions, shard_embeds
+        return logits, probabilities, binary_predictions, gene_embeds

@@ -2,13 +2,13 @@ import wandb
 
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
-from src.autoencoders.ae import AutoencoderTrainer
+from autoencoders.ae import AutoencoderTrainer
 from torch.utils.data import DataLoader
 from pytorch_lightning.callbacks import ModelCheckpoint
 
-import src.dataloader as dl
+import dataloader as dl
 
-from src.utils import padding
+from utils import padding
 
 
 def train(data_dict, config):

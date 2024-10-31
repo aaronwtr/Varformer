@@ -77,7 +77,7 @@ def split_data(data_path, num_batches):
     variant_data = variant_data[train_cols]
     batches = np.array_split(variant_data, num_batches)
     for i, batch in enumerate(batches):
-        batch.to_csv(f"data/elgh/train_batch_mivas/variant_data_{i + 1}.csv")
+        batch.to_csv(f"../data/elgh/train_batch_mivas/variant_data_{i + 1}.csv")
 
 
 def find_error_files(path):
@@ -87,7 +87,7 @@ def find_error_files(path):
     output_files = sorted(output_files)
     input_files = np.arange(1, 1001)
     missing_files = np.setdiff1d(input_files, output_files)
-    np.savetxt("data/VariPred/missing_vp_train_files.txt", missing_files, fmt="%d")
+    np.savetxt("../data/VariPred/missing_vp_train_files.txt", missing_files, fmt="%d")
     print(len(missing_files))
 
 
@@ -170,8 +170,8 @@ def clinvar_filtering(clinvar_data):
     """
     Filters the ClinVar data to only contain rows assembled with GRCh38 and are missense variants.
     """
-    if os.path.exists("data/clinvar/clinvar_filtered.csv"):
-        return pd.read_csv("data/clinvar/clinvar_filtered.csv", sep="\t")
+    if os.path.exists("../data/clinvar/clinvar_filtered.csv"):
+        return pd.read_csv("../data/clinvar/clinvar_filtered.csv", sep="\t")
     else:
         columns = ["Name", "GeneSymbol", "Chromosome", "Start", "ReferenceAlleleVCF", "AlternateAlleleVCF",
                    "ClinSigSimple"]
@@ -493,6 +493,16 @@ def set_seed(seed):
 
 
 def df_col_to_dense(x):
+    # inspect all the types in x and collect in a list
+    print(x)
+    print("\n\n\n")
+    print("type of x: \n")
+    print(type(x))
+    print("\n\n\n")
+    types_unwrapped = [type(i) for i in x]
+    unique_types = set(types_unwrapped)
+    print("Types unwrapped: \n")
+    print(unique_types)
     if issparse(x):
         _x = np.array(x.todense()).flatten()
         return _x
