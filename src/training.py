@@ -719,8 +719,6 @@ def kfold_teacher(ensemble=False, **modules):
         except KeyError:
             print(f"Gene {gene} not found in dataframe")
 
-    print('break')
-
     # todo: homogenize test data
 
     if not ensemble:
