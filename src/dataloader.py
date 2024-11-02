@@ -4,6 +4,7 @@ import yaml
 import torch.nn as nn
 import preprocessing as preprocessing
 import torch.nn.functional as F
+import numpy as np
 
 from torch.utils.data import Dataset
 from typing import Dict, List, Tuple
@@ -28,7 +29,7 @@ class ModuleDataProcessor:
             data['go'] = self.open_go_data(data['gc'])
         if self.pvc:
             data['pvc'] = self.open_pvc_data(data['gc'])
-        return data
+        return self.homogenize_data(data)
 
     def open_gc_data(self):
         gcp = preprocessing.GeneCharacterisationPreprocessor(config=self.config)
@@ -45,6 +46,51 @@ class ModuleDataProcessor:
         print("Population variants preprocessed!\n")
         return pvc
 
+    @staticmethod
+    def homogenize_data(data):
+        gc_data = data['gc']
+        go_data = data['go']
+        pvc_data = data['pvc']
+
+        test_sources = ['pfam', 'rcnt', 'pharos']
+
+        ensg_pvc = list(pvc_data.data.keys())
+        ensg_gc = list(gc_data.ensg_ids.tolist())
+
+        dropped_genes = list(set(ensg_gc) - set(ensg_pvc))
+        dropped_gene_idx = gc_data.ensg_ids[gc_data.ensg_ids.isin(dropped_genes)].index.tolist()
+
+        gc_df = gc_data.data
+
+        gc_df = gc_df.drop(dropped_gene_idx, errors='ignore')
+        gc_df_index = gc_df.index.tolist()
+        gc_ensg_ids = gc_data.ensg_ids[gc_df_index]
+        dropped_genes = list(set(ensg_pvc) - set(gc_ensg_ids))
+        for gene in dropped_genes:
+            try:
+                pvc_data.data.pop(gene)
+            except KeyError:
+                print(f"Gene {gene} not found in dataframe")
+        for source in test_sources:
+            pvc_pos_dict = getattr(pvc_data, f"{source}_pos_dict")
+            pvc_pos_ensg = list(pvc_pos_dict.keys())
+            gc_pos_data = getattr(gc_data, f"{source}_pos_data")
+            gc_neg_data = getattr(gc_data, f"{source}_neg_data")
+            gc_ids = getattr(gc_data, f"{source}_ids_all")
+            gc_pos_idx = gc_pos_data.index.tolist()
+            gc_neg_idx = gc_neg_data.index.tolist()
+            gc_pos_ensg = gc_ids[gc_pos_idx].tolist()
+            gc_neg_ensg = gc_ids[gc_neg_idx].tolist()
+            dropped_pos_genes = list(set(gc_pos_ensg) - set(pvc_pos_ensg))
+            dropped_neg_genes = np.random.choice(gc_neg_ensg, len(dropped_pos_genes), replace=False)
+            dropped_pos_idx = gc_ids[gc_ids.isin(dropped_pos_genes)].index.tolist()
+            dropped_neg_idx = gc_ids[gc_ids.isin(dropped_neg_genes)].index.tolist()
+            setattr(gc_data, f"{source}_data", getattr(gc_data, f"{source}_data").drop(dropped_pos_idx))
+            setattr(gc_data, f"{source}_data", getattr(gc_data, f"{source}_data").drop(dropped_neg_idx))
+            setattr(go_data, f"{source}_data", getattr(go_data, f"{source}_data").drop(dropped_pos_idx))
+            setattr(go_data, f"{source}_data", getattr(go_data, f"{source}_data").drop(dropped_neg_idx))
+
+        return data
 
 class DrugTargetData(Dataset):
     def __init__(self, data, labels, gene_names, test_source=False):
