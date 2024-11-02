@@ -5,12 +5,6 @@ import math
 
 
 class ShardedVarformer(nn.Module):
-    # TODO:
-    #  [X] Train model with best settings for as long as possible.
-    #  [X] Ablate gene tokens and evaluate
-    #  [X] Look into the advantage of <PAD> tokens over 0 padding
-    #  [ ] Add Varformer embeddings to the GO and GC features and evaluate.
-    #  [ ] Come up with test cases to compare inclusion of Varformer embeddings in the GO and GC features.
     def __init__(self, max_seq_len, num_muts, dropout, d_model, nhead=2, num_encoder_layers=2):
         super(ShardedVarformer, self).__init__()
         self.d_model = d_model
