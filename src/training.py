@@ -675,52 +675,6 @@ def kfold_teacher(ensemble=False, **modules):
 
     data = ModuleDataProcessor(gc, go, pvc, psc).process()
 
-    # todo: move the below to the preprocessor
-
-    gc_data = data['gc']
-    go_data = data['go']
-    pvc_data = data['pvc']
-
-    # drop genes from gc not in pvc
-    ensg_pvc = list(pvc_data.data.keys())
-    ensg_gc = list(gc_data.ensg_ids.tolist())
-
-    dropped_genes = list(set(ensg_gc) - set(ensg_pvc))
-    dropped_gene_idx = gc_data.ensg_ids[gc_data.ensg_ids.isin(dropped_genes)].index.tolist()
-
-    gc_df = gc_data.data
-    go_df = go_data.data
-    pvc_data = pvc_data.data
-    count_gc = 0
-    count_go = 0
-    for idx in dropped_gene_idx:
-        try:
-            gc_df = gc_df.drop(idx)
-
-        except KeyError:
-            print(f"Index {idx} not found in dataframe")
-            count_gc += 1
-
-    for idx in dropped_gene_idx:
-        try:
-            go_df = go_df.drop(idx)
-
-        except KeyError:
-            print(f"Index {idx} not found in dataframe")
-            count_go += 1
-
-    # drop genes from pvc not in gc
-    gc_df_index = gc_df.index.tolist()
-    gc_ensg_ids = gc_data.ensg_ids[gc_df_index]
-    dropped_genes = list(set(ensg_pvc) - set(gc_ensg_ids))
-    for gene in dropped_genes:
-        try:
-            pvc_data.pop(gene)
-        except KeyError:
-            print(f"Gene {gene} not found in dataframe")
-
-    # todo: homogenize test data
-
     if not ensemble:
         for module, preprocessor in data.items():
             if modules[module]:
