@@ -22,7 +22,7 @@ from typing import Dict, Union, Optional
 from tqdm import tqdm
 
 from dataloader import DrugTargetData, ModuleDataProcessor, VarformerDataset
-from models.target_identifier import BaseTargetIdentifier, ShardedVarformerTargetIdentifier
+from models.target_identifier import MultiModalTargetIdentifier
 from models.lightning import MLPLightningTargetIdentifier, ShardedVarformerLightningTargetIdentifier
 
 
@@ -344,6 +344,15 @@ def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_ge
         missense_map = pkl.load(f)
     num_mutations = len(missense_map)
 
+    model = MultiModalTargetIdentifier(
+        config=config,
+        num_features_gc=gc_features_dim,
+        num_features_go=go_features_dim,
+        num_features_pvc=pvc_features_dim,
+        num_mutations=num_mutations,
+        max_seq_len=max_seq_len,
+        num_genes=num_genes
+    )
     model = None
     if module_str == "pvc":
         varformer = ShardedVarformerTargetIdentifier(
@@ -507,11 +516,6 @@ def train(tag="Training", module_str=None, wandb_run=None):
 
 def kfold_train(
         data: Union[pd.DataFrame, dict],
-        genes: pd.DataFrame,
-        test_genes: Dict[str, pd.DataFrame],
-        test_data: Dict[str, pd.DataFrame],
-        num_features: int,
-        config: dict,
         model_type: str,
         modules: Union[str, Dict[str, bool]]
 ):
@@ -653,7 +657,7 @@ def kfold_train(
             trainer.test(dataloaders=test["pharos"])
 
 
-def kfold_teacher(ensemble=False, **modules):
+def kfold_teacher(**modules):
     pl.seed_everything(42)
     torch.set_float32_matmul_precision('medium')
 
@@ -675,36 +679,7 @@ def kfold_teacher(ensemble=False, **modules):
 
     data = ModuleDataProcessor(gc, go, pvc, psc).process()
 
-    if not ensemble:
-        for module, preprocessor in data.items():
-            if modules[module]:
-                train = preprocessor.data
-                # umap(train_df)
-                genes = preprocessor.ensg_ids
-                num_features = preprocessor.num_features
-                norm = preprocessor.norm
-                config = preprocessor.config
-                pfam_data = preprocessor.pfam_data
-                pfam_genes = preprocessor.pfam_ids
-                rcnt_data = preprocessor.rcnt_data
-                rcnt_genes = preprocessor.rcnt_ids
-                pharos_data = preprocessor.pharos_data
-                pharos_genes = preprocessor.pharos_ids
-                test_data = {
-                    "pfam": pfam_data,
-                    "rcnt": rcnt_data,
-                    "pharos": pharos_data
-                }
-                test_genes = {
-                    "pfam": pfam_genes,
-                    "rcnt": rcnt_genes,
-                    "pharos": pharos_genes
-                }
-                kfold_train(train, genes, test_genes, test_data, num_features, config, model_type="teacher",
-                                      modules=module)
-    else:
-        # TODO: Implement ensemble training
-        pass
+    kfold_train(data, model_type="teacher", modules=modules)
 
 
 def kfold_student(ensemble=False, **modules):
