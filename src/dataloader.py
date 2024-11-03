@@ -46,8 +46,7 @@ class ModuleDataProcessor:
         print("Population variants preprocessed!\n")
         return pvc
 
-    @staticmethod
-    def homogenize_data(data):
+    def homogenize_data(self, data):
         gc_data = data['gc']
         go_data = data['go']
         pvc_data = data['pvc']
@@ -90,7 +89,58 @@ class ModuleDataProcessor:
             setattr(go_data, f"{source}_data", getattr(go_data, f"{source}_data").drop(dropped_pos_idx))
             setattr(go_data, f"{source}_data", getattr(go_data, f"{source}_data").drop(dropped_neg_idx))
 
-        return data
+        return self.combine_modalities(data)
+
+    @staticmethod
+    def combine_modalities(data_dict):
+        """
+        Combines different modalities' data and their corresponding features
+        """
+        combined_train = {}
+        combined_genes = set()
+        combined_features = 0
+        combined_config = {}
+
+        for module, preprocessor in data_dict.items():
+            combined_train[module] = preprocessor.data
+            if module == 'gc':
+                combined_genes.update(preprocessor.ensg_ids)
+                combined_config[module] = preprocessor.config
+            combined_features += preprocessor.num_features
+
+        combined_test_data = {
+            "pfam": {},
+            "rcnt": {},
+            "pharos": {}
+        }
+        combined_test_genes = {
+            "pfam": set(),
+            "rcnt": set(),
+            "pharos": set()
+        }
+
+        for module, preprocessor in data_dict.items():
+            if hasattr(preprocessor, 'pfam_data'):
+                combined_test_data["pfam"][module] = preprocessor.pfam_data
+                combined_test_genes["pfam"].update(preprocessor.pfam_ids)
+
+            if hasattr(preprocessor, 'rcnt_data'):
+                combined_test_data["rcnt"][module] = preprocessor.rcnt_data
+                combined_test_genes["rcnt"].update(preprocessor.rcnt_ids)
+
+            if hasattr(preprocessor, 'pharos_data'):
+                combined_test_data["pharos"][module] = preprocessor.pharos_data
+                combined_test_genes["pharos"].update(preprocessor.pharos_ids)
+
+        return {
+            "train": combined_train,
+            "genes": list(combined_genes),
+            "num_features": combined_features,
+            "config": combined_config,
+            "test_data": combined_test_data,
+            "test_genes": {k: list(v) for k, v in combined_test_genes.items()}
+        }
+
 
 class DrugTargetData(Dataset):
     def __init__(self, data, labels, gene_names, test_source=False):
