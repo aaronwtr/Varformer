@@ -909,6 +909,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         print("Preparing variant features...")
         self.variant_gh_data(config['hyperparameters'])
 
+        self.num_features = config['hyperparameters']['max_seq_len']
+
         print("Obtaining AlphaMissense pathogenicity embeddings...")
         if not os.path.exists("../data/features/var_pat_features.pkl"):
             self.var_pat_features = self.varformer_pathogenicity_input()
