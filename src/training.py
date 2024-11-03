@@ -344,7 +344,8 @@ def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_ge
         missense_map = pkl.load(f)
     num_mutations = len(missense_map)
 
-    model = MultiModalTargetIdentifier(
+    # todo wrap base in lightning module
+    base = MultiModalTargetIdentifier(
         config=config,
         num_features_gc=gc_features_dim,
         num_features_go=go_features_dim,
@@ -538,6 +539,15 @@ def kfold_train(
             i += 1
             group = f"distillation-{i}-{model_type}-{module_str}"
         os.mkdir(f'checkpoints/{group}')
+
+    gc_data = data['gc']
+
+    go_data = data['go']
+
+    pvc_data = data['pvc']
+    pvc_labels = pvc_data['labels']
+
+    genes = data['genes']
 
     if isinstance(data, dict):
         labels = data['labels']
