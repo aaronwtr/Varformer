@@ -59,10 +59,10 @@ class ModuleDataProcessor:
         dropped_genes = list(set(ensg_gc) - set(ensg_pvc))
         dropped_gene_idx = gc_data.ensg_ids[gc_data.ensg_ids.isin(dropped_genes)].index.tolist()
 
-        gc_df = gc_data.data
-
-        gc_df = gc_df.drop(dropped_gene_idx, errors='ignore')
-        gc_df_index = gc_df.index.tolist()
+        # homogenize train data
+        data['gc'].data = data['gc'].data.drop(dropped_gene_idx, errors='ignore')
+        data['go'].data = data['go'].data.drop(dropped_gene_idx, errors='ignore')
+        gc_df_index = data['gc'].data.index.tolist()
         gc_ensg_ids = gc_data.ensg_ids[gc_df_index]
         dropped_genes = list(set(ensg_pvc) - set(gc_ensg_ids))
         for gene in dropped_genes:
@@ -70,6 +70,8 @@ class ModuleDataProcessor:
                 pvc_data.data.pop(gene)
             except KeyError:
                 print(f"Gene {gene} not found in dataframe")
+
+        # homogenize test data
         for source in test_sources:
             pvc_pos_dict = getattr(pvc_data, f"{source}_pos_dict")
             pvc_pos_ensg = list(pvc_pos_dict.keys())
@@ -89,6 +91,9 @@ class ModuleDataProcessor:
             setattr(go_data, f"{source}_data", getattr(go_data, f"{source}_data").drop(dropped_pos_idx))
             setattr(go_data, f"{source}_data", getattr(go_data, f"{source}_data").drop(dropped_neg_idx))
 
+        data['gc'].data.index = gc_ensg_ids
+        data['go'].data.index = gc_ensg_ids
+
         return self.combine_modalities(data)
 
     @staticmethod
@@ -103,9 +108,10 @@ class ModuleDataProcessor:
 
         for module, preprocessor in data_dict.items():
             combined_train[module] = preprocessor.data
+            if module == 'pvc':
+                combined_genes = list(set(preprocessor.data.keys()))
             if module == 'gc':
-                combined_genes.update(preprocessor.ensg_ids)
-                combined_config[module] = preprocessor.config
+                combined_config = preprocessor.config
             combined_features += preprocessor.num_features
 
         combined_test_data = {
