@@ -224,3 +224,104 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
             if isinstance(m, nn.Linear):
                 init.xavier_normal_(m.weight)
                 init.zeros_(m.bias)
+
+
+class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
+    def __init__(self, model, config, imbalance):
+        super().__init__(model, config, imbalance)
+        self.model = model
+
+    def forward(self, x, mask=None):
+        return self.model(x, mask)
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        features, masks = batch
+        logits, probas, bin_preds = self(features, masks)
+        return probas
+
+    def _common_step(self, batch, batch_idx, step_type):
+        features = {key: batch[key] for key in ['gc', 'go', 'pvc']}
+        labels = batch['labels']
+        masks = batch['mask']
+        test_source = batch['test_source'][0]
+
+        logits, probas, bin_preds = self(features, masks)
+
+        labels = (labels > float(self.config['threshold'])).float()
+        if step_type == 'train':
+            class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))], device=self.device)
+            loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
+            self._log(labels, step_type, loss, bin_preds, probas)
+        elif step_type == 'val':
+            if logits.shape != labels.shape:
+                logits = logits.unsqueeze(0)  # For the case where the batch size is 1
+            loss = F.binary_cross_entropy_with_logits(logits, labels.float())
+            self._log(labels, step_type, loss, bin_preds, probas)
+        else:
+            loss = None
+            self._log(labels, step_type, loss, bin_preds, probas, test_source)
+        return loss
+
+    def training_step(self, batch, batch_idx):
+        return self._common_step(batch, batch_idx, 'train')
+
+    def validation_step(self, batch, batch_idx):
+        return self._common_step(batch, batch_idx, 'val')
+
+    def test_step(self, batch, batch_idx):
+        return self._common_step(batch, batch_idx, 'test')
+
+    def setup(self):
+        self.initialize_weights()
+
+    def configure_optimizers(self):
+        weight_decay = float(self.config.get('weight_decay', 0))
+        if self.config['optimizer'] == "Adam":
+            optimizer = torch.optim.Adam(self.parameters(), lr=float(self.config['lr_start']), weight_decay=weight_decay)
+        elif self.config['optimizer'] == "SGD":
+            optimizer = torch.optim.SGD(self.parameters(), lr=float(self.config['lr_start']), weight_decay=weight_decay)
+        elif self.config['optimizer'] == "RMSprop":
+            optimizer = torch.optim.RMSprop(self.parameters(), lr=float(self.config['lr_start']), weight_decay=weight_decay)
+        elif self.config['optimizer'] == "AdamW":
+            optimizer = torch.optim.AdamW(self.parameters(), lr=float(self.config['lr_start']), weight_decay=weight_decay)
+        else:
+            raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
+
+        print("Learning rate passed to optimizer: ", float(self.config['lr_start']))
+        lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=int(self.config['T_0']), eta_min=float(self.config['lr_end']))
+        return [optimizer], [{'scheduler': lr_scheduler, 'interval': 'step'}]
+
+    def initialize_weights(self, seed=None):
+        if seed is not None:
+            torch.manual_seed(seed)
+
+        initial_weights = {}
+
+        gc_weights = self.model.gc_branch.initialise_weights(seed)
+        initial_weights.update({'gc_branch.' + k: v for k, v in gc_weights.items()})
+
+        go_weights = self.model.go_branch.initialise_weights(seed)
+        initial_weights.update({'go_branch.' + k: v for k, v in go_weights.items()})
+
+        pvc_weights = self.model.pvc_branch.initialise_weights(seed)
+        initial_weights.update({'pvc_branch.' + k: v for k, v in pvc_weights.items()})
+
+        for name, module in self.model.classification_branch.named_modules():
+            if isinstance(module, torch.nn.Linear):
+                torch.nn.init.xavier_uniform_(module.weight)
+                initial_weights[f'classification_branch.{name}.weight'] = module.weight.detach().clone()
+                if module.bias is not None:
+                    torch.nn.init.zeros_(module.bias)
+                    initial_weights[f'classification_branch.{name}.bias'] = module.bias.detach().clone()
+            elif isinstance(module, torch.nn.BatchNorm1d):
+                torch.nn.init.constant_(module.weight, 1)
+                initial_weights[f'classification_branch.{name}.weight'] = module.weight.detach().clone()
+                if module.bias is not None:
+                    torch.nn.init.constant_(module.bias, 0)
+                    initial_weights[f'classification_branch.{name}.bias'] = module.bias.detach().clone()
+                module.running_mean.fill_(0)
+                module.running_var.fill_(1)
+                initial_weights[f'classification_branch.{name}.running_mean'] = module.running_mean.detach().clone()
+                initial_weights[f'classification_branch.{name}.running_var'] = module.running_var.detach().clone()
+
+        return initial_weights
