@@ -210,132 +210,141 @@ def objective(trial: optuna.trial.Trial) -> float:
 
 def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test_raw, config, module_str):
     hparams = config['hyperparameters']
+    train_combined = {}
+    val_combined = {}
+    test_combined = {}
+    for module_str, train_data in train_raw.items():
+        if module_str == "pvc":
+            all_genes = list(labels.keys())
 
-    if module_str == "pvc":
-        all_genes = list(labels.keys())
+            drug_target_train_data = {
+                'data': train_data,
+                'labels': labels
+            }
 
-        drug_target_train_data = {
-            'data': train_raw,
-            'labels': labels
-        }
+            drug_target_val_data = {
+                'data': val_raw[module_str],
+                'labels': labels
+            }
 
-        drug_target_val_data = {
-            'data': val_raw,
-            'labels': labels
-        }
+            train_pvc = DataLoader(
+                VarformerDataset(
+                    drug_target_train_data,
+                    max_variants=hparams['max_seq_len'],
+                ),
+                batch_size=hparams['batch_size'],
+                shuffle=True,
+                num_workers=hparams['num_workers']
+            )
 
-        _train = DataLoader(
-            VarformerDataset(
-                drug_target_train_data,
-                max_variants=hparams['max_seq_len'],
-            ),
-            batch_size=hparams['batch_size'],
-            shuffle=True,
-            num_workers=hparams['num_workers']
-        )
+            val_pvc = DataLoader(
+                VarformerDataset(
+                    drug_target_val_data,
+                    max_variants=hparams['max_seq_len'],
+                ),
+                batch_size=hparams['batch_size'],
+                shuffle=False,
+                num_workers=hparams['num_workers']
+            )
 
-        val = DataLoader(
-            VarformerDataset(
-                drug_target_val_data,
-                max_variants=hparams['max_seq_len'],
-            ),
-            batch_size=hparams['batch_size'],
-            shuffle=False,
-            num_workers=hparams['num_workers']
-        )
-
-        if test_raw is not None:
-            variant_counts = {}
-            for gene in all_genes:
-                count = 0
-                if gene in train_raw:
-                    count += train_raw[gene].shape[0]
-                if gene in val_raw:
-                    count += val_raw[gene].shape[0]
-                if gene in test_raw:
-                    count += test_raw[gene].shape[0]
-                variant_counts[gene] = count
+            # if test_raw['rcnt']['pvc'] is not None:
+            #     variant_counts = {}
+            #     for gene in all_genes:
+            #         count = 0
+            #         if gene in train_data:
+            #             count += train_data[gene].shape[0]
+            #         if gene in val_raw:
+            #             count += val_raw[gene].shape[0]
+            #         if gene in test_raw['pvc']:
+            #             count += test_raw['pvc'][gene].shape[0]
+            #         variant_counts[gene] = count
 
             drug_target_test_data = {}
-            for key, test_raw in test_raw.items():
+            for key, modalities in test_raw.items():
                 drug_target_test_data[key] = {
-                    'data': test_raw,
+                    'data': modalities[module_str],
                     'labels': labels,
                     'test_source': key
                 }
 
-            test = {}
+            test_pvc = {}
             for key, test_data in drug_target_test_data.items():
                 test_dataset = VarformerDataset(
                     test_data,
                     max_variants=hparams['max_seq_len'],
                     test_source=key
                 )
-                test[key] = DataLoader(
+                test_pvc[key] = DataLoader(
                     test_dataset,
                     batch_size=len(test_dataset),
                     shuffle=False,
                     num_workers=hparams['num_workers']
                 )
+            else:
+                test = None
+            train_combined[module_str] = train_pvc
+            val_combined[module_str] = val_pvc
+            test_combined[module_str] = test_pvc
+            label_imbalance = train_pvc.dataset.label_imbalance()
         else:
-            test = None
-        label_imbalance = _train.dataset.label_imbalance()
-    else:
-        val_norm = val_raw.iloc[:, :-1].values
-        train_norm = train_raw.iloc[:, :-1].values
+            val_norm = val_raw[module_str].iloc[:, :-1].values
+            train_norm = train_data.iloc[:, :-1].values
 
-        scaler = MinMaxScaler()
+            scaler = MinMaxScaler()
 
-        train_norm = scaler.fit_transform(train_norm)
-        val_norm = scaler.transform(val_norm)
+            train_norm = scaler.fit_transform(train_norm)
+            val_norm = scaler.transform(val_norm)
 
-        _train = DataLoader(
-            DrugTargetData(
-                data=train_norm,
-                labels=train_raw.iloc[:, -1].values,
-                gene_names=train_genes
-            ),
-            batch_size=int(hparams['batch_size']),
-            shuffle=True,
-            num_workers=int(hparams['num_workers'])
-        )
-
-        val = DataLoader(
-            DrugTargetData(
-                data=val_norm,
-                labels=val_raw.iloc[:, -1].values,
-                gene_names=val_genes
-            ),
-            batch_size=int(hparams['batch_size']),
-            shuffle=False,
-            num_workers=int(hparams['num_workers'])
-        )
-
-        test = {}
-        for key, raw in test_raw.items():
-            normed = scaler.transform(raw.iloc[:, :-1].values)
-            test[key] = DataLoader(
+            train_loader = DataLoader(
                 DrugTargetData(
-                    data=normed,
-                    labels=raw.iloc[:, -1].values,
-                    gene_names=test_genes[key],
-                    test_source=key
+                    data=train_norm,
+                    labels=train_data.iloc[:, -1].values,
+                    gene_names=train_genes
                 ),
-                batch_size=len(raw),
+                batch_size=int(hparams['batch_size']),
+                shuffle=True,
+                num_workers=int(hparams['num_workers'])
+            )
+
+            val_loader = DataLoader(
+                DrugTargetData(
+                    data=val_norm,
+                    labels=val_raw[module_str].iloc[:, -1].values,
+                    gene_names=val_genes
+                ),
+                batch_size=int(hparams['batch_size']),
                 shuffle=False,
                 num_workers=int(hparams['num_workers'])
             )
 
-        label_imbalance = _train.dataset.label_imbalance().item()
+            test = {}
+            for key, modalities in test_raw.items():
+                normed = scaler.transform(modalities[module_str].iloc[:, :-1].values)
+                test[key] = DataLoader(
+                    DrugTargetData(
+                        data=normed,
+                        labels=modalities[module_str].iloc[:, -1].values,
+                        gene_names=test_genes[key],
+                        test_source=key
+                    ),
+                    batch_size=len(modalities[module_str]),
+                    shuffle=False,
+                    num_workers=int(hparams['num_workers'])
+                )
+            train_combined[module_str] = train_loader
+            val_combined[module_str] = val_loader
+            test_combined[module_str] = test
+            label_imbalance = train_loader.dataset.label_imbalance().item()
 
-    return _train, val, test, label_imbalance
+    return train_combined, val_combined, test_combined, label_imbalance
 
 
 def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test, num_features, config,
                      module_str):
     hyperparams = config['hyperparameters']
-    _train, val, test, train_imbalance = normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_genes,
-                                                        test, config, module_str)
+    train_combined, val_combined, test_combined, train_imbalance = normalise_data(train_raw, val_raw, labels,
+                                                                                  train_genes, val_genes, test_genes,
+                                                                                  test, config, module_str)
 
     mlp_pytorch = BaseTargetIdentifier(config=config, num_features=num_features)
 
@@ -554,6 +563,8 @@ def kfold_train(
 
     test_data = data['test_data']
     test_genes = data['test_genes']
+
+    config = data['config']
 
     for fold, (train_indices, val_indices) in enumerate(kfold.split(gc_data)):
         print(f"Training fold {fold + 1}/{num_splits}")
