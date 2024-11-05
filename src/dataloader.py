@@ -66,10 +66,11 @@ class ModuleDataProcessor:
         gc_ensg_ids = gc_data.ensg_ids[gc_df_index]
         dropped_genes = list(set(ensg_pvc) - set(gc_ensg_ids))
         for gene in dropped_genes:
-            try:
-                pvc_data.data.pop(gene)
-            except KeyError:
-                print(f"Gene {gene} not found in dataframe")
+            if gene != 'labels':
+                try:
+                    pvc_data.data.pop(gene)
+                except KeyError:
+                    print(f"Gene {gene} not found in dataframe")
 
         # homogenize test data
         for source in test_sources:
@@ -113,6 +114,8 @@ class ModuleDataProcessor:
             if module == 'gc':
                 combined_config = preprocessor.config
             combined_features += preprocessor.num_features
+
+        combined_genes.remove('labels')
 
         combined_test_data = {
             "pfam": {},
