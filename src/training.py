@@ -23,7 +23,8 @@ from tqdm import tqdm
 
 from dataloader import DrugTargetData, ModuleDataProcessor, VarformerDataset
 from models.target_identifier import MultiModalTargetIdentifier
-from models.lightning import MLPLightningTargetIdentifier, ShardedVarformerLightningTargetIdentifier
+from models.lightning import (MLPLightningTargetIdentifier, ShardedVarformerLightningTargetIdentifier,
+                              MultiModalLightningTargetIdentifier)
 
 
 def tune():
@@ -339,51 +340,55 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
     return train_combined, val_combined, test_combined, label_imbalance
 
 
-def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test, num_features, config,
-                     module_str):
+def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test, num_features, config):
     hyperparams = config['hyperparameters']
     train_combined, val_combined, test_combined, train_imbalance = normalise_data(train_raw, val_raw, labels,
                                                                                   train_genes, val_genes, test_genes,
                                                                                   test, config, module_str)
 
-    mlp_pytorch = BaseTargetIdentifier(config=config, num_features=num_features)
-
-    num_genes = max([train_raw[gene].shape[0] for gene in train_raw.keys()])
+    max_genes_pvc = max([train_raw['pvc'][gene].shape[0] for gene in train_raw['pvc'].keys()])
     with open("../data/elgh/missense_mutation_map.pkl", "rb") as f:
         missense_map = pkl.load(f)
     num_mutations = len(missense_map)
 
-    # todo wrap base in lightning module
+    gc_features_dim = train_raw['gc'].shape[1] - 1
+    go_features_dim = train_raw['go'].shape[1] - 1
+
     base = MultiModalTargetIdentifier(
         config=config,
         num_features_gc=gc_features_dim,
         num_features_go=go_features_dim,
-        num_features_pvc=pvc_features_dim,
         num_mutations=num_mutations,
-        max_seq_len=max_seq_len,
-        num_genes=num_genes
+        max_seq_len=hyperparams['max_seq_len'],
+        num_genes=max_genes_pvc
     )
-    model = None
-    if module_str == "pvc":
-        varformer = ShardedVarformerTargetIdentifier(
-            config=config,
-            num_features=num_features,
-            num_mutations=num_mutations,
-            max_seq_len=hyperparams['max_seq_len'],
-            num_genes=num_genes
-        )
 
-        model = ShardedVarformerLightningTargetIdentifier(
-            model=varformer,
-            config=config,
-            imbalance=train_imbalance
-        )
-    else:
-        model = MLPLightningTargetIdentifier(
-            model=mlp_pytorch,
-            config=config,
-            imbalance=train_imbalance
-        )
+    model = MultiModalLightningTargetIdentifier(
+        model=base,
+        config=config,
+        imbalance=train_imbalance
+    )
+
+    # if module_str == "pvc":
+    #     varformer = ShardedVarformerTargetIdentifier(
+    #         config=config,
+    #         num_features=num_features,
+    #         num_mutations=num_mutations,
+    #         max_seq_len=hyperparams['max_seq_len'],
+    #         num_genes=num_genes
+    #     )
+    #
+    #     model = ShardedVarformerLightningTargetIdentifier(
+    #         model=varformer,
+    #         config=config,
+    #         imbalance=train_imbalance
+    #     )
+    # else:
+    #     model = MLPLightningTargetIdentifier(
+    #         model=mlp_pytorch,
+    #         config=config,
+    #         imbalance=train_imbalance
+    #     )
 
     if torch.cuda.is_available():
         accelerator = 'gpu'
@@ -601,21 +606,7 @@ def kfold_train(
             test_genes,
             test_data,
             num_features,
-            config,
-            module_str=""   # TODO: find a way to remove this
-        )
-
-        mlp_lightning, _train, val, test, hyperparameters, accelerator = initialise_model(
-            train_raw,
-            val_raw,
-            labels,
-            train_genes,
-            val_genes,
-            test_genes,
-            test_data,
-            num_features,
-            config,
-            module_str
+            config
         )
 
         if config['hyperparameters']['wandb']:
@@ -670,7 +661,7 @@ def kfold_train(
                     deterministic=True
                 )
 
-            trainer.fit(mlp_lightning, _train, val)
+            trainer.fit(model, _train, val)
             trainer.test(dataloaders=test["pfam"])
             trainer.test(dataloaders=test["rcnt"])
             trainer.test(dataloaders=test["pharos"])
