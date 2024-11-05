@@ -539,37 +539,60 @@ def kfold_train(
             i += 1
             group = f"distillation-{i}-{model_type}-{module_str}"
         os.mkdir(f'checkpoints/{group}')
+    
+    gc_data = data['train']['gc']
 
-    gc_data = data['gc']
+    go_data = data['train']['go']
 
-    go_data = data['go']
-
-    pvc_data = data['pvc']
+    pvc_data = data['train']['pvc']
     pvc_labels = pvc_data['labels']
+    pvc_data.pop('labels')
 
     genes = data['genes']
 
-    if isinstance(data, dict):
-        labels = data['labels']
-        data.pop('labels')
-    else:
-        labels = None   # labels are included in the dataframe itself
+    num_features = data['num_features']
 
-    for fold, (train_indices, val_indices) in enumerate(kfold.split(data)):
+    test_data = data['test_data']
+    test_genes = data['test_genes']
+
+    for fold, (train_indices, val_indices) in enumerate(kfold.split(gc_data)):
         print(f"Training fold {fold + 1}/{num_splits}")
 
-        if isinstance(data, dict):
-            train_ids = genes.iloc[train_indices].tolist()
-            val_ids = genes.iloc[val_indices].tolist()
+        gc_train_raw = gc_data.iloc[train_indices, :]
+        gc_val_raw = gc_data.iloc[val_indices, :]
 
-            train_raw = {k: v for k, v in data.items() if k in train_ids}
-            val_raw = {k: v for k, v in data.items() if k in val_ids}
-        else:
-            train_raw = data.iloc[train_indices, :]
-            val_raw = data.iloc[val_indices, :]
+        go_train_raw = go_data.iloc[train_indices, :]
+        go_val_raw = go_data.iloc[val_indices, :]
 
-        train_genes = genes.iloc[train_indices]
-        val_genes = genes.iloc[val_indices]
+        train_genes = [genes[i] for i in train_indices]
+        val_genes = [genes[i] for i in val_indices]
+        pvc_train_raw = {k: v for k, v in pvc_data.items() if k in train_genes}
+        pvc_val_raw = {k: v for k, v in pvc_data.items() if k in val_genes}
+
+        train_raw = {
+            'gc': gc_train_raw,
+            'go': go_train_raw,
+            'pvc': pvc_train_raw
+        }
+
+        val_raw = {
+            'gc': gc_val_raw,
+            'go': go_val_raw,
+            'pvc': pvc_val_raw
+        }
+
+        model, _train, val, test, hyperparameters, accelerator = initialise_model(
+            train_raw,
+            val_raw,
+            pvc_labels,
+            train_genes,
+            val_genes,
+            test_genes,
+            test_data,
+            num_features,
+            config,
+            module_str=""   # TODO: find a way to remove this
+        )
 
         mlp_lightning, _train, val, test, hyperparameters, accelerator = initialise_model(
             train_raw,
