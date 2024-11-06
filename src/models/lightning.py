@@ -240,38 +240,42 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
         return probas
 
     def _common_step(self, batch, batch_idx, step_type):
-        features = {key: batch[key] for key in ['gc', 'go', 'pvc']}
-        labels = batch['labels']
-        masks = batch['mask']
-        test_source = batch['test_source'][0]
-
-        logits, probas, bin_preds = self(features, masks)
-
-        labels = (labels > float(self.config['threshold'])).float()
-        if step_type == 'train':
-            class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))], device=self.device)
-            loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
-            self._log(labels, step_type, loss, bin_preds, probas)
-        elif step_type == 'val':
-            if logits.shape != labels.shape:
-                logits = logits.unsqueeze(0)  # For the case where the batch size is 1
-            loss = F.binary_cross_entropy_with_logits(logits, labels.float())
-            self._log(labels, step_type, loss, bin_preds, probas)
+        if self.trainer.sanity_checking:
+            return None
         else:
-            loss = None
-            self._log(labels, step_type, loss, bin_preds, probas, test_source)
-        return loss
+            features = {key: batch[key] for key in ['gc', 'go', 'pvc']}
+            # todo: need separate handling for gc / go versus pvc
+            labels = batch['labels']
+            masks = batch['mask']
+            test_source = batch['test_source'][0]
+
+            logits, probas, bin_preds = self(features, masks)
+
+            labels = (labels > float(self.config['threshold'])).float()
+            if step_type == 'train':
+                class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))], device=self.device)
+                loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
+                self._log(labels, step_type, loss, bin_preds, probas)
+            elif step_type == 'val':
+                if logits.shape != labels.shape:
+                    logits = logits.unsqueeze(0)  # For the case where the batch size is 1
+                loss = F.binary_cross_entropy_with_logits(logits, labels.float())
+                self._log(labels, step_type, loss, bin_preds, probas)
+            else:
+                loss = None
+                self._log(labels, step_type, loss, bin_preds, probas, test_source)
+            return loss
 
     def training_step(self, batch, batch_idx):
         return self._common_step(batch, batch_idx, 'train')
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
         return self._common_step(batch, batch_idx, 'val')
 
     def test_step(self, batch, batch_idx):
         return self._common_step(batch, batch_idx, 'test')
 
-    def setup(self):
+    def setup(self, stage):
         self.initialize_weights()
 
     def configure_optimizers(self):

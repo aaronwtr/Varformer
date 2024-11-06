@@ -27,7 +27,7 @@ hyperparameters:
   optimizer: AdamW
   lr_start: 1e-4
   lr_end: 1e-6
-  epochs: 6500
+  epochs: 1   # 6500
   width: 64
   batch_size: 128
   num_layers: 1

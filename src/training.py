@@ -209,7 +209,7 @@ def objective(trial: optuna.trial.Trial) -> float:
         return trainer.callback_metrics["val_auroc"].item()
 
 
-def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test_raw, config, module_str):
+def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test_raw, config):
     hparams = config['hyperparameters']
     train_combined = {}
     val_combined = {}
@@ -344,7 +344,7 @@ def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_ge
     hyperparams = config['hyperparameters']
     train_combined, val_combined, test_combined, train_imbalance = normalise_data(train_raw, val_raw, labels,
                                                                                   train_genes, val_genes, test_genes,
-                                                                                  test, config, module_str)
+                                                                                  test, config)
 
     max_genes_pvc = max([train_raw['pvc'][gene].shape[0] for gene in train_raw['pvc'].keys()])
     with open("../data/elgh/missense_mutation_map.pkl", "rb") as f:
@@ -369,33 +369,10 @@ def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_ge
         imbalance=train_imbalance
     )
 
-    # if module_str == "pvc":
-    #     varformer = ShardedVarformerTargetIdentifier(
-    #         config=config,
-    #         num_features=num_features,
-    #         num_mutations=num_mutations,
-    #         max_seq_len=hyperparams['max_seq_len'],
-    #         num_genes=num_genes
-    #     )
-    #
-    #     model = ShardedVarformerLightningTargetIdentifier(
-    #         model=varformer,
-    #         config=config,
-    #         imbalance=train_imbalance
-    #     )
-    # else:
-    #     model = MLPLightningTargetIdentifier(
-    #         model=mlp_pytorch,
-    #         config=config,
-    #         imbalance=train_imbalance
-    #     )
-
     if torch.cuda.is_available():
         accelerator = 'gpu'
     else:
         accelerator = 'cpu'
-
-    # lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
     hyperparameters = dict(
         depth=hyperparams['num_layers'],
@@ -408,7 +385,7 @@ def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_ge
         weight_decay=hyperparams['weight_decay']
     )
 
-    return model, _train, val, test, hyperparameters, accelerator
+    return model, train_combined, val_combined, test_combined, hyperparameters, accelerator
 
 
 def train(tag="Training", module_str=None, wandb_run=None):
@@ -455,8 +432,7 @@ def train(tag="Training", module_str=None, wandb_run=None):
         test_genes,
         test_data,
         num_features,
-        config,
-        module_str
+        config
     )
 
     if tag == "Standard Training":
@@ -597,7 +573,7 @@ def kfold_train(
             'pvc': pvc_val_raw
         }
 
-        model, _train, val, test, hyperparameters, accelerator = initialise_model(
+        model, train_combined, val_combined, test_combined, hyperparameters, accelerator = initialise_model(
             train_raw,
             val_raw,
             pvc_labels,
@@ -661,7 +637,7 @@ def kfold_train(
                     deterministic=True
                 )
 
-            trainer.fit(model, _train, val)
+            trainer.fit(model, train_combined, val_combined)
             trainer.test(dataloaders=test["pfam"])
             trainer.test(dataloaders=test["rcnt"])
             trainer.test(dataloaders=test["pharos"])
@@ -686,10 +662,10 @@ def kfold_train(
                 enable_checkpointing=True,
                 callbacks=[checkpoint_callback]
             )
-            trainer.fit(mlp_lightning, _train, val)
-            trainer.test(dataloaders=test["pfam"])
-            trainer.test(dataloaders=test["rcnt"])
-            trainer.test(dataloaders=test["pharos"])
+            trainer.fit(mlp_lightning, train_combined, val_combined)
+            trainer.test(dataloaders=test_combined["pfam"])
+            trainer.test(dataloaders=test_combined["rcnt"])
+            trainer.test(dataloaders=test_combined["pharos"])
 
 
 def kfold_teacher(**modules):
