@@ -243,13 +243,19 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
         if self.trainer.sanity_checking:
             return None
         else:
-            features = {key: batch[key] for key in ['gc', 'go', 'pvc']}
-            # todo: need separate handling for gc / go versus pvc
-            labels = batch['labels']
-            masks = batch['mask']
-            test_source = batch['test_source'][0]
+            for key, data in batch.items():
+                if key == "pvc":
+                    pvc_labels = batch[key]['labels']
+                    test_source = batch[key]['test_source'][0]
+                elif key == "go":
+                    go_labels = batch[key][1]
+                else:
+                    gc_labels = batch[key][1]
+            # todo: fix -- the labels (i.e. samples being used) are not the same across modalities
+            assert torch.all(torch.eq(pvc_labels, go_labels)) and torch.all(torch.eq(go_labels, gc_labels))
 
-            logits, probas, bin_preds = self(features, masks)
+
+            logits, probas, bin_preds = self(batch, batch["pvc"]["mask"])
 
             labels = (labels > float(self.config['threshold'])).float()
             if step_type == 'train':

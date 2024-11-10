@@ -21,7 +21,7 @@ from sklearn.preprocessing import MinMaxScaler
 from typing import Dict, Union, Optional
 from tqdm import tqdm
 
-from dataloader import DrugTargetData, ModuleDataProcessor, VarformerDataset
+from dataloader import DrugTargetData, ModuleDataProcessor, VarformerDataset, MultiModalData
 from models.target_identifier import MultiModalTargetIdentifier
 from models.lightning import (MLPLightningTargetIdentifier, ShardedVarformerLightningTargetIdentifier,
                               MultiModalLightningTargetIdentifier)
@@ -209,7 +209,7 @@ def objective(trial: optuna.trial.Trial) -> float:
         return trainer.callback_metrics["val_auroc"].item()
 
 
-def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test_raw, config):
+def normalise_data_archive(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test_raw, config):
     hparams = config['hyperparameters']
     train_combined = {}
     val_combined = {}
@@ -340,11 +340,106 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
     return train_combined, val_combined, test_combined, label_imbalance
 
 
+def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test_raw, config):
+    hparams = config['hyperparameters']
+    train_combined = {}
+    val_combined = {}
+    test_combined = {}
+
+    for module_str, train_data in train_raw.items():
+        if module_str != "pvc":
+            val_norm = val_raw[module_str].iloc[:, :-1].values
+            train_norm = train_data.iloc[:, :-1].values
+
+            scaler = MinMaxScaler()
+            train_norm = scaler.fit_transform(train_norm)
+            val_norm = scaler.transform(val_norm)
+
+            train_dataset = MultiModalData(
+                data=train_norm,
+                labels=train_data.iloc[:, -1].values,
+                gene_names=train_genes
+            )
+
+            val_dataset = MultiModalData(
+                data=val_norm,
+                labels=val_raw[module_str].iloc[:, -1].values,
+                gene_names=val_genes
+            )
+        else:
+            train_dataset = MultiModalData(
+                data=None,
+                labels=None,
+                gene_names=train_genes,
+                variant_data={'data': train_data, 'labels': labels},
+                max_variants=hparams['max_seq_len']
+            )
+
+            val_dataset = MultiModalData(
+                data=None,
+                labels=None,
+                gene_names=val_genes,
+                variant_data={'data': val_raw[module_str], 'labels': labels},
+                max_variants=hparams['max_seq_len']
+            )
+
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=hparams['batch_size'],
+            shuffle=True,
+            num_workers=hparams['num_workers']
+        )
+
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=hparams['batch_size'],
+            shuffle=False,
+            num_workers=hparams['num_workers']
+        )
+
+        test_loaders = {}
+        for key, modalities in test_raw.items():
+            if module_str != "pvc":
+                normed = scaler.transform(modalities[module_str].iloc[:, :-1].values)
+                test_dataset = MultiModalData(
+                    data=normed,
+                    labels=modalities[module_str].iloc[:, -1].values,
+                    gene_names=test_genes[key],
+                    test_source=key
+                )
+            else:
+                test_dataset = MultiModalData(
+                    data=None,
+                    labels=None,
+                    gene_names=test_genes[key],
+                    variant_data={'data': modalities[module_str], 'labels': labels, 'test_source': key},
+                    max_variants=hparams['max_seq_len'],
+                    test_source=key
+                )
+            test_loaders[key] = DataLoader(
+                test_dataset,
+                batch_size=len(test_dataset),
+                shuffle=False,
+                num_workers=hparams['num_workers']
+            )
+
+        train_combined[module_str] = train_loader
+        val_combined[module_str] = val_loader
+        test_combined[module_str] = test_loaders
+        label_imb_raw = train_loader.dataset.label_imbalance()
+        if isinstance(label_imb_raw, torch.Tensor):
+            label_imbalance = label_imb_raw.item()
+        else:
+            label_imbalance = label_imb_raw
+
+    return train_combined, val_combined, test_combined, label_imbalance
+
+
 def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test, num_features, config):
     hyperparams = config['hyperparameters']
     train_combined, val_combined, test_combined, train_imbalance = normalise_data(train_raw, val_raw, labels,
-                                                                                  train_genes, val_genes, test_genes,
-                                                                                  test, config)
+                                                                                  train_genes, val_genes,
+                                                                                  test_genes, test, config)
 
     max_genes_pvc = max([train_raw['pvc'][gene].shape[0] for gene in train_raw['pvc'].keys()])
     with open("../data/elgh/missense_mutation_map.pkl", "rb") as f:
@@ -529,7 +624,7 @@ def kfold_train(
             i += 1
             group = f"distillation-{i}-{model_type}-{module_str}"
         os.mkdir(f'checkpoints/{group}')
-    
+
     gc_data = data['train']['gc']
 
     go_data = data['train']['go']
