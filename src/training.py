@@ -21,7 +21,7 @@ from sklearn.preprocessing import MinMaxScaler
 from typing import Dict, Union, Optional
 from tqdm import tqdm
 
-from dataloader import DrugTargetData, ModuleDataProcessor, VarformerDataset, MultiModalData
+from dataloader import DrugTargetData, ModuleDataProcessor, VarformerDataset, MultiModalData, MultiModalDataLoader
 from models.target_identifier import MultiModalTargetIdentifier
 from models.lightning import (MLPLightningTargetIdentifier, ShardedVarformerLightningTargetIdentifier,
                               MultiModalLightningTargetIdentifier)
@@ -342,32 +342,49 @@ def normalise_data_archive(train_raw, val_raw, labels, train_genes, val_genes, t
 
 def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test_raw, config):
     hparams = config['hyperparameters']
-    train_combined = {}
-    val_combined = {}
-    test_combined = {}
 
+    # Initialize dictionaries to store datasets for each split
+    train_datasets = {}
+    val_datasets = {}
+    test_datasets = {key: {} for key in test_raw.keys()}
+    scalers = {}
+
+    # First create all datasets
     for module_str, train_data in train_raw.items():
         if module_str != "pvc":
+            # Handle non-PVC modalities
             val_norm = val_raw[module_str].iloc[:, :-1].values
             train_norm = train_data.iloc[:, :-1].values
 
             scaler = MinMaxScaler()
             train_norm = scaler.fit_transform(train_norm)
             val_norm = scaler.transform(val_norm)
+            scalers[module_str] = scaler
 
-            train_dataset = MultiModalData(
+            train_datasets[module_str] = MultiModalData(
                 data=train_norm,
                 labels=train_data.iloc[:, -1].values,
                 gene_names=train_genes
             )
 
-            val_dataset = MultiModalData(
+            val_datasets[module_str] = MultiModalData(
                 data=val_norm,
                 labels=val_raw[module_str].iloc[:, -1].values,
                 gene_names=val_genes
             )
+
+            # Create test datasets for each test source
+            for key, modalities in test_raw.items():
+                normed = scaler.transform(modalities[module_str].iloc[:, :-1].values)
+                test_datasets[key][module_str] = MultiModalData(
+                    data=normed,
+                    labels=modalities[module_str].iloc[:, -1].values,
+                    gene_names=test_genes[key],
+                    test_source=key
+                )
         else:
-            train_dataset = MultiModalData(
+            # Handle PVC modality
+            train_datasets[module_str] = MultiModalData(
                 data=None,
                 labels=None,
                 gene_names=train_genes,
@@ -375,7 +392,7 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
                 max_variants=hparams['max_seq_len']
             )
 
-            val_dataset = MultiModalData(
+            val_datasets[module_str] = MultiModalData(
                 data=None,
                 labels=None,
                 gene_names=val_genes,
@@ -383,56 +400,48 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
                 max_variants=hparams['max_seq_len']
             )
 
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=hparams['batch_size'],
-            shuffle=True,
-            num_workers=hparams['num_workers']
-        )
-
-        val_loader = DataLoader(
-            val_dataset,
-            batch_size=hparams['batch_size'],
-            shuffle=False,
-            num_workers=hparams['num_workers']
-        )
-
-        test_loaders = {}
-        for key, modalities in test_raw.items():
-            if module_str != "pvc":
-                normed = scaler.transform(modalities[module_str].iloc[:, :-1].values)
-                test_dataset = MultiModalData(
-                    data=normed,
-                    labels=modalities[module_str].iloc[:, -1].values,
-                    gene_names=test_genes[key],
-                    test_source=key
-                )
-            else:
-                test_dataset = MultiModalData(
+            # Create test datasets for each test source
+            for key, modalities in test_raw.items():
+                test_datasets[key][module_str] = MultiModalData(
                     data=None,
                     labels=None,
                     gene_names=test_genes[key],
-                    variant_data={'data': modalities[module_str], 'labels': labels, 'test_source': key},
+                    variant_data={
+                        'data': modalities[module_str],
+                        'labels': labels,
+                        'test_source': key
+                    },
                     max_variants=hparams['max_seq_len'],
                     test_source=key
                 )
-            test_loaders[key] = DataLoader(
-                test_dataset,
-                batch_size=len(test_dataset),
-                shuffle=False,
-                num_workers=hparams['num_workers']
-            )
 
-        train_combined[module_str] = train_loader
-        val_combined[module_str] = val_loader
-        test_combined[module_str] = test_loaders
-        label_imb_raw = train_loader.dataset.label_imbalance()
-        if isinstance(label_imb_raw, torch.Tensor):
-            label_imbalance = label_imb_raw.item()
-        else:
-            label_imbalance = label_imb_raw
+    # Create synchronized dataloaders
+    train_loader = MultiModalDataLoader(
+        datasets=train_datasets,
+        batch_size=hparams['batch_size'],
+        shuffle=True
+    )
 
-    return train_combined, val_combined, test_combined, label_imbalance
+    val_loader = MultiModalDataLoader(
+        datasets=val_datasets,
+        batch_size=hparams['batch_size'],
+        shuffle=False
+    )
+
+    # Create test loaders for each test source
+    test_loaders = {}
+    for key in test_raw.keys():
+        test_loaders[key] = MultiModalDataLoader(
+            datasets=test_datasets[key],
+            batch_size=len(next(iter(test_datasets[key].values()))),  # Use length of any modality
+            shuffle=False
+        )
+
+    # Calculate label imbalance using any modality (they should all be the same now)
+    label_imb_raw = next(iter(train_datasets.values())).label_imbalance()
+    label_imbalance = label_imb_raw.item() if isinstance(label_imb_raw, torch.Tensor) else label_imb_raw
+
+    return train_loader, val_loader, test_loaders, label_imbalance
 
 
 def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test, num_features, config):
