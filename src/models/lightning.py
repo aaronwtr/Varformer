@@ -252,8 +252,10 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
                 else:
                     gc_labels = batch[key][1]
             # todo: fix -- the labels (i.e. samples being used) are not the same across modalities
+            #  done: fixed gc_labels and go_labels to be the same
+            #  done: tried ordering pvc genes in the dataloader. Didn't work.
+            #  try: find the source where pvc and gc labels are fetched. See if there is a mismatch there.
             assert torch.all(torch.eq(pvc_labels, go_labels)) and torch.all(torch.eq(go_labels, gc_labels))
-
 
             logits, probas, bin_preds = self(batch, batch["pvc"]["mask"])
 

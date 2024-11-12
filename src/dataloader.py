@@ -243,9 +243,10 @@ class MultiModalData(Dataset):
             self.labels = torch.tensor(self.labels, dtype=torch.float32)
 
         if self.variant_data is not None:
-            self.variant_features = self.variant_data['data']
-            self.variant_labels = self.variant_data['labels']
-            self.variant_gene_names = list(self.variant_features.keys())
+            self.variant_features = {gene: self.variant_data['data'][gene] for gene in self.gene_names if
+                                     gene in self.variant_data['data']}
+            self.variant_labels = {gene: self.variant_data['labels'][gene] for gene in self.gene_names if
+                                   gene in self.variant_data['labels']}
 
     def __len__(self):
         if self.data is not None:
@@ -262,7 +263,7 @@ class MultiModalData(Dataset):
             else:
                 return self.features[index], self.labels[index], self.test_source
         elif self.variant_data is not None:
-            gene_name = self.variant_gene_names[index]
+            gene_name = self.gene_names[index]
             variants_for_gene = self.variant_features[gene_name]
             gene_label = self.variant_labels[gene_name]
 
@@ -387,10 +388,15 @@ class MultiModalDataLoader:
                 # Collate the batch
                 if isinstance(modality_batch[0], dict):
                     # For variant data
-                    batch[modality] = {
-                        key: torch.stack([item[key] for item in modality_batch])
-                        for key in modality_batch[0].keys()
-                    }
+                    batch[modality] = {}
+                    for key in modality_batch[0].keys():
+                        items = [item[key] for item in modality_batch]
+                        if isinstance(items[0], torch.Tensor):
+                            batch[modality][key] = torch.stack(items)
+                        elif isinstance(items[0], (int, float, bool)):
+                            batch[modality][key] = torch.tensor(items)
+                        else:
+                            batch[modality][key] = items
                 else:
                     # For regular data
                     features = torch.stack([item[0] for item in modality_batch])
