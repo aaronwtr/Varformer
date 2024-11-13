@@ -238,10 +238,6 @@ class MultiModalData(Dataset):
         self.max_variants = max_variants
         self.test_source = test_source
 
-        if self.data is not None:
-            self.features = torch.tensor(self.data, dtype=torch.float32)
-            self.labels = torch.tensor(self.labels, dtype=torch.float32)
-
         if self.variant_data is not None:
             self.variant_features = {gene: self.variant_data['data'][gene] for gene in self.gene_names if
                                      gene in self.variant_data['data']}
@@ -258,10 +254,12 @@ class MultiModalData(Dataset):
 
     def __getitem__(self, index):
         if self.data is not None:
+            gene_name = self.gene_names[index]
             if self.test_source is False:
-                return self.features[index], self.labels[index]
+                return torch.tensor(self.data[gene_name], dtype=torch.float32), torch.tensor(self.labels[gene_name],
+                                                                                             dtype=torch.float32)
             else:
-                return self.features[index], self.labels[index], self.test_source
+                return self.data[gene_name], self.labels[gene_name], self.test_source
         elif self.variant_data is not None:
             gene_name = self.gene_names[index]
             variants_for_gene = self.variant_features[gene_name]
@@ -287,13 +285,8 @@ class MultiModalData(Dataset):
             }
 
     def label_imbalance(self):
-        if self.data is not None:
-            return self.labels.sum() / len(self.labels)
-        elif self.variant_data is not None:
-            label_list = list(self.variant_labels.values())
-            return sum(label_list) / len(label_list)
-        else:
-            return 0
+        label_list = list(self.labels.values())
+        return sum(label_list) / len(label_list)
 
     def padding(self, features):
         if features.size(0) < self.max_variants:

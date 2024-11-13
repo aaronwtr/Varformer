@@ -361,24 +361,28 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
             val_norm = scaler.transform(val_norm)
             scalers[module_str] = scaler
 
+            train_norm = {gene: train_norm[i] for i, gene in enumerate(train_genes)}
+            val_norm = {gene: val_norm[i] for i, gene in enumerate(val_genes)}
+
             train_datasets[module_str] = MultiModalData(
                 data=train_norm,
-                labels=train_data.iloc[:, -1].values,
+                labels=labels,
                 gene_names=train_genes
             )
 
             val_datasets[module_str] = MultiModalData(
                 data=val_norm,
-                labels=val_raw[module_str].iloc[:, -1].values,
+                labels=labels,
                 gene_names=val_genes
             )
 
             # Create test datasets for each test source
             for key, modalities in test_raw.items():
                 normed = scaler.transform(modalities[module_str].iloc[:, :-1].values)
+                normed = {gene: normed[i] for i, gene in enumerate(test_genes[key])}
                 test_datasets[key][module_str] = MultiModalData(
                     data=normed,
-                    labels=modalities[module_str].iloc[:, -1].values,
+                    labels=labels,
                     gene_names=test_genes[key],
                     test_source=key
                 )

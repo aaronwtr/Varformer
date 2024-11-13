@@ -115,6 +115,7 @@ class GeneCharacterisationPreprocessor:
         self.target = load_combined_labels()
 
         # Combine features and target
+        self.labels_dict = utils.get_labels(self.ensg_ids, self.target)
         self.full_data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
 
         # Get test data and remove from train feature matrix
@@ -189,7 +190,8 @@ class GeneCharacterisationPreprocessor:
 
         # Remove holdout data from training data
         self.data = self.full_data[~self.full_data.index.isin(self.all_test_ids.index)]
-        self.labels = self.data['target']
+        # self.data = self.data.drop(columns=['target'])
+        self.labels = self.labels_dict
 
         # Explore the data
         # plot.umap(self.data)
