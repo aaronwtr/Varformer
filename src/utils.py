@@ -579,6 +579,19 @@ def load_combined_labels() -> pd.DataFrame:
     return labels
 
 
+def get_labels(gene_names: pd.DataFrame, target: pd.DataFrame) -> pd.DataFrame:
+    target_genes = list(target["Ensembl"])
+    labels = {}
+    for gene in gene_names:
+        if gene in target_genes:
+            labels[gene] = 1
+        else:
+            labels[gene] = 0
+    # features["target"] = 0
+    # features.loc[gene_names.isin(target_genes), "target"] = 1
+    return labels
+
+
 def combine_features_and_labels(gene_names: pd.DataFrame, features: pd.DataFrame, target: pd.DataFrame) -> pd.DataFrame:
     target_genes = list(target["Ensembl"])
     features["target"] = 0
