@@ -25,18 +25,18 @@ if __name__ == "__main__":
 
     # TODO:
     #  MLP model
-    #  [ ] ! Integrate variant-to-gene mapping into the model end-to-end
-    #  [ ] Fix preprocessing into four modules
+    #  [X] ! Integrate variant-to-gene mapping into the model end-to-end
+    #  [X] Fix preprocessing into four modules
     #      [X] Gene characterisation module (eval)
     #      [X] Gene ontology module (eval)
-    #      [ ] Population variant characterisation module
+    #      [X] Population variant characterisation module
     #           [X] Generate AM embeddings
-    #           [ ] ! Evaluate AM embeddings
+    #           [X] ! Evaluate AM embeddings
     #           [X] Generate ESM AA seq embeddings
-    #           [ ] Evaluate ESM AA seq embeddings
+    #           [X] Evaluate ESM AA seq embeddings
     #           [X] Generate AF embeddings
-    #           [ ] Evaluate AF embeddings
-    #           [ ] Evaluate PVC embeddings (AM + ESM)
+    #           [X] Evaluate AF embeddings
+    #           [X] Evaluate PVC embeddings (AM + ESM)
     #  [X] Incorporate citeline data and make label distribution plot
     #  [X] Swap out GH datafreeze for all the GH data and make sure to handle LoF and Missense properly
     #       [X] Go through data peculiarities and select columns to keep.
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     #       [ ] Upload results for the variants associated with samples to TRE
     #       [ ] Check if allele freqs are calculated using GH genotype data (this might be what we can use)
     #       [ ] Individualise predictions based on genotype data during inference time
-    #  [ ] Generate test datasets
+    #  [X] Generate test datasets
     #       [X] Get positive samples
     #       [X] Balance the positive samples with randomly sampled negatives. Make sure this works in all modalities
     #  -

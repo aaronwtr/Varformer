@@ -2,6 +2,8 @@ import os
 import gc
 import warnings
 import argparse
+
+import matplotlib.pyplot as plt
 import torch
 import utils
 import requests
@@ -67,11 +69,6 @@ class GeneCharacterisationPreprocessor:
         self.gh_data['variant_id'] = self.gh_data['CHROM'].astype(str) + '_' + self.gh_data['POS'].astype(str) + '_' + \
                                      self.gh_data['REF'].astype(str) + '_' + self.gh_data['ALT'].astype(str)
 
-        # TODO: Handle feature matrix generation and deal with different consequences of variants
-        #   potentially ask Dan MacArthur for advice on how to handle this?
-        #   Another question we should ask him is how to define some negatives for the test datasets (LoF/constraint
-        #   would be argued against by his paper on evaluating drug targets through human loss-of-function)
-
         # Load raw G&H missense variant data
         if not os.path.exists('../data/features/raw_miva_feature_matrix.pkl'):
             miva_feature_matrix = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
@@ -108,7 +105,6 @@ class GeneCharacterisationPreprocessor:
         }
 
         self.features, self.ensg_ids, self.uniprot_ids = featurise(ensg_features)
-        self.num_features = len(self.features.columns)
         self.norm = True
 
         # Ground truth
@@ -120,18 +116,10 @@ class GeneCharacterisationPreprocessor:
 
         # Get test data and remove from train feature matrix
         self.pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.drgbl_targets_pfam)]
-        self.pfam_pos_data = self.full_data[self.full_data.index.isin(self.pfam_ids.index)]
-        num_pfam_pos = len(self.pfam_pos_data)
 
         self.rcnt_ids = self.ensg_ids[self.ensg_ids.isin(self.rcnt_targets_fda)]
-        self.rcnt_pos_data = self.full_data[self.full_data.index.isin(self.rcnt_ids.index)]
-        self.rcnt_pos_data.loc[:, 'target'] = 1
-        num_rcnt_pos = len(self.rcnt_pos_data)
 
         self.pharos_ids = self.ensg_ids[self.ensg_ids.isin(self.chem_targets_pharos)]
-        self.pharos_pos_data = self.full_data[self.full_data.index.isin(self.pharos_ids.index)]
-        self.pharos_pos_data.loc[:, 'target'] = 1
-        num_pharos_pos = len(self.pharos_pos_data)
 
         self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
 
@@ -143,6 +131,12 @@ class GeneCharacterisationPreprocessor:
         negative_test_balance = common_essentials.sample(n=len(self.holdout_ids), random_state=42)
         negative_test_ids = self.ensg_ids[self.ensg_ids.index.isin(negative_test_balance.index)]
         num_negs = len(negative_test_ids)
+
+        # we remove common_essentials as a feature because most of them get filtered out when combining modalities. We
+        # strictly use them here to define negatives for the test set.
+        self.ce_data = self.full_data
+        self.full_data = self.full_data.drop('common_essentials', axis=1)
+        self.num_features = len(self.full_data.columns)
 
         self.pfam_negs = negative_test_ids.sample(n=num_pfam_pos, random_state=42)
         negative_test_ids = negative_test_ids.drop(self.pfam_negs.index)
@@ -159,26 +153,20 @@ class GeneCharacterisationPreprocessor:
         self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
 
         self.pfam_neg_data = self.full_data[self.full_data.index.isin(self.pfam_negs.index)]
+        self.pfam_pos_data = self.full_data[self.full_data.index.isin(self.pfam_ids.index)]
+        num_pfam_pos = len(self.pfam_pos_data)
         self.rcnt_neg_data = self.full_data[self.full_data.index.isin(self.rcnt_negs.index)]
+        self.rcnt_pos_data = self.full_data[self.full_data.index.isin(self.rcnt_ids.index)]
+        self.rcnt_pos_data.loc[:, 'target'] = 1
+        num_rcnt_pos = len(self.rcnt_pos_data)
         self.pharos_neg_data = self.full_data[self.full_data.index.isin(self.pharos_negs.index)]
+        self.pharos_pos_data = self.full_data[self.full_data.index.isin(self.pharos_ids.index)]
+        self.pharos_pos_data.loc[:, 'target'] = 1
+        num_pharos_pos = len(self.pharos_pos_data)
 
         self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
         self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
         self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
-
-        # # save combination of ids and data for plotting
-        # self.pfam_ids_all = self.pfam_ids_all.reindex(self.pfam_data.index)
-        # self.pfam_data = pd.concat([self.pfam_ids_all, self.pfam_data], axis=1)
-        #
-        # self.rcnt_ids_all = self.rcnt_ids_all.reindex(self.rcnt_data.index)
-        # self.rcnt_data = pd.concat([self.rcnt_ids_all, self.rcnt_data], axis=1)
-        #
-        # self.pharos_ids_all = self.pharos_ids_all.reindex(self.pharos_data.index)
-        # self.pharos_data = pd.concat([self.pharos_ids_all, self.pharos_data], axis=1)
-        #
-        # self.pfam_data.to_pickle('data/test_data/pfam_data.pkl')
-        # self.rcnt_data.to_pickle('data/test_data/rcnt_data.pkl')
-        # self.pharos_data.to_pickle('data/test_data/pharos_data.pkl')
 
         total_holdout = num_pfam_pos + num_rcnt_pos + num_pharos_pos + num_negs
 
@@ -192,9 +180,6 @@ class GeneCharacterisationPreprocessor:
         self.data = self.full_data[~self.full_data.index.isin(self.all_test_ids.index)]
         # self.data = self.data.drop(columns=['target'])
         self.labels = self.labels_dict
-
-        # Explore the data
-        # plot.umap(self.data)
 
     def _get_files(self):
         """
@@ -888,6 +873,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             self.gcp_pfam_neg = self.pfam_neg_data
             self.gcp_rcnt_neg = self.rcnt_neg_data
             self.gcp_pharos_neg = self.pharos_neg_data
+            self.gcp_ce_data = self.ce_data
             # self.gcp_acmg = gcp.acmg_data
         else:
             self.gcp = gcp
@@ -905,6 +891,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             self.rcnt_targets_fda = gcp.rcnt_targets_fda
             self.chem_targets_pharos = gcp.chem_targets_pharos
             self.ensg_ids = gcp.ensg_ids
+            self.gcp_ce_data = gcp.ce_data
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -965,7 +952,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
             self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
 
-            common_essentials = self.gcp_data[self.gcp_data['common_essentials'] == 1]
+            common_essentials = self.gcp_ce_data[self.gcp_ce_data['common_essentials'] == 1]
             common_essentials = common_essentials[common_essentials['target'] == 0]
             common_essentials = common_essentials[common_essentials['pli_lof_constraint'] > 0.9]
             # filter all ensgs from ensg_id that is not in var_pat_features.keys()
