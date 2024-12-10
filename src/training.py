@@ -378,6 +378,7 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
 
             # Create test datasets for each test source
             for key, modalities in test_raw.items():
+                # TODO: investigate how common_essentials ended up in gc_modalities
                 normed = scaler.transform(modalities[module_str].iloc[:, :-1].values)
                 normed = {gene: normed[i] for i, gene in enumerate(test_genes[key])}
                 test_datasets[key][module_str] = MultiModalData(
@@ -722,7 +723,7 @@ def kfold_train(
             if torch.cuda.device_count() > 1:
                 trainer = pl.Trainer(
                     max_epochs=int(config['hyperparameters']['epochs']),
-                    accelerator=accelerator,
+                    accelerator=acceleraxtor,
                     enable_progress_bar=True,
                     log_every_n_steps=1,
                     logger=WandbLogger(wandb.run),
