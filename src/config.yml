@@ -29,7 +29,7 @@ hyperparameters:
   lr_end: 1e-6
   epochs: 1   # 6500
   width: 64
-  batch_size: 128
+  batch_size: 512 # 128
   num_layers: 1
   threshold: 0.5
   dropout: 0.1
@@ -41,7 +41,7 @@ hyperparameters:
   max_seq_len: 1024
   reduction: None # choose from "padding", "pooling" or None
   nhead: 1 # tunable hyperparam
-  num_encoder_layers: 2 # tunable hyperparam
-  d_model: 768
+  num_encoder_layers: 1 # 2 # tunable hyperparam
+  d_model: 64 # 768
   T_0: 50
   precision: "bf16"

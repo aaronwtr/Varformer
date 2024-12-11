@@ -179,8 +179,8 @@ class GeneCharacterisationPreprocessor:
 
         # Remove holdout data from training data
         self.data = self.full_data[~self.full_data.index.isin(self.all_test_ids.index)]
-        # self.data = self.data.drop(columns=['target'])
         self.labels = self.labels_dict
+        self.test_labels = {key: self.labels_dict[key] for key in self.all_test_ids.tolist()}
 
     def _get_files(self):
         """

@@ -5,6 +5,7 @@ import os
 import torch
 import optuna
 import wandb
+import datetime
 
 import utils
 
@@ -340,7 +341,7 @@ def normalise_data_archive(train_raw, val_raw, labels, train_genes, val_genes, t
     return train_combined, val_combined, test_combined, label_imbalance
 
 
-def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test_raw, config):
+def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes, test_raw, config):
     hparams = config['hyperparameters']
 
     # Initialize dictionaries to store datasets for each split
@@ -382,7 +383,7 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
                 normed = {gene: normed[i] for i, gene in enumerate(test_genes[key])}
                 test_datasets[key][module_str] = MultiModalData(
                     data=normed,
-                    labels=labels,
+                    labels=test_labels,
                     gene_names=test_genes[key],
                     test_source=key
                 )
@@ -412,7 +413,7 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
                     gene_names=test_genes[key],
                     variant_data={
                         'data': modalities[module_str],
-                        'labels': labels,
+                        'labels': test_labels,
                         'test_source': key
                     },
                     max_variants=hparams['max_seq_len'],
@@ -448,10 +449,11 @@ def normalise_data(train_raw, val_raw, labels, train_genes, val_genes, test_gene
     return train_loader, val_loader, test_loaders, label_imbalance
 
 
-def initialise_model(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test, num_features, config):
+def initialise_model(train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes, test, num_features,
+                     config):
     hyperparams = config['hyperparameters']
     train_combined, val_combined, test_combined, train_imbalance = normalise_data(train_raw, val_raw, labels,
-                                                                                  train_genes, val_genes,
+                                                                                  test_labels, train_genes, val_genes,
                                                                                   test_genes, test, config)
 
     max_genes_pvc = max([train_raw['pvc'][gene].shape[0] for gene in train_raw['pvc'].keys()])
@@ -629,22 +631,24 @@ def kfold_train(
     module_str = f"{'-'.join(used_modules)}"
 
     group = f"distillation-1-{model_type}-{module_str}"
-    if not os.path.isdir(f'checkpoints/{group}'):
-        os.mkdir(f'checkpoints/{group}')
-    else:
-        i = 1
-        while os.path.isdir(f'checkpoints/{group}'):
-            i += 1
-            group = f"distillation-{i}-{model_type}-{module_str}"
-        os.mkdir(f'checkpoints/{group}')
 
     gc_data = data['train']['gc']
 
     go_data = data['train']['go']
 
     pvc_data = data['train']['pvc']
-    pvc_labels = pvc_data['labels']
     pvc_data.pop('labels')
+
+    test_labels = data["test_labels"]
+
+    pvc_ensgs = set(list(pvc_data.keys()))
+    gc_ensgs = set(gc_data.index)
+
+    ensgs_not_in_pvc = pvc_ensgs - gc_ensgs
+
+    # filter out the rows from gc dataframe based on the index that are not in pvc
+    # gc_data = gc_data[~gc_data.index.isin(ensgs_not_in_pvc)]
+    # go_data = go_data[~go_data.index.isin(ensgs_not_in_pvc)]
 
     genes = data['genes']
 
@@ -685,6 +689,7 @@ def kfold_train(
             train_raw,
             val_raw,
             pvc_labels,
+            test_labels,
             train_genes,
             val_genes,
             test_genes,
@@ -709,9 +714,13 @@ def kfold_train(
                 mode='max'  # Mode can be 'min', 'max', or 'auto'
             )
 
+            current_date = datetime.datetime.now().strftime("%d-%m-%Y")
+            checkpoint_dir = f'checkpoints/{current_date}'
+            os.makedirs(checkpoint_dir, exist_ok=True)
+
             checkpoint_callback = ModelCheckpoint(
                 monitor='val_auroc',
-                dirpath=f'checkpoints/{group}',
+                dirpath=checkpoint_dir,
                 filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}-' + f'fold{fold}',
                 save_top_k=1,
                 mode='max'
@@ -746,9 +755,9 @@ def kfold_train(
                 )
 
             trainer.fit(model, train_combined, val_combined)
-            trainer.test(dataloaders=test["pfam"])
-            trainer.test(dataloaders=test["rcnt"])
-            trainer.test(dataloaders=test["pharos"])
+            trainer.test(dataloaders=test_combined["pfam"])
+            trainer.test(dataloaders=test_combined["rcnt"])
+            trainer.test(dataloaders=test_combined["pharos"])
 
             run.finish()
 

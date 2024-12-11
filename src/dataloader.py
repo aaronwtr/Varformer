@@ -69,8 +69,13 @@ class ModuleDataProcessor:
             if gene != 'labels':
                 try:
                     pvc_data.data.pop(gene)
+                    pvc_data.labels.pop(gene)
                 except KeyError:
                     print(f"Gene {gene} not found in dataframe")
+
+        for gene in list(pvc_data.labels.keys()):
+            if gene not in list(pvc_data.data.keys()):
+                pvc_data.labels.pop(gene)
 
         # homogenize test data
         for source in test_sources:
@@ -147,6 +152,7 @@ class ModuleDataProcessor:
             "num_features": combined_features,
             "config": combined_config,
             "test_data": combined_test_data,
+            "test_labels": data_dict['gc']['test_labels'],
             "test_genes": {k: list(v) for k, v in combined_test_genes.items()}
         }
 
@@ -241,8 +247,8 @@ class MultiModalData(Dataset):
         if self.variant_data is not None:
             self.variant_features = {gene: self.variant_data['data'][gene] for gene in self.gene_names if
                                      gene in self.variant_data['data']}
-            self.variant_labels = {gene: self.variant_data['labels'][gene] for gene in self.gene_names if
-                                   gene in self.variant_data['labels']}
+            # self.variant_labels = {gene: self.variant_data['labels'][gene] for gene in self.gene_names if
+            #                       gene in self.variant_data['labels']}
 
     def __len__(self):
         if self.data is not None:
@@ -259,11 +265,13 @@ class MultiModalData(Dataset):
                 return torch.tensor(self.data[gene_name], dtype=torch.float32), torch.tensor(self.labels[gene_name],
                                                                                              dtype=torch.float32)
             else:
-                return self.data[gene_name], self.labels[gene_name], self.test_source
+                dataset = self.data[gene_name]
+                labels = self.labels[gene_name]
+                return dataset, labels, self.test_source
         elif self.variant_data is not None:
             gene_name = self.gene_names[index]
             variants_for_gene = self.variant_features[gene_name]
-            gene_label = self.variant_labels[gene_name]
+            gene_label = self.variant_data['labels'][gene_name]
 
             pat_feat = self.padding(variants_for_gene[:, 0])
             position = self.padding(variants_for_gene[:, 1])
@@ -285,8 +293,7 @@ class MultiModalData(Dataset):
             }
 
     def label_imbalance(self):
-        label_list = list(self.labels.values())
-        return sum(label_list) / len(label_list)
+        return sum(list(self.labels.values())) / len(self.labels)
 
     def padding(self, features):
         if features.size(0) < self.max_variants:
