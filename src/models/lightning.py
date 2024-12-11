@@ -214,7 +214,6 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
         else:
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
 
-        print("Learning rate passed to optimizer: ", float(self.config['lr_start']))
         lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=int(self.config['T_0']),
                                                    eta_min=float(self.config['lr_end']))
         return [optimizer], [{'scheduler': lr_scheduler, 'interval': 'step'}]
@@ -254,11 +253,9 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
 
             assert torch.all(torch.eq(pvc_labels, go_labels)) and torch.all(torch.eq(go_labels, gc_labels))
 
-
-            # todo: continue here
             logits, probas, bin_preds = self(batch, batch["pvc"]["mask"])
 
-            labels = (labels > float(self.config['threshold'])).float()
+            labels = (probas > float(self.config['threshold'])).float()
             if step_type == 'train':
                 class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))], device=self.device)
                 loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
@@ -298,7 +295,6 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
         else:
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
 
-        print("Learning rate passed to optimizer: ", float(self.config['lr_start']))
         lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=int(self.config['T_0']), eta_min=float(self.config['lr_end']))
         return [optimizer], [{'scheduler': lr_scheduler, 'interval': 'step'}]
 
