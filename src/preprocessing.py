@@ -138,31 +138,32 @@ class GeneCharacterisationPreprocessor:
         self.full_data = self.full_data.drop('common_essentials', axis=1)
         self.num_features = len(self.full_data.columns)
 
+        self.pfam_pos_data = self.full_data[self.full_data.index.isin(self.pfam_ids.index)]
+        num_pfam_pos = len(self.pfam_pos_data)
+
+        self.rcnt_pos_data = self.full_data[self.full_data.index.isin(self.rcnt_ids.index)]
+        self.rcnt_pos_data.loc[:, 'target'] = 1
+        num_rcnt_pos = len(self.rcnt_pos_data)
+
+        self.pharos_pos_data = self.full_data[self.full_data.index.isin(self.pharos_ids.index)]
+        self.pharos_pos_data.loc[:, 'target'] = 1
+        num_pharos_pos = len(self.pharos_pos_data)
+
         self.pfam_negs = negative_test_ids.sample(n=num_pfam_pos, random_state=42)
         negative_test_ids = negative_test_ids.drop(self.pfam_negs.index)
+        self.pfam_neg_data = self.full_data[self.full_data.index.isin(self.pfam_negs.index)]
 
         self.rcnt_negs = negative_test_ids.sample(n=num_rcnt_pos, random_state=42)
         negative_test_ids = negative_test_ids.drop(self.rcnt_negs.index)
+        self.rcnt_neg_data = self.full_data[self.full_data.index.isin(self.rcnt_negs.index)]
 
         self.pharos_negs = negative_test_ids.sample(n=num_pharos_pos, random_state=42)
+        self.pharos_neg_data = self.full_data[self.full_data.index.isin(self.pharos_negs.index)]
 
         self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs])
         self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs])
         self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs])
-
         self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
-
-        self.pfam_neg_data = self.full_data[self.full_data.index.isin(self.pfam_negs.index)]
-        self.pfam_pos_data = self.full_data[self.full_data.index.isin(self.pfam_ids.index)]
-        num_pfam_pos = len(self.pfam_pos_data)
-        self.rcnt_neg_data = self.full_data[self.full_data.index.isin(self.rcnt_negs.index)]
-        self.rcnt_pos_data = self.full_data[self.full_data.index.isin(self.rcnt_ids.index)]
-        self.rcnt_pos_data.loc[:, 'target'] = 1
-        num_rcnt_pos = len(self.rcnt_pos_data)
-        self.pharos_neg_data = self.full_data[self.full_data.index.isin(self.pharos_negs.index)]
-        self.pharos_pos_data = self.full_data[self.full_data.index.isin(self.pharos_ids.index)]
-        self.pharos_pos_data.loc[:, 'target'] = 1
-        num_pharos_pos = len(self.pharos_pos_data)
 
         self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
         self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
