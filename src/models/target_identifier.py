@@ -10,20 +10,31 @@ class BaseTargetIdentifier(torch.nn.Module):
     def __init__(self, config, num_features, model_type="mlp"):
         super(BaseTargetIdentifier, self).__init__()
         self.config = config['hyperparameters']
-        self.layers = []
+
+        # Create feature extraction layers (everything except the final Linear layer)
+        feature_layers = []
         layer_sizes = [num_features] + [int(self.config['width'])] * int(self.config['num_layers'])
         layer_size_prev = layer_sizes[0]
         for layer_size in layer_sizes[1:]:
-            self.layers += [
+            feature_layers += [
                 torch.nn.Linear(layer_size_prev, layer_size),
                 torch.nn.BatchNorm1d(layer_size),
                 torch.nn.ReLU(),
                 torch.nn.Dropout(p=float(self.config['dropout']))
             ]
             layer_size_prev = layer_size
-        self.layers += [torch.nn.Linear(layer_sizes[-1], 1)]
 
-        self.layers = torch.nn.Sequential(*self.layers)
+        # Store feature extraction layers separately
+        self.feature_extractor = torch.nn.Sequential(*feature_layers)
+
+        # Store final classification layer separately
+        self.classifier = torch.nn.Linear(layer_sizes[-1], 1)
+
+        # For backwards compatibility, maintain the full sequential model
+        self.layers = torch.nn.Sequential(
+            self.feature_extractor,
+            self.classifier
+        )
 
         self.init_weights = self.initialise_weights()
 
@@ -32,6 +43,27 @@ class BaseTargetIdentifier(torch.nn.Module):
         self.recall = Recall(task="binary", threshold=config['hyperparameters']['threshold'])
         self.recall_at_10 = Recall(task="binary", threshold=config['hyperparameters']['threshold'], top_k=10)
         self.spearman = SpearmanCorrCoef()
+
+    def forward(self, x, return_features=False):
+        # Extract features
+        features = self.feature_extractor(x)
+
+        # Get logits
+        logits = self.classifier(features).squeeze()
+
+        # Calculate probabilities and predictions
+        probabilities = torch.sigmoid(logits)  # Using torch.sigmoid directly
+        binary_predictions = (probabilities > float(self.config['threshold'])).float()
+
+        if return_features:
+            return {
+                'logits': logits,
+                'probabilities': probabilities,
+                'predictions': binary_predictions,
+                'features': features
+            }
+
+        return logits, probabilities, binary_predictions
 
     def initialise_weights(self, seed=None):
         if seed is not None:
@@ -55,13 +87,6 @@ class BaseTargetIdentifier(torch.nn.Module):
                 initial_weights[name + ".running_mean"] = module.running_mean.detach().clone()
                 initial_weights[name + ".running_var"] = module.running_var.detach().clone()
         return initial_weights
-
-    def forward(self, x, mask=None):
-        logits = self.layers(x).squeeze()
-        sigmoid = torch.nn.Sigmoid()
-        probabilities = sigmoid(logits)
-        binary_predictions = (probabilities > float(self.config['threshold'])).float()
-        return logits, probabilities, binary_predictions
 
 
 class VarformerTargetIdentifier(BaseTargetIdentifier):
@@ -116,7 +141,7 @@ class MultiModalTargetIdentifier(BaseTargetIdentifier):
         )
 
         # Create the classification branch
-        combined_input_size = int(self.config['width']) * 3
+        combined_input_size = int(self.config['width']) * 2 + int(self.config['d_model'])
         classification_layers = [
             torch.nn.Linear(combined_input_size, int(self.config['width'])),
             torch.nn.BatchNorm1d(int(self.config['width'])),
@@ -127,11 +152,11 @@ class MultiModalTargetIdentifier(BaseTargetIdentifier):
         self.classification_branch = torch.nn.Sequential(*classification_layers)
 
     def forward(self, x, mask=None):
-        gc_logits, gc_prob, _ = self.gc_branch(x['gc'])
-        gc_features = self.gc_branch.layers[:-1](x['gc'])
+        gc_output_dict = self.gc_branch(x['gc'][0], return_features=True)
+        gc_features = gc_output_dict['features']
 
-        go_logits, go_prob, _ = self.go_branch(x['go'])
-        go_features = self.go_branch.layers[:-1](x['go'])
+        go_output_dict = self.go_branch(x['go'][0], return_features=True)
+        go_features = go_output_dict['features']
 
         pvc_logits, pvc_prob, _, pvc_features = self.pvc_branch(
             {
