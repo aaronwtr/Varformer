@@ -639,6 +639,7 @@ def kfold_train(
     pvc_data = data['train']['pvc']
     pvc_data.pop('labels')
 
+    # todo: check where to get the labels from ({"gene": label} format)
     test_labels = data["test_labels"]
 
     pvc_ensgs = set(list(pvc_data.keys()))

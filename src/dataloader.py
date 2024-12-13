@@ -118,6 +118,7 @@ class ModuleDataProcessor:
                 combined_genes = list(set(preprocessor.data.keys()))
             if module == 'gc':
                 combined_config = preprocessor.config
+                test_labels = preprocessor.test_labels
             combined_features += preprocessor.num_features
 
         combined_genes.remove('labels')
@@ -152,7 +153,7 @@ class ModuleDataProcessor:
             "num_features": combined_features,
             "config": combined_config,
             "test_data": combined_test_data,
-            "test_labels": data_dict['gc']['test_labels'],
+            "test_labels": test_labels,
             "test_genes": {k: list(v) for k, v in combined_test_genes.items()}
         }
 
