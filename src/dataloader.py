@@ -165,39 +165,49 @@ class ModuleDataProcessor:
 
         for module, preprocessor in data_dict.items():
             if hasattr(preprocessor, 'pfam_data'):
-                combined_test_data["pfam"][module] = preprocessor.pfam_data
+                pfam_test_data = preprocessor.pfam_data
 
                 if isinstance(preprocessor.pfam_data, pd.DataFrame):
+                    pfam_test_data = pfam_test_data.drop(columns=['target'])
                     pfam_data_ids = preprocessor.pfam_data.index.tolist()
                     pfam_data_ids = ensg_ids.loc[pfam_data_ids].tolist()
                 else:
                     pfam_data_ids = list(preprocessor.pfam_data.keys())
+
+                combined_test_data["pfam"][module] = pfam_test_data
 
                 # Ensure consistent order based on ensg_ids
                 pfam_all_ids = [gene for gene in ensg_ids if gene in pfam_data_ids]
                 combined_test_genes["pfam"][module] = pfam_all_ids
 
             if hasattr(preprocessor, 'rcnt_data'):
-                combined_test_data["rcnt"][module] = preprocessor.rcnt_data
+                rcnt_test_data = preprocessor.rcnt_data
 
                 if isinstance(preprocessor.rcnt_data, pd.DataFrame):
+                    rcnt_test_data = rcnt_test_data.drop(columns=['target'])
                     rcnt_data_ids = preprocessor.rcnt_data.index.tolist()
                     rcnt_data_ids = ensg_ids.loc[rcnt_data_ids].tolist()
+
                 else:
                     rcnt_data_ids = list(preprocessor.rcnt_data.keys())
+
+                combined_test_data["rcnt"][module] = rcnt_test_data
 
                 # Ensure consistent order based on ensg_ids
                 rcnt_all_ids = [gene for gene in ensg_ids if gene in rcnt_data_ids]
                 combined_test_genes["rcnt"][module] = rcnt_all_ids
 
             if hasattr(preprocessor, 'pharos_data'):
-                combined_test_data["pharos"][module] = preprocessor.pharos_data
+                pharos_test_data = preprocessor.pharos_data
 
                 if isinstance(preprocessor.pharos_data, pd.DataFrame):
+                    pharos_test_data = pharos_test_data.drop(columns=['target'])
                     pharos_data_ids = preprocessor.pharos_data.index.tolist()
                     pharos_data_ids = ensg_ids.loc[pharos_data_ids].tolist()
                 else:
                     pharos_data_ids = list(preprocessor.pharos_data.keys())
+
+                combined_test_data["pharos"][module] = pharos_test_data
 
                 # Ensure consistent order based on ensg_ids
                 pharos_all_ids = [gene for gene in ensg_ids if gene in pharos_data_ids]
