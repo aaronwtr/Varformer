@@ -628,9 +628,9 @@ def kfold_train(
     else:
         used_modules = [k for k, v in modules.items() if v]
 
-    module_str = f"{'-'.join(used_modules)}"
+    # module_str = f"{'-'.join(used_modules)}"
 
-    group = f"distillation-1-{model_type}-{module_str}"
+    group = f"multimodal-training-run-1"
 
     gc_data = data['train']['gc']
 
