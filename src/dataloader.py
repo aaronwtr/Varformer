@@ -5,6 +5,7 @@ import torch.nn as nn
 import preprocessing as preprocessing
 import torch.nn.functional as F
 import numpy as np
+import pandas as pd
 
 from torch.utils.data import Dataset, BatchSampler, Sampler
 from typing import Dict, List, Tuple, Iterator, Union, Iterable
@@ -46,6 +47,28 @@ class ModuleDataProcessor:
         print("Population variants preprocessed!\n")
         return pvc
 
+    @staticmethod
+    def _get_pos_neg_genes(_data, source):
+        pos_data = getattr(_data, f"{source}_pos_data")
+        neg_data = getattr(_data, f"{source}_neg_data")
+        ids = getattr(_data, f"{source}_ids_all")
+        pos_idx = pos_data.index.tolist()
+        neg_idx = neg_data.index.tolist()
+        pos_ensg = ids[pos_idx].tolist()
+        neg_ensg = ids[neg_idx].tolist()
+        return pos_ensg, neg_ensg, ids
+
+    @staticmethod
+    def _get_genes_per_source(_data, source):
+        """
+        Only works for gc and go modalities!
+        """
+        data = getattr(_data, f"{source}_data")
+        all_test_ids = _data.all_test_ids
+        data_ids = data.index.tolist()
+        all_test_ensgs = all_test_ids[all_test_ids.index.isin(data_ids)].tolist()
+        return list(dict.fromkeys(all_test_ensgs))
+
     def homogenize_data(self, data):
         gc_data = data['gc']
         go_data = data['go']
@@ -79,23 +102,28 @@ class ModuleDataProcessor:
 
         # homogenize test data
         for source in test_sources:
-            pvc_pos_dict = getattr(pvc_data, f"{source}_pos_dict")
-            pvc_pos_ensg = list(pvc_pos_dict.keys())
-            gc_pos_data = getattr(gc_data, f"{source}_pos_data")
-            gc_neg_data = getattr(gc_data, f"{source}_neg_data")
-            gc_ids = getattr(gc_data, f"{source}_ids_all")
-            gc_pos_idx = gc_pos_data.index.tolist()
-            gc_neg_idx = gc_neg_data.index.tolist()
-            gc_pos_ensg = gc_ids[gc_pos_idx].tolist()
-            gc_neg_ensg = gc_ids[gc_neg_idx].tolist()
-            dropped_pos_genes = list(set(gc_pos_ensg) - set(pvc_pos_ensg))
-            dropped_neg_genes = np.random.choice(gc_neg_ensg, len(dropped_pos_genes), replace=False)
-            dropped_pos_idx = gc_ids[gc_ids.isin(dropped_pos_genes)].index.tolist()
-            dropped_neg_idx = gc_ids[gc_ids.isin(dropped_neg_genes)].index.tolist()
-            setattr(gc_data, f"{source}_data", getattr(gc_data, f"{source}_data").drop(dropped_pos_idx))
-            setattr(gc_data, f"{source}_data", getattr(gc_data, f"{source}_data").drop(dropped_neg_idx))
-            setattr(go_data, f"{source}_data", getattr(go_data, f"{source}_data").drop(dropped_pos_idx))
-            setattr(go_data, f"{source}_data", getattr(go_data, f"{source}_data").drop(dropped_neg_idx))
+            gc_ensg = self._get_genes_per_source(gc_data, source)
+            pvc_dict = getattr(pvc_data, f"{source}_data")
+            pvc_ensg = list(pvc_dict.keys())
+
+            common_genes = set(pvc_ensg).intersection(set(gc_ensg))
+
+            for gene in common_genes:
+                if gene not in pvc_ensg:
+                    pvc_dict.pop(gene, None)
+
+            setattr(pvc_data, f"{source}_data", pvc_dict)
+
+            gc_all_ids = gc_data.all_test_ids
+            gc_ids = gc_all_ids[gc_all_ids.isin(common_genes)].drop_duplicates().index.tolist()
+            setattr(gc_data, f"{source}_data", getattr(gc_data, f"{source}_data").loc[gc_ids])
+            setattr(go_data, f"{source}_data", getattr(go_data, f"{source}_data").loc[gc_ids])
+
+        data = {
+            "gc": gc_data,
+            "go": go_data,
+            "pvc": pvc_data
+        }
 
         data['gc'].data.index = gc_ensg_ids
         data['go'].data.index = gc_ensg_ids
@@ -117,6 +145,7 @@ class ModuleDataProcessor:
             if module == 'pvc':
                 combined_genes = list(set(preprocessor.data.keys()))
             if module == 'gc':
+                ensg_ids = preprocessor.ensg_ids
                 combined_config = preprocessor.config
                 test_labels = preprocessor.test_labels
             combined_features += preprocessor.num_features
@@ -129,23 +158,50 @@ class ModuleDataProcessor:
             "pharos": {}
         }
         combined_test_genes = {
-            "pfam": set(),
-            "rcnt": set(),
-            "pharos": set()
+            "pfam": {},
+            "rcnt": {},
+            "pharos": {}
         }
 
         for module, preprocessor in data_dict.items():
             if hasattr(preprocessor, 'pfam_data'):
                 combined_test_data["pfam"][module] = preprocessor.pfam_data
-                combined_test_genes["pfam"].update(preprocessor.pfam_ids)
+
+                if isinstance(preprocessor.pfam_data, pd.DataFrame):
+                    pfam_data_ids = preprocessor.pfam_data.index.tolist()
+                    pfam_data_ids = ensg_ids.loc[pfam_data_ids].tolist()
+                else:
+                    pfam_data_ids = list(preprocessor.pfam_data.keys())
+
+                # Ensure consistent order based on ensg_ids
+                pfam_all_ids = [gene for gene in ensg_ids if gene in pfam_data_ids]
+                combined_test_genes["pfam"][module] = pfam_all_ids
 
             if hasattr(preprocessor, 'rcnt_data'):
                 combined_test_data["rcnt"][module] = preprocessor.rcnt_data
-                combined_test_genes["rcnt"].update(preprocessor.rcnt_ids)
+
+                if isinstance(preprocessor.rcnt_data, pd.DataFrame):
+                    rcnt_data_ids = preprocessor.rcnt_data.index.tolist()
+                    rcnt_data_ids = ensg_ids.loc[rcnt_data_ids].tolist()
+                else:
+                    rcnt_data_ids = list(preprocessor.rcnt_data.keys())
+
+                # Ensure consistent order based on ensg_ids
+                rcnt_all_ids = [gene for gene in ensg_ids if gene in rcnt_data_ids]
+                combined_test_genes["rcnt"][module] = rcnt_all_ids
 
             if hasattr(preprocessor, 'pharos_data'):
                 combined_test_data["pharos"][module] = preprocessor.pharos_data
-                combined_test_genes["pharos"].update(preprocessor.pharos_ids)
+
+                if isinstance(preprocessor.pharos_data, pd.DataFrame):
+                    pharos_data_ids = preprocessor.pharos_data.index.tolist()
+                    pharos_data_ids = ensg_ids.loc[pharos_data_ids].tolist()
+                else:
+                    pharos_data_ids = list(preprocessor.pharos_data.keys())
+
+                # Ensure consistent order based on ensg_ids
+                pharos_all_ids = [gene for gene in ensg_ids if gene in pharos_data_ids]
+                combined_test_genes["pharos"][module] = pharos_all_ids
 
         return {
             "train": combined_train,
@@ -154,7 +210,7 @@ class ModuleDataProcessor:
             "config": combined_config,
             "test_data": combined_test_data,
             "test_labels": test_labels,
-            "test_genes": {k: list(v) for k, v in combined_test_genes.items()}
+            "test_genes": combined_test_genes
         }
 
 
@@ -245,9 +301,9 @@ class MultiModalData(Dataset):
         self.max_variants = max_variants
         self.test_source = test_source
 
-        if self.variant_data is not None:
-            self.variant_features = {gene: self.variant_data['data'][gene] for gene in self.gene_names if
-                                     gene in self.variant_data['data']}
+        # if self.variant_data is not None:
+        #     self.variant_features = {gene: self.variant_data['data'][gene] for gene in self.gene_names if
+        #                              gene in self.variant_data['data']}
             # self.variant_labels = {gene: self.variant_data['labels'][gene] for gene in self.gene_names if
             #                       gene in self.variant_data['labels']}
 
@@ -263,15 +319,16 @@ class MultiModalData(Dataset):
         if self.data is not None:
             gene_name = self.gene_names[index]
             if self.test_source is False:
-                return torch.tensor(self.data[gene_name], dtype=torch.float32), torch.tensor(self.labels[gene_name],
-                                                                                             dtype=torch.float32)
+                return (torch.tensor(self.data[gene_name], dtype=torch.float32),
+                        torch.tensor(self.labels[gene_name], dtype=torch.float32))
             else:
                 dataset = self.data[gene_name]
                 labels = self.labels[gene_name]
-                return dataset, labels, self.test_source
+                return (torch.tensor(dataset, dtype=torch.float32), torch.tensor(labels, dtype=torch.float32),
+                        self.test_source)
         elif self.variant_data is not None:
             gene_name = self.gene_names[index]
-            variants_for_gene = self.variant_features[gene_name]
+            variants_for_gene = self.variant_data['data'][gene_name]
             gene_label = self.variant_data['labels'][gene_name]
 
             pat_feat = self.padding(variants_for_gene[:, 0])
@@ -290,7 +347,8 @@ class MultiModalData(Dataset):
                 'gene': gene.int(),
                 'mask': mask.float(),
                 'labels': gene_label,
-                'test_source': self.test_source
+                'test_source': self.test_source,
+                'gene_name': gene_name
             }
 
     def label_imbalance(self):
@@ -333,9 +391,9 @@ class SynchronizedMultiModalBatchSampler(BatchSampler):
 
     def _verify_gene_alignment(self):
         """Verify that all modalities have the same genes in the same order."""
-        gene_lists = [set(dataset.gene_names) for dataset in self.dataset_dict.values()]
+        gene_lists = [list(dataset.gene_names) for dataset in self.dataset_dict.values()]
         if not all(genes == gene_lists[0] for genes in gene_lists):
-            raise ValueError("All modalities must have the same set of genes!")
+            raise ValueError("All modalities must have the same list of genes in the same order!")
 
     def __iter__(self) -> Iterator[List[int]]:
         # Create index list
@@ -400,6 +458,11 @@ class MultiModalDataLoader:
                             batch[modality][key] = items
                 else:
                     # For regular data
+                    if modality == 'pvc':
+                        print('break')
+                    # check if item[0] in modality_batch is an numpy.ndarray
+                    if isinstance(modality_batch[0][0], np.ndarray):
+                        print('break')
                     features = torch.stack([item[0] for item in modality_batch])
                     labels = torch.stack([item[1] for item in modality_batch])
                     if len(modality_batch[0]) > 2:  # If test_source exists

@@ -380,11 +380,11 @@ def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_gen
             # Create test datasets for each test source
             for key, modalities in test_raw.items():
                 normed = scaler.transform(modalities[module_str].iloc[:, :-1].values)
-                normed = {gene: normed[i] for i, gene in enumerate(test_genes[key])}
+                normed = {gene: normed[i] for i, gene in enumerate(test_genes[key][module_str])}
                 test_datasets[key][module_str] = MultiModalData(
                     data=normed,
                     labels=test_labels,
-                    gene_names=test_genes[key],
+                    gene_names=test_genes[key][module_str],
                     test_source=key
                 )
         else:
@@ -410,7 +410,7 @@ def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_gen
                 test_datasets[key][module_str] = MultiModalData(
                     data=None,
                     labels=None,
-                    gene_names=test_genes[key],
+                    gene_names=test_genes[key][module_str],
                     variant_data={
                         'data': modalities[module_str],
                         'labels': test_labels,
@@ -639,7 +639,7 @@ def kfold_train(
     pvc_data = data['train']['pvc']
     pvc_data.pop('labels')
 
-    # todo: check where to get the labels from ({"gene": label} format)
+    labels = gc_data['target'].to_dict()
     test_labels = data["test_labels"]
 
     pvc_ensgs = set(list(pvc_data.keys()))
@@ -689,7 +689,7 @@ def kfold_train(
         model, train_combined, val_combined, test_combined, hyperparameters, accelerator = initialise_model(
             train_raw,
             val_raw,
-            pvc_labels,
+            labels,
             test_labels,
             train_genes,
             val_genes,
