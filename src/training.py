@@ -642,6 +642,10 @@ def kfold_train(
     labels = gc_data['target'].to_dict()
     test_labels = data["test_labels"]
 
+    # remove the target column from gc_data and go_data
+    gc_data = gc_data.drop(columns=['target'])
+    go_data = go_data.drop(columns=['target'])
+
     pvc_ensgs = set(list(pvc_data.keys()))
     gc_ensgs = set(gc_data.index)
 
