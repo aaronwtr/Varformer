@@ -228,7 +228,7 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
 class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
     def __init__(self, model, config, imbalance):
         super().__init__(model, config, imbalance)
-        self.model = model
+        self.   model = model
 
     def forward(self, x, mask=None):
         return self.model(x, mask)
@@ -255,7 +255,7 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
 
             logits, probas, bin_preds = self(batch, batch["pvc"]["mask"])
 
-            labels = (probas > float(self.config['threshold'])).float()
+            labels = pvc_labels     # we can pick any of the three label set
             if step_type == 'train':
                 class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))], device=self.device)
                 loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
