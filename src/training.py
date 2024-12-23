@@ -354,8 +354,8 @@ def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_gen
     for module_str, train_data in train_raw.items():
         if module_str != "pvc":
             # Handle non-PVC modalities
-            val_norm = val_raw[module_str].iloc[:, :-1].values
-            train_norm = train_data.iloc[:, :-1].values
+            val_norm = val_raw[module_str].values
+            train_norm = train_data.values
 
             scaler = MinMaxScaler()
             train_norm = scaler.fit_transform(train_norm)
@@ -379,7 +379,7 @@ def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_gen
 
             # Create test datasets for each test source
             for key, modalities in test_raw.items():
-                normed = scaler.transform(modalities[module_str].iloc[:, :-1].values)
+                normed = scaler.transform(modalities[module_str].values)
                 normed = {gene: normed[i] for i, gene in enumerate(test_genes[key][module_str])}
                 test_datasets[key][module_str] = MultiModalData(
                     data=normed,
@@ -461,8 +461,8 @@ def initialise_model(train_raw, val_raw, labels, test_labels, train_genes, val_g
         missense_map = pkl.load(f)
     num_mutations = len(missense_map)
 
-    gc_features_dim = train_raw['gc'].shape[1] - 1
-    go_features_dim = train_raw['go'].shape[1] - 1
+    gc_features_dim = train_raw['gc'].shape[1]
+    go_features_dim = train_raw['go'].shape[1]
 
     base = MultiModalTargetIdentifier(
         config=config,
@@ -702,6 +702,9 @@ def kfold_train(
             num_features,
             config
         )
+
+        # TODO:
+        #  - check if we are introducing any leakage anywhere (val and test metrics go to 1.0)
 
         if config['hyperparameters']['wandb']:
             run = wandb.init(
