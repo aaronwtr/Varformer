@@ -4,6 +4,7 @@ import pytorch_lightning as pl
 import numpy as np
 
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+from loss import WarmupLinearScheduler
 
 
 class BaseLightningTargetIdentifier(pl.LightningModule):
@@ -226,9 +227,10 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
 
 
 class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
-    def __init__(self, model, config, imbalance):
+    def __init__(self, model, config, imbalance, num_iters):
         super().__init__(model, config, imbalance)
-        self.   model = model
+        self.num_iters = num_iters
+        self.model = model
 
     def forward(self, x, mask=None):
         return self.model(x, mask)
@@ -295,7 +297,14 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
         else:
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
 
-        lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=int(self.config['T_0']), eta_min=float(self.config['lr_end']))
+        total_iters = int(self.config['epochs']) * self.num_iters
+        warmup_iters = int(total_iters * self.config['warmup_percentage'])
+
+        # Initialize the custom scheduler
+        # lr_scheduler = WarmupLinearScheduler(optimizer, warmup_iters, total_iters)
+        lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=int(self.config['T_0']),
+                                                   eta_min=float(self.config['lr_end']))
+
         return [optimizer], [{'scheduler': lr_scheduler, 'interval': 'step'}]
 
     def initialize_weights(self, seed=None):

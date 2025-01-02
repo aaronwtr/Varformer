@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import _LRScheduler
 
 
 class PseudoLabelLoss(nn.Module):
@@ -55,3 +57,19 @@ class PseudoLabelLoss(nn.Module):
         loss = self.lambd * L_L + (1 - self.lambd) * L_PU
 
         return loss
+
+
+class WarmupLinearScheduler(_LRScheduler):
+    def __init__(self, optimizer: Optimizer, warmup_iters: int, total_iters: int, last_epoch: int = -1):
+        self.warmup_iters = warmup_iters
+        self.total_iters = total_iters
+        super(WarmupLinearScheduler, self).__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        if self.last_epoch < self.warmup_iters:
+            # Linear warmup
+            return [base_lr * (self.last_epoch + 1) / self.warmup_iters for base_lr in self.base_lrs]
+        else:
+            # Constant learning rate after warmup
+            return [base_lr for base_lr in self.base_lrs]
+
