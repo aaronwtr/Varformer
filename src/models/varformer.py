@@ -47,7 +47,6 @@ class ShardedVarformer(nn.Module):
 
         x = torch.cat([path_tokens_pe, mut_tokens_pe], dim=-1)
         x = self.shared_representation(x)
-        x = self.layer_norm(x)
         x = self.dropout(x)
 
         batch_size = x.size(0)
