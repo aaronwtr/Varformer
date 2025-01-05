@@ -71,41 +71,53 @@ def objective(trial: optuna.trial.Trial) -> float:
 
         return trainer.callback_metrics["val_auroc"].item()
     else:
-        config['hyperparameters']['dropout'] = trial.suggest_float('dropout', 0.0, 0.5, step=0.1)
+        # config['hyperparameters']['dropout'] = trial.suggest_float('dropout', 0.0, 0.5, step=0.1)
         # config['hyperparameters']['threshold'] = trial.suggest_float('threshold', 0.2, 0.8, step=0.1)
-        # lr_start = trial.suggest_float('lr_start', 1e-6, 1e-4, log=True)
-        # config['hyperparameters']['lr_start'] = lr_start
-        # config['hyperparameters']['lr_end'] = trial.suggest_float('lr_end', 1e-7, lr_start, log=True)
-        # config['hyperparameters']['weight_decay'] = trial.suggest_categorical('weight_decay', [0.0, 0.001, 0.01, 0.1])
-        config['hyperparameters']['num_layers'] = trial.suggest_categorical('num_layers', [1, 2, 4])
-        config['hyperparameters']['num_encoder_layers'] = trial.suggest_categorical('num_encoder_layers', [1, 2, 4, 6])
-        config['hyperparameters']['nhead'] = trial.suggest_categorical('nhead', [1, 2, 4, 6])
-        config['hyperparameters']['width'] = trial.suggest_categorical('width', [64, 128, 256, 512])
+        # lr_start = trial.suggest_float('lr_start', 1e-9, 1e-2, log=True)
+
+        lr_start = trial.suggest_categorical('lr_start', [1e-4, 1e-5, 1e-6, 1e-7, 1e-8])
+        lr_end = trial.suggest_categorical('lr_end', [1e-2, 1e-3, 1e-4, 1e-5, 1e-6])
+
+        if lr_end <= lr_start:
+            raise optuna.TrialPruned(f"Invalid combination: lr_end ({lr_end}) <= lr_start ({lr_start})")
+
+        # Code here will not run if the trial is pruned
+        config['hyperparameters']['lr_start'] = lr_start
+        config['hyperparameters']['lr_end'] = lr_end
+
+        # config['hyperparameters']['lr_end'] = trial.suggest_float('lr_end', lr_start, 1e-1, log=True)
+        # config['hyperparameters']['warmup_percentage'] = trial.suggest_categorical('warmup_percentage',
+        #                                                                           [0.1, 0.2, 0.3, 0.4, 0.5])
+
         config['hyperparameters']['T0'] = trial.suggest_categorical('T0', [50, 100, 200, 400, 1000])
 
+        # config['hyperparameters']['weight_decay'] = trial.suggest_categorical('weight_decay', [0.0, 0.001, 0.01, 0.1])
+        # config['hyperparameters']['num_layers'] = trial.suggest_categorical('num_layers', [1, 2, 4])
+        # config['hyperparameters']['num_encoder_layers'] = trial.suggest_categorical('num_encoder_layers', [1, 2, 4, 6])
+        # config['hyperparameters']['nhead'] = trial.suggest_categorical('nhead', [1, 2, 4, 6])
+        # config['hyperparameters']['width'] = trial.suggest_categorical('width', [64, 128, 256, 512])
+
         hyperparameters = dict(
+            lr_start=config['hyperparameters']['lr_start'],
+            lr_end=config['hyperparameters']['lr_end'],
+            T0=config['hyperparameters']['T0'],
             depth=config['hyperparameters']['num_layers'],
-            # lr_start=config['hyperparameters']['lr_start'],
-            # lr_end=config['hyperparameters']['lr_end'],
             batch_size=config['hyperparameters']['batch_size'],
             optimizer=config['hyperparameters']['optimizer'],
             epochs=config['hyperparameters']['epochs'],
             dropout=config['hyperparameters']['dropout'],
             width=config['hyperparameters']['width'],
-            # weight_decay=config['hyperparameters']['weight_decay'],
-            # threshold=config['hyperparameters']['threshold'],
+            weight_decay=config['hyperparameters']['weight_decay'],
+            threshold=config['hyperparameters']['threshold'],
             num_encoder_layers=config['hyperparameters']['num_encoder_layers'],
-            nhead=config['hyperparameters']['nhead'],
-            T0=config['hyperparameters']['T0']
+            nhead=config['hyperparameters']['nhead']
         )
 
         module_str = "pvc"
 
         # Initialize a wandb run
         run = wandb.init(
-            project="drug-target-prediction",
-            tags=["hpo-varformer"],
-            group="hyperparameter-tuning",
+            project="varformer-hyperparameter-tuning",
             dir="/data/scratch/bty174/genomic-drug-targeting/src/",
             config=hyperparameters
         )
@@ -113,49 +125,75 @@ def objective(trial: optuna.trial.Trial) -> float:
         # Log the updated hyperparameters
         wandb.config.update(hyperparameters)
 
-        if varformer_usage:
-            mdp = ModuleDataProcessor(gc=False, go=False, pvc=True, psc=False)
-        else:
-            mdp = ModuleDataProcessor(gc=True, go=False, pvc=False, psc=False)
+        data = ModuleDataProcessor(True, True, True, False).process()
 
-        gcp = mdp.open_gc_data()
-        if varformer_usage:
-            pvc = mdp.open_pvc_data(gc_data=gcp, tune=True)
-            data = pvc.data
-            num_features = gcp.num_features
-            labels = data['labels']
-            data.pop('labels')
-        else:
-            data = gcp.data
-            num_features = gcp.num_features
-            labels = gcp.labels
+        gc_data = data['train']['gc']
 
-        test_data = None
-        test_genes = None
+        go_data = data['train']['go']
 
-        gene_ids = list(data.keys())
+        pvc_data = data['train']['pvc']
+        pvc_data.pop('labels')
+
+        labels = gc_data['target'].to_dict()
+        test_labels = data["test_labels"]
+
+        # remove the target column from gc_data and go_data
+        gc_data = gc_data.drop(columns=['target'])
+        go_data = go_data.drop(columns=['target'])
+
+        pvc_ensgs = set(list(pvc_data.keys()))
+        gc_ensgs = set(gc_data.index)
+
+        ensgs_not_in_pvc = pvc_ensgs - gc_ensgs
+
+        # filter out the rows from gc dataframe based on the index that are not in pvc
+        # gc_data = gc_data[~gc_data.index.isin(ensgs_not_in_pvc)]
+        # go_data = go_data[~go_data.index.isin(ensgs_not_in_pvc)]
+
+        genes = data['genes']
+
+        num_features = data['num_features']
+
+        test_data = data['test_data']
+        test_genes = data['test_genes']
+
+        config = data['config']
 
         # Split keys into train and test sets
-        train_ids, val_ids = train_test_split(gene_ids, test_size=0.2, random_state=42)
+        train_genes, val_genes = train_test_split(genes, test_size=0.2, random_state=42)
 
-        # Create train and test dictionaries
-        train_raw = {gene_id: data[gene_id] for gene_id in train_ids}
-        val_raw = {gene_id: data[gene_id] for gene_id in val_ids}
+        gc_train_raw = gc_data.loc[train_genes, :]
+        gc_val_raw = gc_data.loc[val_genes, :]
 
-        train_genes = pd.Index(train_ids)
-        val_genes = pd.Index(val_ids)
+        go_train_raw = go_data.loc[train_genes, :]
+        go_val_raw = go_data.loc[val_genes, :]
 
-        mlp_lightning, _train, val, test, hyperparameters, accelerator = initialise_model(
+        pvc_train_raw = {k: v for k, v in pvc_data.items() if k in train_genes}
+        pvc_val_raw = {k: v for k, v in pvc_data.items() if k in val_genes}
+
+        train_raw = {
+            'gc': gc_train_raw,
+            'go': go_train_raw,
+            'pvc': pvc_train_raw
+        }
+
+        val_raw = {
+            'gc': gc_val_raw,
+            'go': go_val_raw,
+            'pvc': pvc_val_raw
+        }
+
+        model, train_combined, val_combined, test_combined, hyperparameters, accelerator = initialise_model(
             train_raw,
             val_raw,
             labels,
+            test_labels,
             train_genes,
             val_genes,
             test_genes,
             test_data,
             num_features,
-            config,
-            module_str
+            config
         )
 
         if config['hyperparameters']['wandb']:
@@ -179,7 +217,7 @@ def objective(trial: optuna.trial.Trial) -> float:
                     precision=config['hyperparameters']['precision'],
                     strategy="ddp_find_unused_parameters_true",
                     devices=-1,
-                    gradient_clip_val=1,
+                    gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
                     deterministic=True
                 )
             else:
@@ -190,7 +228,7 @@ def objective(trial: optuna.trial.Trial) -> float:
                     log_every_n_steps=1,
                     logger=WandbLogger(wandb.run),
                     callbacks=[lr_monitor, checkpoint_callback],
-                    gradient_clip_val=1,
+                    gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
                     deterministic=True
                 )
         else:
@@ -201,10 +239,11 @@ def objective(trial: optuna.trial.Trial) -> float:
                 log_every_n_steps=1,
                 logger=False,
                 enable_checkpointing=True,
+                gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
                 callbacks=[checkpoint_callback]
             )
 
-        trainer.fit(mlp_lightning, _train, val)
+        trainer.fit(model, train_combined, val_combined)
         run.finish()
 
         return trainer.callback_metrics["val_auroc"].item()
@@ -476,7 +515,8 @@ def initialise_model(train_raw, val_raw, labels, test_labels, train_genes, val_g
     model = MultiModalLightningTargetIdentifier(
         model=base,
         config=config,
-        imbalance=train_imbalance
+        imbalance=train_imbalance,
+        num_iters=len(train_combined)
     )
 
     if torch.cuda.is_available():
@@ -703,9 +743,6 @@ def kfold_train(
             config
         )
 
-        # TODO:
-        #  - check if we are introducing any leakage anywhere (val and test metrics go to 1.0)
-
         if config['hyperparameters']['wandb']:
             run = wandb.init(
                 project="drug-target-prediction",
@@ -717,7 +754,7 @@ def kfold_train(
 
             early_stopping_callback = EarlyStopping(
                 monitor='val_auroc',  # Metric to monitor
-                patience=100,  # Number of epochs with no improvement after which training will be stopped
+                patience=350,  # Number of epochs with no improvement after which training will be stopped
                 verbose=True,  # Verbosity mode
                 mode='max'  # Mode can be 'min', 'max', or 'auto'
             )
@@ -739,7 +776,7 @@ def kfold_train(
             if torch.cuda.device_count() > 1:
                 trainer = pl.Trainer(
                     max_epochs=int(config['hyperparameters']['epochs']),
-                    accelerator=acceleraxtor,
+                    accelerator=accelerator,
                     enable_progress_bar=True,
                     log_every_n_steps=1,
                     logger=WandbLogger(wandb.run),
@@ -747,7 +784,8 @@ def kfold_train(
                     precision=config['hyperparameters']['precision'],
                     strategy="ddp_find_unused_parameters_true",
                     devices=-1,
-                    gradient_clip_val=1,
+                    gradient_clip_val=config['hyperparameters']['gradient_clip_val'],  # Set your desired clipping value
+                    gradient_clip_algorithm="norm",
                     deterministic=True
                 )
             else:
@@ -757,7 +795,7 @@ def kfold_train(
                     enable_progress_bar=True,
                     log_every_n_steps=1,
                     logger=WandbLogger(wandb.run),
-                    callbacks=[checkpoint_callback, lr_monitor, early_stopping_callback],
+                    callbacks=[checkpoint_callback, lr_monitor],
                     gradient_clip_val=1,
                     deterministic=True
                 )

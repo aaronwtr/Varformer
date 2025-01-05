@@ -21,7 +21,7 @@ def main(mode="training"):
 
 
 if __name__ == "__main__":
-    main(mode="kfold_teacher")
+    main(mode="tuning")
 
     # TODO:
     #  MLP model
