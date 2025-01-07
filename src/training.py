@@ -21,6 +21,7 @@ from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import MinMaxScaler
 from typing import Dict, Union, Optional
 from tqdm import tqdm
+from optuna.samplers import GridSampler
 
 from dataloader import DrugTargetData, ModuleDataProcessor, VarformerDataset, MultiModalData, MultiModalDataLoader
 from models.target_identifier import MultiModalTargetIdentifier
@@ -28,25 +29,55 @@ from models.lightning import (MLPLightningTargetIdentifier, ShardedVarformerLigh
                               MultiModalLightningTargetIdentifier)
 
 
-def tune():
-    study = optuna.create_study(
-        study_name="gdtp_varformer",
-        direction="maximize"
-    )
-    n_trials = 1000
+def tune(grid=True):
+    if grid:
+        search_space = {
+            'lr_start': [1e-4, 1e-5, 1e-6, 1e-7, 1e-8],
+            'lr_end': [1e-2, 1e-3, 1e-4, 1e-5, 1e-6],
+            'T0': [50, 100, 200, 400, 1000],
+            'weight_decay': [0.0, 0.001, 0.01, 0.1]
+        }
 
-    study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+        sampler = GridSampler(search_space)
+        study = optuna.create_study(
+            study_name="gdtp_varformer",
+            direction="maximize",
+            sampler=sampler
+        )
 
-    print("Number of finished trials: {}".format(len(study.trials)))
+        n_trials = len(search_space['depth']) * len(search_space['width'])
 
-    print("Best trial, optimized for auROC:")
-    best_trial = study.best_trial
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
 
-    print("  Metric: {}".format(best_trial.value))
+        print("Number of finished trials: {}".format(len(study.trials)))
 
-    print("  Params: ")
-    for key, value in best_trial.params.items():
-        print("    {}: {}".format(key, value))
+        print("Best trial, optimized for auROC:")
+        best_trial = study.best_trial
+
+        print("  Metric: {}".format(best_trial.value))
+
+        print("  Params: ")
+        for key, value in best_trial.params.items():
+            print("    {}: {}".format(key, value))
+    else:
+        study = optuna.create_study(
+            study_name="gdtp_varformer",
+            direction="maximize"
+        )
+        n_trials = 1000
+
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+
+        print("Number of finished trials: {}".format(len(study.trials)))
+
+        print("Best trial, optimized for auROC:")
+        best_trial = study.best_trial
+
+        print("  Metric: {}".format(best_trial.value))
+
+        print("  Params: ")
+        for key, value in best_trial.params.items():
+            print("    {}: {}".format(key, value))
 
 
 def objective(trial: optuna.trial.Trial) -> float:
@@ -71,10 +102,6 @@ def objective(trial: optuna.trial.Trial) -> float:
 
         return trainer.callback_metrics["val_auroc"].item()
     else:
-        # config['hyperparameters']['dropout'] = trial.suggest_float('dropout', 0.0, 0.5, step=0.1)
-        # config['hyperparameters']['threshold'] = trial.suggest_float('threshold', 0.2, 0.8, step=0.1)
-        # lr_start = trial.suggest_float('lr_start', 1e-9, 1e-2, log=True)
-
         lr_start = trial.suggest_categorical('lr_start', [1e-4, 1e-5, 1e-6, 1e-7, 1e-8])
         lr_end = trial.suggest_categorical('lr_end', [1e-2, 1e-3, 1e-4, 1e-5, 1e-6])
 
@@ -84,18 +111,15 @@ def objective(trial: optuna.trial.Trial) -> float:
         # Code here will not run if the trial is pruned
         config['hyperparameters']['lr_start'] = lr_start
         config['hyperparameters']['lr_end'] = lr_end
-
-        # config['hyperparameters']['lr_end'] = trial.suggest_float('lr_end', lr_start, 1e-1, log=True)
-        # config['hyperparameters']['warmup_percentage'] = trial.suggest_categorical('warmup_percentage',
-        #                                                                           [0.1, 0.2, 0.3, 0.4, 0.5])
-
         config['hyperparameters']['T0'] = trial.suggest_categorical('T0', [50, 100, 200, 400, 1000])
+        config['hyperparameters']['weight_decay'] = trial.suggest_categorical('weight_decay', [0.0, 0.001, 0.01, 0.1])
 
-        # config['hyperparameters']['weight_decay'] = trial.suggest_categorical('weight_decay', [0.0, 0.001, 0.01, 0.1])
         # config['hyperparameters']['num_layers'] = trial.suggest_categorical('num_layers', [1, 2, 4])
         # config['hyperparameters']['num_encoder_layers'] = trial.suggest_categorical('num_encoder_layers', [1, 2, 4, 6])
         # config['hyperparameters']['nhead'] = trial.suggest_categorical('nhead', [1, 2, 4, 6])
         # config['hyperparameters']['width'] = trial.suggest_categorical('width', [64, 128, 256, 512])
+
+        config_hpo = config
 
         hyperparameters = dict(
             lr_start=config['hyperparameters']['lr_start'],
@@ -193,7 +217,7 @@ def objective(trial: optuna.trial.Trial) -> float:
             test_genes,
             test_data,
             num_features,
-            config
+            config_hpo
         )
 
         if config['hyperparameters']['wandb']:
