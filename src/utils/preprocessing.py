@@ -3,6 +3,7 @@ import numpy as np
 import pickle as pkl
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
+from typing import Tuple, Optional
 
 
 def count_scaling(counts):
