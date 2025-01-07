@@ -254,3 +254,5 @@ data/genes_health_presentation/
 src/archive/split_esm_embedding/
 
 src/models/archive/
+/data/gnomad_data/gnomad.exomes.v4.1.sites.chrY.vcf.bgz
+/data/gnomad_data/gnomad.exomes.v4.1.allele_number_all_sites.tsv.bgz
