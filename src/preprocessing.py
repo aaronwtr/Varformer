@@ -27,7 +27,8 @@ from Bio import SeqIO
 from torch.utils.data import DataLoader
 from shutil import copyfileobj
 
-from utils import featurise, load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx
+from utils.utils import load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx
+from utils.preprocessing import featurise
 
 
 class GeneCharacterisationPreprocessor:
@@ -111,7 +112,7 @@ class GeneCharacterisationPreprocessor:
         self.target = load_combined_labels()
 
         # Combine features and target
-        self.labels_dict = utils.get_labels(self.ensg_ids, self.target)
+        self.labels_dict = utils.utils.get_labels(self.ensg_ids, self.target)
         self.full_data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
 
         # Get test data and remove from train feature matrix
