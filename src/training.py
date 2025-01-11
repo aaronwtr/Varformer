@@ -31,11 +31,13 @@ from models.lightning import (MLPLightningTargetIdentifier, ShardedVarformerLigh
 
 def tune(grid=True):
     if grid:
+        # todo: clean up below (make dynamic)
         search_space = {
-            'lr_start': [1e-4, 1e-5, 1e-6, 1e-7, 1e-8],
-            'lr_end': [1e-2, 1e-3, 1e-4, 1e-5, 1e-6],
-            'T0': [50, 100, 200, 400, 1000],
-            'weight_decay': [0.0, 0.001, 0.01, 0.1]
+            'num_layers': [1, 2, 4, 8],
+            'num_encoder_layers': [1, 2, 4, 8],
+            'nhead': [1, 2, 4, 8],
+            'width': [64, 256, 768, 2048, 4096],
+            'd_model': [64, 256, 768, 2048, 4096],
         }
 
         sampler = GridSampler(search_space)
@@ -45,7 +47,8 @@ def tune(grid=True):
             sampler=sampler
         )
 
-        n_trials = len(search_space['depth']) * len(search_space['width'])
+        n_trials = (len(search_space['num_layers']) * len(search_space['num_encoder_layers']) * len(search_space['nhead']) *
+                    len(search_space['width']) * len(search_space['d_model']))
 
         study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
 
@@ -102,22 +105,24 @@ def objective(trial: optuna.trial.Trial) -> float:
 
         return trainer.callback_metrics["val_auroc"].item()
     else:
-        lr_start = trial.suggest_categorical('lr_start', [1e-4, 1e-5, 1e-6, 1e-7, 1e-8])
-        lr_end = trial.suggest_categorical('lr_end', [1e-2, 1e-3, 1e-4, 1e-5, 1e-6])
+        # TODO: clean up below
+        # lr_start = trial.suggest_categorical('lr_start', [1e-4, 1e-5, 1e-6, 1e-7, 1e-8])
+        # lr_end = trial.suggest_categorical('lr_end', [1e-2, 1e-3, 1e-4, 1e-5, 1e-6])
+        #
+        # if lr_end <= lr_start:
+        #     raise optuna.TrialPruned(f"Invalid combination: lr_end ({lr_end}) <= lr_start ({lr_start})")
+        #
+        # # Code here will not run if the trial is pruned
+        # config['hyperparameters']['lr_start'] = lr_start
+        # config['hyperparameters']['lr_end'] = lr_end
+        # config['hyperparameters']['T_0'] = trial.suggest_categorical('T0', [50, 100, 200, 400, 1000])
+        # config['hyperparameters']['weight_decay'] = trial.suggest_categorical('weight_decay', [0.0, 0.001, 0.01, 0.1])
 
-        if lr_end <= lr_start:
-            raise optuna.TrialPruned(f"Invalid combination: lr_end ({lr_end}) <= lr_start ({lr_start})")
-
-        # Code here will not run if the trial is pruned
-        config['hyperparameters']['lr_start'] = lr_start
-        config['hyperparameters']['lr_end'] = lr_end
-        config['hyperparameters']['T0'] = trial.suggest_categorical('T0', [50, 100, 200, 400, 1000])
-        config['hyperparameters']['weight_decay'] = trial.suggest_categorical('weight_decay', [0.0, 0.001, 0.01, 0.1])
-
-        # config['hyperparameters']['num_layers'] = trial.suggest_categorical('num_layers', [1, 2, 4])
-        # config['hyperparameters']['num_encoder_layers'] = trial.suggest_categorical('num_encoder_layers', [1, 2, 4, 6])
-        # config['hyperparameters']['nhead'] = trial.suggest_categorical('nhead', [1, 2, 4, 6])
-        # config['hyperparameters']['width'] = trial.suggest_categorical('width', [64, 128, 256, 512])
+        config['hyperparameters']['num_layers'] = trial.suggest_categorical('num_layers', [1, 2, 4, 8])
+        config['hyperparameters']['nhead'] = trial.suggest_categorical('nhead', [1, 2, 4, 8])
+        config['hyperparameters']['num_encoder_layers'] = trial.suggest_categorical('num_encoder_layers', [1, 2, 4, 8])
+        config['hyperparameters']['width'] = trial.suggest_categorical('width', [64, 256, 768, 2048, 4096])
+        config['hyperparameters']['d_model'] = trial.suggest_categorical('d_model', [64, 256, 768, 2048, 4096])
 
         config_hpo = config
 
@@ -126,15 +131,16 @@ def objective(trial: optuna.trial.Trial) -> float:
             lr_end=config['hyperparameters']['lr_end'],
             T0=config['hyperparameters']['T0'],
             depth=config['hyperparameters']['num_layers'],
+            num_encoder_layers=config['hyperparameters']['num_encoder_layers'],
+            nhead=config['hyperparameters']['nhead'],
+            width=config['hyperparameters']['width'],
+            d_model=config['hyperparameters']['d_model'],
             batch_size=config['hyperparameters']['batch_size'],
             optimizer=config['hyperparameters']['optimizer'],
             epochs=config['hyperparameters']['epochs'],
             dropout=config['hyperparameters']['dropout'],
-            width=config['hyperparameters']['width'],
             weight_decay=config['hyperparameters']['weight_decay'],
-            threshold=config['hyperparameters']['threshold'],
-            num_encoder_layers=config['hyperparameters']['num_encoder_layers'],
-            nhead=config['hyperparameters']['nhead']
+            threshold=config['hyperparameters']['threshold']
         )
 
         module_str = "pvc"
@@ -221,7 +227,7 @@ def objective(trial: optuna.trial.Trial) -> float:
         )
 
         if config['hyperparameters']['wandb']:
-            utils.set_seed(42)
+            utils.utils.set_seed(42)
             lr_monitor = LearningRateMonitor(logging_interval='step')
             checkpoint_callback = ModelCheckpoint(
                 monitor='val_auroc',
@@ -626,7 +632,7 @@ def train(tag="Training", module_str=None, wandb_run=None):
                 mode='max',
             )
 
-        utils.set_seed(42)
+        utils.utils.set_seed(42)
         trainer = pl.Trainer(
             max_epochs=int(config['mlp']['epochs']),
             accelerator=accelerator,
@@ -642,7 +648,7 @@ def train(tag="Training", module_str=None, wandb_run=None):
         puupl_training(train=train, val=val, config=config)
     elif tag == "Tuning":
         if config['hyperparameters']['wandb']:
-            utils.set_seed(42)
+            utils.utils.set_seed(42)
             run = wandb_run
             lr_monitor = LearningRateMonitor(logging_interval='step')
             if torch.cuda.device_count() > 1:
@@ -795,7 +801,7 @@ def kfold_train(
                 mode='max'
             )
 
-            utils.set_seed(42)
+            utils.utils.set_seed(42)
             lr_monitor = LearningRateMonitor(logging_interval='step')
             if torch.cuda.device_count() > 1:
                 trainer = pl.Trainer(
@@ -832,7 +838,7 @@ def kfold_train(
             run.finish()
 
         else:
-            utils.set_seed(42)
+            utils.utils.set_seed(42)
             checkpoint_callback = ModelCheckpoint(
                 monitor='epoch',
                 dirpath=f'checkpoints/{group}',
