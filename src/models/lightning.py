@@ -215,7 +215,7 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
         else:
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
 
-        lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=int(self.config['T_0']),
+        lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=int(self.config['T0']),
                                                    eta_min=float(self.config['lr_end']))
         return [optimizer], [{'scheduler': lr_scheduler, 'interval': 'step'}]
 
@@ -297,12 +297,9 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
         else:
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
 
-        total_iters = int(self.config['epochs']) * self.num_iters
-        warmup_iters = int(total_iters * self.config['warmup_percentage'])
-
         # Initialize the custom scheduler
         # lr_scheduler = WarmupLinearScheduler(optimizer, warmup_iters, total_iters)
-        lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=int(self.config['T_0']),
+        lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=int(self.config['T0']),
                                                    eta_min=float(self.config['lr_end']))
 
         return [optimizer], [{'scheduler': lr_scheduler, 'interval': 'step'}]
