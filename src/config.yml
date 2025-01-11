@@ -22,27 +22,29 @@ varipred:
   num_batches: 1000
 
 hyperparameters:
-  # mlp
+  # training and optimization
   optimizer: AdamW
-  lr_start: 1e-7
-  lr_end: 3e-4
-  epochs: 100
-  width: 64
-  batch_size: 640
-  num_layers: 1 # 6
-  threshold: 0.5
-  dropout: 0.3
-  num_workers: 0
-  weight_decay: 0.01
-  gradient_clip_val: 1
-  wandb: True
-  # varformer
-  varformer_usage: True
-  max_seq_len: 1024
-  reduction: None # choose from "padding", "pooling" or None
-  nhead: 1 # 8
-  num_encoder_layers: 2 # 6
-  warmup_percentage: 0.3
-  d_model: 768
-  T_0: 50
   precision: "bf16"
+  epochs: 100
+  gradient_clip_val: 1
+  batch_size: 640
+  lr_start: 1e-6
+  lr_end: 1e-3
+  T0: 200
+  weight_decay: 0.01
+
+  # architecture
+  num_layers: 1   # mlp
+  width: 64   # mlp
+  varformer_usage: True
+  max_seq_len: 1024 # transformer
+  num_encoder_layers: 2   # transformeer
+  d_model: 768  # transformer
+  nhead: 1  # transformer
+  reduction: None # choose from "padding", "pooling" or None
+  dropout: 0.3
+  threshold: 0.5
+
+  # misc
+  wandb: True
+  num_workers: 0
