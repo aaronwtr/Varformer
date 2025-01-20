@@ -24,7 +24,9 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
                      batch_size=labels.shape[0])
             self.log(f'{step_type}_recall', self.model.recall(bin_preds, labels.long()),
                      batch_size=labels.shape[0])
-            self.log(f'{step_type}_recall@10', self.model.recall_at_10(bin_preds, labels.long()),
+            self.log(f'{step_type}_precision', self.model.precision(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()),
                      batch_size=labels.shape[0])
         else:
             self.log(f'{step_type}_acc_{test_source}', self.model.acc(bin_preds, labels),
@@ -35,7 +37,9 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
                      batch_size=labels.shape[0])
             self.log(f'{step_type}_recall_{test_source}', self.model.recall(bin_preds, labels.long()),
                      batch_size=labels.shape[0])
-            self.log(f'{step_type}_recall@10_{test_source}', self.model.recall_at_10(bin_preds, labels.long()),
+            self.log(f'{step_type}_precision_{test_source}', self.model.precision(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_f1_{test_source}', self.model.f1(bin_preds, labels.long()),
                      batch_size=labels.shape[0])
             self.logger.experiment.log({
                 f'{step_type}_{test_source}_predictions': bin_preds.detach().cpu().numpy(),
@@ -147,7 +151,9 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
                      batch_size=labels.shape[0], sync_dist=True)
             self.log(f'{step_type}_recall', self.model.recall(bin_preds, labels.long()),
                      batch_size=labels.shape[0], sync_dist=True)
-            self.log(f'{step_type}_recall@10', self.model.recall_at_10(bin_preds, labels.long()),
+            self.log(f'{step_type}_precision', self.model.precision(bin_preds, labels.long()),
+                     batch_size=labels.shape[0], sync_dist=True)
+            self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()),
                      batch_size=labels.shape[0], sync_dist=True)
         else:
             self.log(f'{step_type}_acc_{test_source}', self.model.acc(bin_preds, labels),
@@ -158,7 +164,9 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
                      batch_size=labels.shape[0], sync_dist=True)
             self.log(f'{step_type}_recall', self.model.recall(bin_preds, labels.long()),
                      batch_size=labels.shape[0], sync_dist=True)
-            self.log(f'{step_type}_recall@10', self.model.recall_at_10(bin_preds, labels.long()),
+            self.log(f'{step_type}_precision', self.model.precision(bin_preds, labels.long()),
+                     batch_size=labels.shape[0], sync_dist=True)
+            self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()),
                      batch_size=labels.shape[0], sync_dist=True)
             self.logger.experiment.log({
                 f'{step_type}_{test_source}_predictions': bin_preds.detach().cpu().numpy(),
@@ -182,7 +190,7 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
             self._log(labels, step_type, loss, bin_preds, probas)
         elif step_type == 'val':
             if logits.shape != labels.shape:
-                logits = logits.unsqueeze(0)    # For the case where the batch size is 1
+                logits = logits.unsqueeze(0)  # For the case where the batch size is 1
             loss = F.binary_cross_entropy_with_logits(logits, labels.float())
             self._log(labels, step_type, loss, bin_preds, probas)
         else:
@@ -257,9 +265,10 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
 
             logits, probas, bin_preds = self(batch, batch["pvc"]["mask"])
 
-            labels = pvc_labels     # we can pick any of the three label set
+            labels = pvc_labels  # we can pick any of the three label set
             if step_type == 'train':
-                class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))], device=self.device)
+                class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))],
+                                            device=self.device)
                 loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
                 self._log(labels, step_type, loss, bin_preds, probas)
             elif step_type == 'val':
@@ -287,13 +296,16 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
     def configure_optimizers(self):
         weight_decay = float(self.config.get('weight_decay', 0))
         if self.config['optimizer'] == "Adam":
-            optimizer = torch.optim.Adam(self.parameters(), lr=float(self.config['lr_start']), weight_decay=weight_decay)
+            optimizer = torch.optim.Adam(self.parameters(), lr=float(self.config['lr_start']),
+                                         weight_decay=weight_decay)
         elif self.config['optimizer'] == "SGD":
             optimizer = torch.optim.SGD(self.parameters(), lr=float(self.config['lr_start']), weight_decay=weight_decay)
         elif self.config['optimizer'] == "RMSprop":
-            optimizer = torch.optim.RMSprop(self.parameters(), lr=float(self.config['lr_start']), weight_decay=weight_decay)
+            optimizer = torch.optim.RMSprop(self.parameters(), lr=float(self.config['lr_start']),
+                                            weight_decay=weight_decay)
         elif self.config['optimizer'] == "AdamW":
-            optimizer = torch.optim.AdamW(self.parameters(), lr=float(self.config['lr_start']), weight_decay=weight_decay)
+            optimizer = torch.optim.AdamW(self.parameters(), lr=float(self.config['lr_start']),
+                                          weight_decay=weight_decay)
         else:
             raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
 
