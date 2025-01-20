@@ -16,6 +16,7 @@ import pickle as pkl
 
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, EarlyStopping
+from pytorch_lightning.utilities.model_summary import ModelSummary
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import MinMaxScaler
@@ -143,17 +144,12 @@ def objective(trial: optuna.trial.Trial) -> float:
             threshold=config['hyperparameters']['threshold']
         )
 
-        module_str = "pvc"
-
         # Initialize a wandb run
         run = wandb.init(
             project="varformer-hyperparameter-tuning",
             dir="/data/scratch/bty174/genomic-drug-targeting/src/",
             config=hyperparameters
         )
-
-        # Log the updated hyperparameters
-        wandb.config.update(hyperparameters)
 
         data = ModuleDataProcessor(True, True, True, False).process()
 
@@ -226,6 +222,11 @@ def objective(trial: optuna.trial.Trial) -> float:
             config_hpo
         )
 
+        model_summary = ModelSummary(model)
+        total_params = model_summary.total_parameters
+
+        wandb.config.update({"total_params": total_params})
+
         if config['hyperparameters']['wandb']:
             utils.utils.set_seed(42)
             lr_monitor = LearningRateMonitor(logging_interval='step')
@@ -256,6 +257,7 @@ def objective(trial: optuna.trial.Trial) -> float:
                     accelerator=accelerator,
                     enable_progress_bar=True,
                     log_every_n_steps=1,
+                    precision=config['hyperparameters']['precision'],
                     logger=WandbLogger(wandb.run),
                     callbacks=[lr_monitor, checkpoint_callback],
                     gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
@@ -267,16 +269,22 @@ def objective(trial: optuna.trial.Trial) -> float:
                 accelerator=accelerator,
                 enable_progress_bar=True,
                 log_every_n_steps=1,
+                precision=config['hyperparameters']['precision'],
                 logger=False,
                 enable_checkpointing=True,
                 gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
                 callbacks=[checkpoint_callback]
             )
 
-        trainer.fit(model, train_combined, val_combined)
-        run.finish()
-
-        return trainer.callback_metrics["val_auroc"].item()
+        try:
+            trainer.fit(model, train_combined, val_combined)
+            run.finish()
+            return trainer.callback_metrics["val_auroc"].item()
+        except Exception as e:
+            print(f"{e}\n")
+            print("Out-of-memory error. Architecture is too big.")
+            run.finish()
+            return 0.0
 
 
 def normalise_data_archive(train_raw, val_raw, labels, train_genes, val_genes, test_genes, test_raw, config):
