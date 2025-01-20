@@ -2,7 +2,7 @@ import torch
 
 import torch.nn as nn
 
-from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef, Recall
+from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef, Recall, Precision, F1Score
 from models.varformer import ShardedVarformer
 
 
@@ -41,7 +41,8 @@ class BaseTargetIdentifier(torch.nn.Module):
         self.acc = Accuracy(task="binary", threshold=config['hyperparameters']['threshold'])
         self.auroc = AUROC(task="binary")
         self.recall = Recall(task="binary", threshold=config['hyperparameters']['threshold'])
-        self.recall_at_10 = Recall(task="binary", threshold=config['hyperparameters']['threshold'], top_k=10)
+        self.precision = Precision(task="binary", threshold=config['hyperparameters']['threshold'])
+        self.f1 = F1Score(task="binary", threshold=config['hyperparameters']['threshold'])
         self.spearman = SpearmanCorrCoef()
 
     def forward(self, x, return_features=False):
