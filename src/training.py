@@ -34,11 +34,7 @@ def tune(grid=True):
     if grid:
         # todo: clean up below (make dynamic)
         search_space = {
-            'num_layers': [1, 2, 4, 8],
-            'num_encoder_layers': [1, 2, 4, 8],
-            'nhead': [1, 2, 4, 8],
-            'width': [64, 256, 768, 2048, 4096],
-            'd_model': [64, 256, 768, 2048, 4096],
+            'threshold': [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]
         }
 
         sampler = GridSampler(search_space)
@@ -48,8 +44,7 @@ def tune(grid=True):
             sampler=sampler
         )
 
-        n_trials = (len(search_space['num_layers']) * len(search_space['num_encoder_layers']) * len(search_space['nhead']) *
-                    len(search_space['width']) * len(search_space['d_model']))
+        n_trials = (len(search_space['threshold']))
 
         study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
 
@@ -119,11 +114,13 @@ def objective(trial: optuna.trial.Trial) -> float:
         # config['hyperparameters']['T_0'] = trial.suggest_categorical('T0', [50, 100, 200, 400, 1000])
         # config['hyperparameters']['weight_decay'] = trial.suggest_categorical('weight_decay', [0.0, 0.001, 0.01, 0.1])
 
-        config['hyperparameters']['num_layers'] = trial.suggest_categorical('num_layers', [1, 2, 4, 8])
-        config['hyperparameters']['nhead'] = trial.suggest_categorical('nhead', [1, 2, 4, 8])
-        config['hyperparameters']['num_encoder_layers'] = trial.suggest_categorical('num_encoder_layers', [1, 2, 4, 8])
-        config['hyperparameters']['width'] = trial.suggest_categorical('width', [64, 256, 768, 2048, 4096])
-        config['hyperparameters']['d_model'] = trial.suggest_categorical('d_model', [64, 256, 768, 2048, 4096])
+        # config['hyperparameters']['num_layers'] = trial.suggest_categorical('num_layers', [1, 2, 4, 8])
+        # config['hyperparameters']['nhead'] = trial.suggest_categorical('nhead', [1, 2, 4, 8])
+        # config['hyperparameters']['num_encoder_layers'] = trial.suggest_categorical('num_encoder_layers', [1, 2, 4, 8])
+        # config['hyperparameters']['width'] = trial.suggest_categorical('width', [64, 256, 768, 2048, 4096])
+        # config['hyperparameters']['d_model'] = trial.suggest_categorical('d_model', [64, 256, 768, 2048, 4096])
+
+        config['hyperparameters']['threshold'] = trial.suggest_float('threshold', 0.1, 0.9, step=0.05)
 
         config_hpo = config
 
@@ -418,7 +415,8 @@ def normalise_data_archive(train_raw, val_raw, labels, train_genes, val_genes, t
     return train_combined, val_combined, test_combined, label_imbalance
 
 
-def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes, test_raw, config):
+def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes, test_raw, torch_dtype,
+                   config):
     hparams = config['hyperparameters']
 
     # Initialize dictionaries to store datasets for each split
@@ -445,13 +443,15 @@ def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_gen
             train_datasets[module_str] = MultiModalData(
                 data=train_norm,
                 labels=labels,
-                gene_names=train_genes
+                gene_names=train_genes,
+                dtype=torch_dtype
             )
 
             val_datasets[module_str] = MultiModalData(
                 data=val_norm,
                 labels=labels,
-                gene_names=val_genes
+                gene_names=val_genes,
+                dtype=torch_dtype
             )
 
             # Create test datasets for each test source
@@ -462,6 +462,7 @@ def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_gen
                     data=normed,
                     labels=test_labels,
                     gene_names=test_genes[key][module_str],
+                    dtype=torch_dtype,
                     test_source=key
                 )
         else:
@@ -470,6 +471,7 @@ def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_gen
                 data=None,
                 labels=None,
                 gene_names=train_genes,
+                dtype=torch_dtype,
                 variant_data={'data': train_data, 'labels': labels},
                 max_variants=hparams['max_seq_len']
             )
@@ -478,6 +480,7 @@ def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_gen
                 data=None,
                 labels=None,
                 gene_names=val_genes,
+                dtype=torch_dtype,
                 variant_data={'data': val_raw[module_str], 'labels': labels},
                 max_variants=hparams['max_seq_len']
             )
@@ -488,6 +491,7 @@ def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_gen
                     data=None,
                     labels=None,
                     gene_names=test_genes[key][module_str],
+                    dtype=torch_dtype,
                     variant_data={
                         'data': modalities[module_str],
                         'labels': test_labels,
@@ -527,11 +531,11 @@ def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_gen
 
 
 def initialise_model(train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes, test, num_features,
-                     config):
+                     torch_dtype, config):
     hyperparams = config['hyperparameters']
     train_combined, val_combined, test_combined, train_imbalance = normalise_data(train_raw, val_raw, labels,
                                                                                   test_labels, train_genes, val_genes,
-                                                                                  test_genes, test, config)
+                                                                                  test_genes, test, torch_dtype, config)
 
     max_genes_pvc = max([train_raw['pvc'][gene].shape[0] for gene in train_raw['pvc'].keys()])
     with open("../data/elgh/missense_mutation_map.pkl", "rb") as f:
@@ -742,6 +746,12 @@ def kfold_train(
 
     config = data['config']
 
+    if config['hyperparameters']['precision'] == 'bf16':
+        torch_dtype = torch.bfloat16
+    else:
+        torch_dtype = torch.float32
+    torch.set_default_dtype(torch_dtype)
+
     for fold, (train_indices, val_indices) in enumerate(kfold.split(gc_data)):
         print(f"Training fold {fold + 1}/{num_splits}")
 
@@ -778,6 +788,7 @@ def kfold_train(
             test_genes,
             test_data,
             num_features,
+            torch_dtype,
             config
         )
 
@@ -805,7 +816,7 @@ def kfold_train(
                 monitor='val_auroc',
                 dirpath=checkpoint_dir,
                 filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}-' + f'fold{fold}',
-                save_top_k=1,
+                save_top_k=3,
                 mode='max'
             )
 
@@ -822,7 +833,7 @@ def kfold_train(
                     precision=config['hyperparameters']['precision'],
                     strategy="ddp_find_unused_parameters_true",
                     devices=-1,
-                    gradient_clip_val=config['hyperparameters']['gradient_clip_val'],  # Set your desired clipping value
+                    gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
                     gradient_clip_algorithm="norm",
                     deterministic=True
                 )
@@ -834,7 +845,8 @@ def kfold_train(
                     log_every_n_steps=1,
                     logger=WandbLogger(wandb.run),
                     callbacks=[checkpoint_callback, lr_monitor],
-                    gradient_clip_val=1,
+                    precision=config['hyperparameters']['precision'],
+                    gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
                     deterministic=True
                 )
 
@@ -848,9 +860,9 @@ def kfold_train(
         else:
             utils.utils.set_seed(42)
             checkpoint_callback = ModelCheckpoint(
-                monitor='epoch',
+                monitor='val_auroc',
                 dirpath=f'checkpoints/{group}',
-                save_top_k=1,
+                save_top_k=3,
                 mode='max'
             )
 
