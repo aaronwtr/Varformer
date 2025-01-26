@@ -303,19 +303,14 @@ class VarformerDataset(Dataset):
 
 
 class MultiModalData(Dataset):
-    def __init__(self, data, labels, gene_names, variant_data=None, max_variants=None, test_source=False):
+    def __init__(self, data, labels, gene_names, dtype, variant_data=None, max_variants=None, test_source=False):
         self.data = data
         self.labels = labels
         self.gene_names = gene_names
         self.variant_data = variant_data
         self.max_variants = max_variants
         self.test_source = test_source
-
-        # if self.variant_data is not None:
-        #     self.variant_features = {gene: self.variant_data['data'][gene] for gene in self.gene_names if
-        #                              gene in self.variant_data['data']}
-            # self.variant_labels = {gene: self.variant_data['labels'][gene] for gene in self.gene_names if
-            #                       gene in self.variant_data['labels']}
+        self.torch_dtype = dtype
 
     def __len__(self):
         if self.data is not None:
@@ -329,12 +324,12 @@ class MultiModalData(Dataset):
         if self.data is not None:
             gene_name = self.gene_names[index]
             if self.test_source is False:
-                return (torch.tensor(self.data[gene_name], dtype=torch.float32),
-                        torch.tensor(self.labels[gene_name], dtype=torch.float32))
+                return (torch.tensor(self.data[gene_name], dtype=self.torch_dtype),
+                        torch.tensor(self.labels[gene_name], dtype=self.torch_dtype))
             else:
                 dataset = self.data[gene_name]
                 labels = self.labels[gene_name]
-                return (torch.tensor(dataset, dtype=torch.float32), torch.tensor(labels, dtype=torch.float32),
+                return (torch.tensor(dataset, dtype=self.torch_dtype), torch.tensor(labels, dtype=self.torch_dtype),
                         self.test_source)
         elif self.variant_data is not None:
             gene_name = self.gene_names[index]
@@ -444,6 +439,7 @@ class MultiModalDataLoader:
             drop_last: Whether to drop the last incomplete batch
         """
         self.datasets = datasets
+        self.torch_dtype = datasets['gc'].torch_dtype
         self.batch_sampler = SynchronizedMultiModalBatchSampler(
             datasets, batch_size, shuffle, drop_last
         )
@@ -461,18 +457,13 @@ class MultiModalDataLoader:
                     for key in modality_batch[0].keys():
                         items = [item[key] for item in modality_batch]
                         if isinstance(items[0], torch.Tensor):
+                            items = [item.to(self.torch_dtype) for item in items]
                             batch[modality][key] = torch.stack(items)
                         elif isinstance(items[0], (int, float, bool)):
-                            batch[modality][key] = torch.tensor(items)
+                            batch[modality][key] = torch.tensor(items, dtype=self.torch_dtype)
                         else:
                             batch[modality][key] = items
                 else:
-                    # For regular data
-                    if modality == 'pvc':
-                        print('break')
-                    # check if item[0] in modality_batch is an numpy.ndarray
-                    if isinstance(modality_batch[0][0], np.ndarray):
-                        print('break')
                     features = torch.stack([item[0] for item in modality_batch])
                     labels = torch.stack([item[1] for item in modality_batch])
                     if len(modality_batch[0]) > 2:  # If test_source exists
