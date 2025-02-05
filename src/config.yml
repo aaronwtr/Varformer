@@ -43,8 +43,9 @@ hyperparameters:
   nhead: 1  # transformer
   reduction: None # choose from "padding", "pooling" or None
   dropout: 0.3
-  threshold: 0.5
+  threshold: 0.2
 
   # misc
   wandb: True
   num_workers: 0
+  seed: 42

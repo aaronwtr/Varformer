@@ -43,8 +43,8 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
                      batch_size=labels.shape[0])
             self.logger.experiment.log({
                 f'{step_type}_{test_source}_predictions': bin_preds.detach().cpu().numpy(),
-                f'{step_type}_{test_source}_probas': probas.detach().cpu().numpy(),
-                f'{step_type}_{test_source}_labels': labels.detach().cpu().numpy()
+                f'{step_type}_{test_source}_probas': probas.to(dtype=torch.float32).detach().cpu().numpy(),
+                f'{step_type}_{test_source}_labels': labels.to(dtype=torch.float32).detach().cpu().numpy()
             })
 
     def _common_step(self, batch, batch_idx, step_type):

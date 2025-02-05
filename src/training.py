@@ -697,7 +697,309 @@ def train(tag="Training", module_str=None, wandb_run=None):
         raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
 
 
-def kfold_train(
+def train_model(data):
+    config = data['config']
+
+    # Initialize wandb run
+    hyperparameters = dict(
+        lr_start=config['hyperparameters']['lr_start'],
+        lr_end=config['hyperparameters']['lr_end'],
+        T0=config['hyperparameters']['T0'],
+        depth=config['hyperparameters']['num_layers'],
+        num_encoder_layers=config['hyperparameters']['num_encoder_layers'],
+        nhead=config['hyperparameters']['nhead'],
+        width=config['hyperparameters']['width'],
+        d_model=config['hyperparameters']['d_model'],
+        batch_size=config['hyperparameters']['batch_size'],
+        optimizer=config['hyperparameters']['optimizer'],
+        epochs=config['hyperparameters']['epochs'],
+        dropout=config['hyperparameters']['dropout'],
+        weight_decay=config['hyperparameters']['weight_decay'],
+        threshold=config['hyperparameters']['threshold']
+    )
+
+    run = wandb.init(
+        project="drug-target-prediction",
+        config=hyperparameters,
+        group="multimodal-training-run-1"
+    )
+
+    gc_data = data['train']['gc']
+    go_data = data['train']['go']
+    pvc_data = data['train']['pvc'].copy()
+    pvc_data.pop('labels')
+
+    labels = gc_data['target'].to_dict()
+    test_labels = data["test_labels"]
+
+    # Remove target column
+    gc_data = gc_data.drop(columns=['target'])
+    go_data = go_data.drop(columns=['target'])
+
+    genes = data['genes']
+    num_features = data['num_features']
+    test_data = data['test_data']
+    test_genes = data['test_genes']
+
+    # Split data into train and validation sets
+    train_genes, val_genes = train_test_split(genes, test_size=0.2, random_state=config['hyperparameters']['seed'])
+
+    # Prepare training data
+    gc_train_raw = gc_data.loc[train_genes, :]
+    gc_val_raw = gc_data.loc[val_genes, :]
+
+    go_train_raw = go_data.loc[train_genes, :]
+    go_val_raw = go_data.loc[val_genes, :]
+
+    pvc_train_raw = {k: v for k, v in pvc_data.items() if k in train_genes}
+    pvc_val_raw = {k: v for k, v in pvc_data.items() if k in val_genes}
+
+    train_raw = {
+        'gc': gc_train_raw,
+        'go': go_train_raw,
+        'pvc': pvc_train_raw
+    }
+
+    val_raw = {
+        'gc': gc_val_raw,
+        'go': go_val_raw,
+        'pvc': pvc_val_raw
+    }
+
+    # Initialize model and data
+    model, train_combined, val_combined, test_combined, hyperparameters, accelerator = initialise_model(
+        train_raw,
+        val_raw,
+        labels,
+        test_labels,
+        train_genes,
+        val_genes,
+        test_genes,
+        test_data,
+        num_features,
+        config
+    )
+
+    # Log model parameters
+    model_summary = ModelSummary(model)
+    total_params = model_summary.total_parameters
+    wandb.config.update({"total_params": total_params})
+
+    # Setup training callbacks
+    current_date = datetime.datetime.now().strftime("%d-%m-%Y")
+    checkpoint_dir = f'checkpoints/{current_date}'
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    lr_monitor = LearningRateMonitor(logging_interval='step')
+    checkpoint_callback = ModelCheckpoint(
+        monitor='val_auroc',
+        dirpath=checkpoint_dir,
+        filename=f"seed{config['hyperparameters']['seed']}" + '-epoch{epoch:02d}-val_auroc{val_auroc:.2f}',
+        save_top_k=1,
+        mode='max'
+    )
+
+    # Configure trainer based on available GPUs
+    if torch.cuda.device_count() > 1:
+        trainer = pl.Trainer(
+            max_epochs=int(config['hyperparameters']['epochs']),
+            accelerator=accelerator,
+            enable_progress_bar=True,
+            log_every_n_steps=1,
+            logger=WandbLogger(wandb.run),
+            callbacks=[lr_monitor],
+            precision=config['hyperparameters']['precision'],
+            strategy="ddp_find_unused_parameters_true",
+            devices=-1,
+            gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
+            deterministic=True
+        )
+    else:
+        trainer = pl.Trainer(
+            max_epochs=int(config['hyperparameters']['epochs']),
+            accelerator=accelerator,
+            enable_progress_bar=True,
+            log_every_n_steps=1,
+            precision=config['hyperparameters']['precision'],
+            logger=WandbLogger(wandb.run),
+            callbacks=[lr_monitor, checkpoint_callback],
+            gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
+            deterministic=True
+        )
+
+    trainer.fit(model, train_combined, val_combined)
+
+    # Test on different datasets
+    trainer.test(dataloaders=test_combined["pfam"])
+    trainer.test(dataloaders=test_combined["rcnt"])
+    trainer.test(dataloaders=test_combined["pharos"])
+
+    run.finish()
+
+
+def kfold_train(data):
+    """
+    Trains your model using a k-fold CV loop while employing the same setup as in your HPO run.
+
+    This function:
+      - Loads a configuration from config.yml (which should include the best hyperparameter values
+        determined by your Optuna optimization run).
+      - Processes the data with ModuleDataProcessor.
+      - Splits the data into k folds (using the gc dataframe indices).
+      - For each fold, initializes the model (via initialise_model) and trains it with the same callbacks,
+        logging, and accelerator configuration as in the HPO objective function.
+
+    Adjust any parameters (such as wandb project names, checkpoint directories, etc.) as needed.
+    """
+    # 1. Load configuration from file.
+    config = data['config']
+
+    # 2. Prepare the data (similar to both your HPO and regular training functions)
+    gc_data = data['train']['gc']
+    go_data = data['train']['go']
+    pvc_data = data['train']['pvc']
+    # Remove an unwanted column (if applicable)
+    if 'labels' in pvc_data:
+        pvc_data.pop('labels')
+
+    # The target labels are stored in gc_data, so we extract them and then drop the target column.
+    labels = gc_data['target'].to_dict()
+    test_labels = data["test_labels"]
+    gc_data = gc_data.drop(columns=['target'])
+    go_data = go_data.drop(columns=['target'])
+
+    # 3. Set up k-fold cross validation.
+    num_splits = 5
+    kfold = KFold(n_splits=num_splits, shuffle=True, random_state=42)
+
+    genes = data['genes']
+    num_features = data['num_features']
+    test_data = data['test_data']
+    test_genes = data['test_genes']
+    group = f"multimodal-training-run-1"
+
+    # 4. Loop through each fold.
+    for fold, (train_indices, val_indices) in enumerate(kfold.split(gc_data)):
+        print(f"\nTraining fold {fold + 1}/{num_splits}...")
+
+        gc_train_raw = gc_data.iloc[train_indices, :]
+        gc_val_raw = gc_data.iloc[val_indices, :]
+
+        go_train_raw = go_data.iloc[train_indices, :]
+        go_val_raw = go_data.iloc[val_indices, :]
+
+        train_genes = [genes[i] for i in train_indices]
+        val_genes = [genes[i] for i in val_indices]
+
+        pvc_train_raw = {k: v for k, v in pvc_data.items() if k in train_genes}
+        pvc_val_raw = {k: v for k, v in pvc_data.items() if k in val_genes}
+
+        train_raw = {
+            'gc': gc_train_raw,
+            'go': go_train_raw,
+            'pvc': pvc_train_raw
+        }
+        val_raw = {
+            'gc': gc_val_raw,
+            'go': go_val_raw,
+            'pvc': pvc_val_raw
+        }
+
+        # 6. Initialize the model and the dataloaders.
+        model, train_combined, val_combined, test_combined, hyperparameters, accelerator = initialise_model(
+            train_raw,
+            val_raw,
+            labels,
+            test_labels,
+            train_genes,
+            val_genes,
+            test_genes,
+            test_data,
+            num_features,
+            config
+        )
+
+        total_params = sum(p.numel() for p in model.parameters())
+        hyperparameters.update({"total_params": total_params})
+
+        # 7. Set up callbacks and the trainer. Here we mirror the HPO branch (for varformer usage)
+        # and initialize wandb if enabled.
+        current_date = datetime.datetime.now().strftime("%d-%m-%Y")
+        checkpoint_dir = f'checkpoints/{current_date}'
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        if config['hyperparameters']['wandb']:
+            utils.utils.set_seed(42)
+            run = wandb.init(
+                project="drug-target-prediction",
+                tags=[f"distillation-fold{fold + 1}"],
+                config=hyperparameters,
+                group=f"{group}"
+            )
+            lr_monitor = LearningRateMonitor(logging_interval='step')
+            checkpoint_callback = ModelCheckpoint(
+                monitor='val_auroc',
+                dirpath=checkpoint_dir,
+                filename=f'fold{fold + 1}' + '-{epoch:02d}-{val_auroc:.2f}',
+                save_top_k=1,
+                mode='max'
+            )
+
+            # Use a different trainer configuration if you have multiple GPUs.
+            if torch.cuda.device_count() > 1:
+                trainer = pl.Trainer(
+                    max_epochs=int(config['hyperparameters']['epochs']),
+                    accelerator=accelerator,
+                    enable_progress_bar=True,
+                    log_every_n_steps=1,
+                    logger=WandbLogger(run),
+                    callbacks=[lr_monitor],
+                    precision=config['hyperparameters']['precision'],
+                    strategy="ddp_find_unused_parameters_true",
+                    devices=-1,
+                    gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
+                    deterministic=True
+                )
+            else:
+                trainer = pl.Trainer(
+                    max_epochs=int(config['hyperparameters']['epochs']),
+                    accelerator=accelerator,
+                    enable_progress_bar=True,
+                    log_every_n_steps=1,
+                    logger=WandbLogger(run),
+                    callbacks=[lr_monitor, checkpoint_callback],
+                    gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
+                    deterministic=True
+                )
+        else:
+            # If wandb logging is disabled, use a simpler trainer setup.
+            checkpoint_callback = ModelCheckpoint(
+                monitor='val_auroc',
+                dirpath=checkpoint_dir,
+                filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}-' + f'fold{fold}',
+                save_top_k=1,
+                mode='max'
+            )
+            trainer = pl.Trainer(
+                max_epochs=int(config['hyperparameters']['epochs']),
+                accelerator=accelerator,
+                enable_progress_bar=True,
+                log_every_n_steps=1,
+                logger=False,
+                enable_checkpointing=True,
+                gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
+                callbacks=[checkpoint_callback]
+            )
+
+        # 8. Train (and optionally test) the model for the current fold.
+        trainer.fit(model, train_combined, val_combined)
+        trainer.test(dataloaders=test_combined["pfam"])
+        trainer.test(dataloaders=test_combined["rcnt"])
+        trainer.test(dataloaders=test_combined["pharos"])
+        if config['hyperparameters']['wandb']:
+            run.finish()
+
+
+def _kfold_train(
         data: Union[pd.DataFrame, dict],
         model_type: str,
         modules: Union[str, Dict[str, bool]]
@@ -820,7 +1122,7 @@ def kfold_train(
                 mode='max'
             )
 
-            utils.utils.set_seed(42)
+            # utils.utils.set_seed(42)
             lr_monitor = LearningRateMonitor(logging_interval='step')
             if torch.cuda.device_count() > 1:
                 trainer = pl.Trainer(
@@ -858,7 +1160,7 @@ def kfold_train(
             run.finish()
 
         else:
-            utils.utils.set_seed(42)
+            # utils.utils.set_seed(42)
             checkpoint_callback = ModelCheckpoint(
                 monitor='val_auroc',
                 dirpath=f'checkpoints/{group}',
@@ -882,8 +1184,8 @@ def kfold_train(
 
 
 def kfold_teacher(**modules):
-    pl.seed_everything(42)
-    torch.set_float32_matmul_precision('medium')
+    # pl.seed_everything(42)
+    # torch.set_float32_matmul_precision('medium')
 
     print("Training teacher model...\n")
 
@@ -903,7 +1205,7 @@ def kfold_teacher(**modules):
 
     data = ModuleDataProcessor(gc, go, pvc, psc).process()
 
-    kfold_train(data, model_type="teacher", modules=modules)
+    train_model(data)
 
 
 def kfold_student(ensemble=False, **modules):
