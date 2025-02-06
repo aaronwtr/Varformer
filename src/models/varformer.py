@@ -42,7 +42,7 @@ class ShardedVarformer(nn.Module):
     def get_embeddings(self, pathogenicity, position, mutation, mask):
         path_tokens = self.pathogenicity_projection(pathogenicity.unsqueeze(-1))
         path_tokens_pe = self.positional_encoder(path_tokens, position)
-        mut_tokens = self.mutation_embedding(mutation)
+        mut_tokens = self.mutation_embedding(mutation.long())
         mut_tokens_pe = self.positional_encoder(mut_tokens, position)
 
         x = torch.cat([path_tokens_pe, mut_tokens_pe], dim=-1)
@@ -92,6 +92,7 @@ class PositionalEncoder(nn.Module):
 
     def forward(self, x, positions):
         pe = self.pe.to(positions.device)
-        pe = pe[positions]
+        pos_idx = positions.to(torch.long)
+        pe = pe[pos_idx]
         x = x + pe
         return self.dropout(x)
