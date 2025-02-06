@@ -457,7 +457,10 @@ class MultiModalDataLoader:
                     for key in modality_batch[0].keys():
                         items = [item[key] for item in modality_batch]
                         if isinstance(items[0], torch.Tensor):
-                            items = [item.to(self.torch_dtype) for item in items]
+                            if items[0].dtype in (torch.int64, torch.int32):
+                                items = [item.to(torch.float32) for item in items]
+                            else:
+                                items = [item.to(self.torch_dtype) for item in items]
                             batch[modality][key] = torch.stack(items)
                         elif isinstance(items[0], (int, float, bool)):
                             batch[modality][key] = torch.tensor(items, dtype=self.torch_dtype)
