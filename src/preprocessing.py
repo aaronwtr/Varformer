@@ -1000,7 +1000,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         else:
             self.gh_data = pd.read_pickle('../data/elgh/gh_miva_data.pkl')
             max_pos = self.gh_data['Protein_pos_shard'].max()
-            if max_pos != config['max_seq_len']:
+            if max_pos + 1 != config['max_seq_len']:
                 print("Max sequence len dimension has been changed, reprocessing GH data...")
                 self.variant_sharding(config)
                 if os.path.exists("../data/features/var_pat_features.pkl"):
@@ -1015,7 +1015,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.gh_data['Protein_position'] = self.gh_data['Protein_position'].astype(int)
         max_seq_len = config['max_seq_len']
         self.gh_data.loc[:, 'Protein_pos_shard'] = self.gh_data['Protein_position'].apply(
-            lambda x: (x - 1) % max_seq_len + 1)
+            lambda x: (x - 1) % max_seq_len)
         cols = self.gh_data.columns.tolist()
         pp_idx = cols.index('Protein_position')
         cols = cols[:pp_idx] + [cols[-1]] + cols[pp_idx:-1]
@@ -1044,7 +1044,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         embedding.
         """
         print("Combining AM and GH data...")
-        self.config = config['paths']
+        self.config = self.gcp.config
         am = pd.read_csv(self.config['paths']['AM_PATH'], sep='\t')
         am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
 
@@ -1088,7 +1088,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             ref_aa = row['AA_ref']
             alt_aa = row['AA_alt']
             mut = f"{ref_aa}>{alt_aa}"
-            pos = row['Protein_pos_shard'] - 1.0    # 0-indexed
+            pos = row['Protein_pos_shard']    # 0-indexed
             # pos = row['Protein_position']
             pat_value = row['am_pathogenicity'] * row['AF']
             if np.isnan(pat_value):
@@ -1098,7 +1098,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             else:
                 var_pat_features[gene].append([pat_value, pos, mutation_map[mut], gene_map[gene]])
 
-        return {gene: torch.tensor(features, dtype=torch.float32) for gene, features in var_pat_features.items()}
+        return {gene: torch.tensor(features) for gene, features in var_pat_features.items()}
 
     def variant_structure_input(self):
         af_data = self.alphafold_extractor()
