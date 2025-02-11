@@ -580,124 +580,8 @@ def initialise_model(train_raw, val_raw, labels, test_labels, train_genes, val_g
     return model, train_combined, val_combined, test_combined, hyperparameters, accelerator
 
 
-def train(tag="Training", module_str=None, wandb_run=None):
-    if module_str == "pvc":
-        mdp = ModuleDataProcessor(gc=False, go=False, pvc=True, psc=False)
-    else:
-        mdp = ModuleDataProcessor(gc=True, go=False, pvc=False, psc=False)
-
-    gcp = mdp.open_gc_data()
-    if module_str == "pvc":
-        pvc = mdp.open_pvc_data(gc_data=gcp, tune=True)
-        data = pvc.data
-        num_features = gcp.num_features
-        config = mdp.config
-        labels = data['labels']
-        data.pop('labels')
-    else:
-        data = gcp.data
-        num_features = gcp.num_features
-        config = gcp.config
-        labels = gcp.labels
-
-    test_data = None
-    test_genes = None
-
-    gene_ids = list(data.keys())
-
-    # Split keys into train and test sets
-    train_ids, val_ids = train_test_split(gene_ids, test_size=0.2, random_state=42)
-
-    # Create train and test dictionaries
-    train_raw = {gene_id: data[gene_id] for gene_id in train_ids}
-    val_raw = {gene_id: data[gene_id] for gene_id in val_ids}
-
-    train_genes = pd.Index(train_ids)
-    val_genes = pd.Index(val_ids)
-
-    mlp_lightning, _train, val, test, hyperparameters, accelerator = initialise_model(
-        train_raw,
-        val_raw,
-        labels,
-        train_genes,
-        val_genes,
-        test_genes,
-        test_data,
-        num_features,
-        config
-    )
-
-    if tag == "Standard Training":
-        if config['hyperparameters']['mlp']['wandb']:
-            wandb_logger = WandbLogger(
-                project="drug-target-prediction",
-                tags=[f"depth{config['mlp']['depth']}-nn"],
-                log_model="all"
-            )
-            wandb_logger.log_hyperparams(hyperparameters)
-            run_name = wandb_logger.experiment.name
-            checkpoint_callback = ModelCheckpoint(
-                monitor='epoch',
-                dirpath='checkpoints',
-                filename=f'{run_name}' + '-{epoch:02d}-{val_auroc:.2f}',
-                save_top_k=1,
-                mode='max',
-            )
-
-        utils.utils.set_seed(42)
-        trainer = pl.Trainer(
-            max_epochs=int(config['mlp']['epochs']),
-            accelerator=accelerator,
-            enable_progress_bar=True,
-            log_every_n_steps=1,
-            logger=wandb_logger,
-            callbacks=[checkpoint_callback]
-        )
-        trainer.fit(mlp_lightning, _train, val)
-        trainer.test(ckpt_path="best", dataloaders=pfam_test)
-        return trainer
-    elif tag == "PUUPL Training":
-        puupl_training(train=train, val=val, config=config)
-    elif tag == "Tuning":
-        if config['hyperparameters']['wandb']:
-            utils.utils.set_seed(42)
-            run = wandb_run
-            lr_monitor = LearningRateMonitor(logging_interval='step')
-            if torch.cuda.device_count() > 1:
-                trainer = pl.Trainer(
-                    max_epochs=int(config['hyperparameters']['epochs']),
-                    accelerator=accelerator,
-                    enable_progress_bar=True,
-                    log_every_n_steps=1,
-                    logger=WandbLogger(wandb.run),
-                    callbacks=[lr_monitor],
-                    precision=config['hyperparameters']['precision'],
-                    strategy="ddp_find_unused_parameters_true",
-                    devices=-1,
-                    gradient_clip_val=1,
-                    deterministic=True
-                )
-            else:
-                trainer = pl.Trainer(
-                    max_epochs=int(config['hyperparameters']['epochs']),
-                    accelerator=accelerator,
-                    enable_progress_bar=True,
-                    log_every_n_steps=1,
-                    logger=WandbLogger(wandb.run),
-                    callbacks=[checkpoint_callback, lr_monitor],
-                    gradient_clip_val=1,
-                    deterministic=True
-                )
-
-            trainer.fit(mlp_lightning, _train, val)
-            run.finish()
-
-            return trainer
-    else:
-        raise ValueError("Invalid tag. Pick from 'Standard Training', 'PUUPL Training' or 'Tuning'")
-
-
 def train_model(data):
+    torch.set_float32_matmul_precision('medium')
     config = data['config']
 
     # Initialize wandb run
@@ -801,7 +685,7 @@ def train_model(data):
     checkpoint_callback = ModelCheckpoint(
         monitor='val_auroc',
         dirpath=checkpoint_dir,
-        filename=f"seed{config['hyperparameters']['seed']}" + '-epoch{epoch:02d}-val_auroc{val_auroc:.2f}',
+        filename=f"seed{config['hyperparameters']['seed']}" + '-{epoch:02d}-{val_auroc:.2f}',
         save_top_k=1,
         mode='max'
     )
@@ -837,9 +721,9 @@ def train_model(data):
     trainer.fit(model, train_combined, val_combined)
 
     # Test on different datasets
-    trainer.test(dataloaders=test_combined["pfam"])
-    trainer.test(dataloaders=test_combined["rcnt"])
-    trainer.test(dataloaders=test_combined["pharos"])
+    trainer.test(dataloaders=test_combined["pfam"], ckpt_path='best')
+    trainer.test(dataloaders=test_combined["rcnt"], ckpt_path='best')
+    trainer.test(dataloaders=test_combined["pharos"], ckpt_path='best')
 
     run.finish()
 

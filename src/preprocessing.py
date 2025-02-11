@@ -181,7 +181,7 @@ class GeneCharacterisationPreprocessor:
         # Remove holdout data from training data
         self.data = self.full_data[~self.full_data.index.isin(self.all_test_ids.index)]
         self.labels = self.labels_dict
-        self.test_labels = {key: self.labels_dict[key] for key in self.all_test_ids.tolist()}
+        self.test_labels = {key: self.labels[key] for key in self.all_test_ids.tolist()}
 
     def _get_files(self):
         """
@@ -987,6 +987,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             # remove all the test genes from the data dictionary
             self.data = {key: value for key, value in self.var_pat_features.items()
                          if key not in self.holdout_ids.tolist()}
+            pharos_pos_ensgs = list(self.pharos_pos_dict.keys())
+            # set the value of the putative positive targets from pharos 1
+            self.labels = {key: 1 if key in pharos_pos_ensgs else self.labels[key] for key in self.labels.keys()}
             self.data['labels'] = self.labels
         else:
             self.data = self.var_pat_features
