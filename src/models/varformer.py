@@ -57,7 +57,6 @@ class ShardedVarformer(nn.Module):
         mask = mask.bool()
         cls_mask = torch.ones((mask.size(0), 1), dtype=torch.bool, device=mask.device)
         mask = torch.cat([cls_mask, mask], dim=1)
-
         output = self.variant_transformer(x, src_key_padding_mask=~mask)
         output = output.permute(1, 0, 2)    # (S, B, E) -> (B, S, E)
 

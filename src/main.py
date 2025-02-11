@@ -14,14 +14,14 @@ def main(mode="training"):
     elif mode == "kfold_student":
         training.kfold_student()
     elif mode == "testing":
-        testing.test()
+        testing.run_test(pvc=True, go=True, gc=True)
     else:
         raise ValueError("Invalid mode. Pick from 'training' or 'tuning', 'kfold_student',"
                          "'kfold_teacher, 'testing', or 'puupl'")
 
 
 if __name__ == "__main__":
-    main(mode="kfold_teacher")
+    main(mode="testing")
 
     # TODO:
     #  MLP model
