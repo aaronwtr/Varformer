@@ -5,6 +5,7 @@ import numpy as np
 
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from loss import WarmupLinearScheduler
+from models.target_identifier import MultiModalTargetIdentifier
 
 
 class BaseLightningTargetIdentifier(pl.LightningModule):
@@ -41,11 +42,14 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
                      batch_size=labels.shape[0])
             self.log(f'{step_type}_f1_{test_source}', self.model.f1(bin_preds, labels.long()),
                      batch_size=labels.shape[0])
-            self.logger.experiment.log({
-                f'{step_type}_{test_source}_predictions': bin_preds.detach().cpu().numpy(),
-                f'{step_type}_{test_source}_probas': probas.to(dtype=torch.float32).detach().cpu().numpy(),
-                f'{step_type}_{test_source}_labels': labels.to(dtype=torch.float32).detach().cpu().numpy()
-            })
+            logger_type = self.logger.__class__.__name__
+            if logger_type == "WandbLogger":
+                self.logger.experiment.log({
+                    f'{step_type}_{test_source}_predictions': bin_preds.detach().cpu().numpy(),
+                    f'{step_type}_{test_source}_probas': probas.to(dtype=torch.float32).detach().cpu().numpy(),
+                    f'{step_type}_{test_source}_labels': labels.to(dtype=torch.float32).detach().cpu().numpy()
+                })
+            print('break')
 
     def _common_step(self, batch, batch_idx, step_type):
         if len(batch) > 2:  # For transformer
@@ -235,15 +239,26 @@ class ShardedVarformerLightningTargetIdentifier(BaseLightningTargetIdentifier):
 
 
 class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
-    def __init__(self, model, config, imbalance, num_iters):
-        super().__init__(model, config, imbalance)
+    def __init__(self, config, imbalance, gc_features_dim, num_features_go, num_mutations, max_seq_len, num_genes,
+                 num_iters):
+        self.save_hyperparameters()
+        super().__init__(model=None, config=config, imbalance=imbalance)
+
+        self.model = MultiModalTargetIdentifier(
+            config=config,
+            num_features_gc=gc_features_dim,
+            num_features_go=num_features_go,
+            num_mutations=num_mutations,
+            max_seq_len=max_seq_len,
+            num_genes=num_genes
+        )
         self.num_iters = num_iters
-        self.model = model
 
     def forward(self, x, mask=None):
         return self.model(x, mask)
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        # Implement as needed
         features, masks = batch
         logits, probas, bin_preds = self(features, masks)
         return probas
@@ -312,7 +327,7 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
         # Initialize the custom scheduler
         # lr_scheduler = WarmupLinearScheduler(optimizer, warmup_iters, total_iters)
         lr_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=int(self.config['T0']),
-                                                   eta_min=float(self.config['lr_end']))
+                                                  eta_min=float(self.config['lr_end']))
 
         return [optimizer], [{'scheduler': lr_scheduler, 'interval': 'step'}]
 
