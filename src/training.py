@@ -28,6 +28,7 @@ from dataloader import DrugTargetData, ModuleDataProcessor, VarformerDataset, Mu
 from models.target_identifier import MultiModalTargetIdentifier
 from models.lightning import (MLPLightningTargetIdentifier, ShardedVarformerLightningTargetIdentifier,
                               MultiModalLightningTargetIdentifier)
+from preprocessing import ModelPreprocessor
 
 
 def tune(grid=True):
@@ -608,71 +609,12 @@ def train_model(data):
         group="multimodal-training-run-1"
     )
 
-    gc_data = data['train']['gc']
-    go_data = data['train']['go']
-    pvc_data = data['train']['pvc'].copy()
-    pvc_data.pop('labels')
-
-    labels = gc_data['target'].to_dict()
-    test_labels = data["test_labels"]
-
-    # Remove target column
-    gc_data = gc_data.drop(columns=['target'])
-    go_data = go_data.drop(columns=['target'])
-
-    genes = data['genes']
-    num_features = data['num_features']
-    test_data = data['test_data']
-    test_genes = data['test_genes']
-
-    # Split data into train and validation sets
-    train_genes, val_genes = train_test_split(genes, test_size=0.2, random_state=config['hyperparameters']['seed'])
-
-    # Prepare training data
-    gc_train_raw = gc_data.loc[train_genes, :]
-    gc_val_raw = gc_data.loc[val_genes, :]
-
-    go_train_raw = go_data.loc[train_genes, :]
-    go_val_raw = go_data.loc[val_genes, :]
-
-    pvc_train_raw = {k: v for k, v in pvc_data.items() if k in train_genes}
-    pvc_val_raw = {k: v for k, v in pvc_data.items() if k in val_genes}
-
-    train_raw = {
-        'gc': gc_train_raw,
-        'go': go_train_raw,
-        'pvc': pvc_train_raw
-    }
-
-    val_raw = {
-        'gc': gc_val_raw,
-        'go': go_val_raw,
-        'pvc': pvc_val_raw
-    }
-
-    if config['hyperparameters']['precision'] == 'bf16':
-        torch_dtype = torch.bfloat16
-    else:
-        torch_dtype = torch.float32
-    torch.set_default_dtype(torch_dtype)
-
-    # Initialize model and data
-    model, train_combined, val_combined, test_combined, hyperparameters, accelerator = initialise_model(
-        train_raw,
-        val_raw,
-        labels,
-        test_labels,
-        train_genes,
-        val_genes,
-        test_genes,
-        test_data,
-        num_features,
-        torch_dtype,
-        config
-    )
+    preprocessor = ModelPreprocessor(config, data)
+    model, train_combined, val_combined, test_combined, hyperparameters, accelerator = preprocessor.model_init()
 
     # Log model parameters
     model_summary = ModelSummary(model)
+    print(model_summary)
     total_params = model_summary.total_parameters
     wandb.config.update({"total_params": total_params})
 
@@ -729,8 +671,8 @@ def train_model(data):
 
 
 def kfold_teacher(**modules):
-    # pl.seed_everything(42)
-    # torch.set_float32_matmul_precision('medium')
+    pl.seed_everything(42)
+    torch.set_float32_matmul_precision('medium')
 
     print("Training teacher model...\n")
 
