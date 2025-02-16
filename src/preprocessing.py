@@ -23,14 +23,18 @@ from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
 from Bio import SeqIO
 from torch.utils.data import DataLoader
 from shutil import copyfileobj
 
 from utils.utils import load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx
 from utils.preprocessing import featurise
+from models.target_identifier import MultiModalTargetIdentifier
+from models.lightning import MultiModalLightningTargetIdentifier
 
 
+# data preprocessing
 class GeneCharacterisationPreprocessor:
     """
     This class loads and combines the different data sources into a single feature matrix to be fed into our model.
@@ -1719,6 +1723,213 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.pathogenicity_features = gene_am_features
 
 
+# Model preprocessing
+class ModelPreprocessor:
+    def __init__(self, config, data):
+        self.config = config
+        self.data = data
+        self.gc_data = data['train']['gc']
+        self.go_data = data['train']['go']
+        self.pvc_data = data['train']['pvc'].copy()
+        self.pvc_data.pop('labels')
+        self.labels = self.gc_data['target'].to_dict()
+        self.test_labels = data["test_labels"]
+        self.genes = data['genes']
+        self.num_features = data['num_features']
+        self.test_data = data['test_data']
+        self.test_genes = data['test_genes']
+        self.train_genes, self.val_genes = train_test_split(self.genes, test_size=0.2, random_state=config['hyperparameters']['seed'])
+        self.torch_dtype = torch.bfloat16 if config['hyperparameters']['precision'] == 'bf16' else torch.float32
+        torch.set_default_dtype(self.torch_dtype)
+
+    def model_init(self):
+        self.gc_data = self.gc_data.drop(columns=['target'])
+        self.go_data = self.go_data.drop(columns=['target'])
+
+        gc_train_raw = self.gc_data.loc[self.train_genes, :]
+        gc_val_raw = self.gc_data.loc[self.val_genes, :]
+
+        go_train_raw = self.go_data.loc[self.train_genes, :]
+        go_val_raw = self.go_data.loc[self.val_genes, :]
+
+        pvc_train_raw = {k: v for k, v in self.pvc_data.items() if k in self.train_genes}
+        pvc_val_raw = {k: v for k, v in self.pvc_data.items() if k in self.val_genes}
+
+        train_raw = {
+            'gc': gc_train_raw,
+            'go': go_train_raw,
+            'pvc': pvc_train_raw
+        }
+
+        val_raw = {
+            'gc': gc_val_raw,
+            'go': go_val_raw,
+            'pvc': pvc_val_raw
+        }
+
+        model, train_combined, val_combined, test_combined, hyperparameters, accelerator = self.initialise_model(
+            train_raw,
+            val_raw,
+            self.labels,
+            self.test_labels,
+            self.train_genes,
+            self.val_genes,
+            self.test_genes,
+            self.test_data,
+            self.num_features,
+            self.torch_dtype,
+            self.config
+        )
+
+        return model, train_combined, val_combined, test_combined, hyperparameters, accelerator
+
+    def initialise_model(self, train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes, test,
+                         num_features, torch_dtype, config):
+        hyperparams = config['hyperparameters']
+        train_combined, val_combined, test_combined, train_imbalance = self.normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes, test, torch_dtype, config)
+
+        max_genes_pvc = max([train_raw['pvc'][gene].shape[0] for gene in train_raw['pvc'].keys()])
+        with open("../data/elgh/missense_mutation_map.pkl", "rb") as f:
+            missense_map = pkl.load(f)
+        num_mutations = len(missense_map)
+
+        gc_features_dim = train_raw['gc'].shape[1]
+        go_features_dim = train_raw['go'].shape[1]
+
+        model = MultiModalLightningTargetIdentifier(
+            config=config,
+            imbalance=train_imbalance,
+            gc_features_dim=gc_features_dim,
+            num_features_go=go_features_dim,
+            num_mutations=num_mutations,
+            max_seq_len=hyperparams['max_seq_len'],
+            num_genes=max_genes_pvc,
+            num_iters=len(train_combined)
+        )
+
+        accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'
+
+        hyperparameters = dict(
+            depth=hyperparams['num_layers'],
+            lr=hyperparams['lr_start'],
+            batch_size=hyperparams['batch_size'],
+            optimizer=hyperparams['optimizer'],
+            epochs=hyperparams['epochs'],
+            dropout=hyperparams['dropout'],
+            width=hyperparams['width'],
+            weight_decay=hyperparams['weight_decay']
+        )
+
+        return model, train_combined, val_combined, test_combined, hyperparameters, accelerator
+
+    @staticmethod
+    def normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes, test_raw,
+                       torch_dtype, config):
+        hparams = config['hyperparameters']
+
+        train_datasets = {}
+        val_datasets = {}
+        test_datasets = {key: {} for key in test_raw.keys()}
+        scalers = {}
+
+        for module_str, train_data in train_raw.items():
+            if module_str != "pvc":
+                val_norm = val_raw[module_str].values
+                train_norm = train_data.values
+
+                scaler = MinMaxScaler()
+                train_norm = scaler.fit_transform(train_norm)
+                val_norm = scaler.transform(val_norm)
+                scalers[module_str] = scaler
+
+                train_norm = {gene: train_norm[i] for i, gene in enumerate(train_genes)}
+                val_norm = {gene: val_norm[i] for i, gene in enumerate(val_genes)}
+
+                train_datasets[module_str] = dl.MultiModalData(
+                    data=train_norm,
+                    labels=labels,
+                    gene_names=train_genes,
+                    dtype=torch_dtype
+                )
+
+                val_datasets[module_str] = dl.MultiModalData(
+                    data=val_norm,
+                    labels=labels,
+                    gene_names=val_genes,
+                    dtype=torch_dtype
+                )
+
+                for key, modalities in test_raw.items():
+                    normed = scaler.transform(modalities[module_str].values)
+                    normed = {gene: normed[i] for i, gene in enumerate(test_genes[key][module_str])}
+                    test_datasets[key][module_str] = dl.MultiModalData(
+                        data=normed,
+                        labels=test_labels,
+                        gene_names=test_genes[key][module_str],
+                        dtype=torch_dtype,
+                        test_source=key
+                    )
+            else:
+                train_datasets[module_str] = dl.MultiModalData(
+                    data=None,
+                    labels=None,
+                    gene_names=train_genes,
+                    dtype=torch_dtype,
+                    variant_data={'data': train_data, 'labels': labels},
+                    max_variants=hparams['max_seq_len']
+                )
+
+                val_datasets[module_str] = dl.MultiModalData(
+                    data=None,
+                    labels=None,
+                    gene_names=val_genes,
+                    dtype=torch_dtype,
+                    variant_data={'data': val_raw[module_str], 'labels': labels},
+                    max_variants=hparams['max_seq_len']
+                )
+
+                for key, modalities in test_raw.items():
+                    test_datasets[key][module_str] = dl.MultiModalData(
+                        data=None,
+                        labels=None,
+                        gene_names=test_genes[key][module_str],
+                        dtype=torch_dtype,
+                        variant_data={
+                            'data': modalities[module_str],
+                            'labels': test_labels,
+                            'test_source': key
+                        },
+                        max_variants=hparams['max_seq_len'],
+                        test_source=key
+                    )
+
+        train_loader = dl.MultiModalDataLoader(
+            datasets=train_datasets,
+            batch_size=hparams['batch_size'],
+            shuffle=True
+        )
+
+        val_loader = dl.MultiModalDataLoader(
+            datasets=val_datasets,
+            batch_size=hparams['batch_size'],
+            shuffle=False
+        )
+
+        test_loaders = {}
+        for key in test_raw.keys():
+            test_loaders[key] = dl.MultiModalDataLoader(
+                datasets=test_datasets[key],
+                batch_size=len(next(iter(test_datasets[key].values()))),
+                shuffle=False
+            )
+
+        label_imb_raw = next(iter(train_datasets.values())).label_imbalance()
+        label_imbalance = label_imb_raw.item() if isinstance(label_imb_raw, torch.Tensor) else label_imb_raw
+
+        return train_loader, val_loader, test_loaders, label_imbalance
+
+
+# Deprecated
 class __WildtypeLoader:
     """
     This class is deprecatated. Wildtype gets loaded in the VariantLoader class. This class is kept for reference and
