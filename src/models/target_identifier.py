@@ -36,7 +36,7 @@ class BaseTargetIdentifier(torch.nn.Module):
             self.classifier
         )
 
-        # self.init_weights = self.initialise_weights()
+        self.init_weights = self.initialise_weights()
 
         self.acc = Accuracy(task="binary", threshold=config['hyperparameters']['threshold'])
         self.auroc = AUROC(task="binary")
@@ -150,13 +150,15 @@ class MultiModalTargetIdentifier(BaseTargetIdentifier):
         # Create the classification branch
         combined_input_size = int(self.config['width']) * 2 + int(self.config['d_model'])
         classification_layers = [
-            torch.nn.Linear(combined_input_size, 1)
-            # torch.nn.BatchNorm1d(int(self.config['width'])),
-            # torch.nn.ReLU(),
-            # torch.nn.Dropout(p=float(self.config['dropout'])),
-            # torch.nn.Linear(int(self.config['width']), 1)
+            torch.nn.Linear(combined_input_size, int(self.config['width'])),
+            torch.nn.BatchNorm1d(int(self.config['width'])),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(p=float(self.config['dropout'])),
+            torch.nn.Linear(int(self.config['width']), 1)
         ]
         self.classification_branch = torch.nn.Sequential(*classification_layers)
+
+        self.init_weights = self.initialise_weights()
 
     def forward(self, x, mask=None):
         gc_output_dict = self.gc_branch(x['gc'][0], return_features=True)
@@ -182,19 +184,3 @@ class MultiModalTargetIdentifier(BaseTargetIdentifier):
         binary_predictions = (probabilities > float(self.config['threshold'])).float()
 
         return logits, probabilities, binary_predictions
-
-    def load_from_checkpoint(self, checkpoint_path, config):
-        if torch.cuda.is_available():
-            checkpoint = torch.load(checkpoint_path)
-        else:
-            checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
-        model = MultiModalTargetIdentifier(
-            config=config,
-            num_features_gc=self.num_features_gc,
-            num_features_go=self.num_features_go,
-            num_mutations=self.num_mutations,
-            max_seq_len=self.max_seq_len,
-            num_genes=self.num_genes
-        )
-        model.load_state_dict(checkpoint['state_dict'])
-        return model
