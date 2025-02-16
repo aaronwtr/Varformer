@@ -1,40 +1,54 @@
 import torch
 import yaml
+import pickle as pkl
+
 from pytorch_lightning import Trainer
+from pytorch_lightning.utilities.model_summary import ModelSummary
 from torch.utils.data import DataLoader
-from preprocessing import GeneCharacterisationPreprocessor
-from models.target_identifier import MultiModalTargetIdentifier
-from dataloader import ModuleDataProcessor
+
+from preprocessing import GeneCharacterisationPreprocessor, ModelPreprocessor
+from models.lightning import MultiModalLightningTargetIdentifier
+from dataloader import ModuleDataProcessor, MultiModalDataLoader
 
 
-def load_test_data(go, gc, pvc, psc):
+def load_test_data(go, gc, pvc, psc, config):
     data = ModuleDataProcessor(gc, go, pvc, psc).process()
-    return data['test_data']
+    return preprocess_test_data(data, config)
+
+
+def preprocess_test_data(data, config):
+    preprocessor = ModelPreprocessor(config, data)
+    _, _, _, test_combined, _, _ = preprocessor.model_init()
+    return test_combined
+
+
+def load_model(config, data):
+    preprocessor = ModelPreprocessor(config, data)
+    model, train_combined, val_combined, test_combined, hyperparameters, accelerator = preprocessor.model_init()
+    return model
 
 
 def test_model(test_data, model_checkpoint_path, config):
-    # TODO: Figure out how to get the feature dimensions here
-    model_init = MultiModalTargetIdentifier(
-        config=config,
-        num_features_gc=gc_features_dim,
-        num_features_go=go_features_dim,
-        num_mutations=num_mutations,
-        max_seq_len=hyperparams['max_seq_len'],
-        num_genes=max_genes_pvc
-    )
-    model = model_init.load_from_checkpoint(model_checkpoint_path, config=config)
-    test_loader = DataLoader(test_data, batch_size=config['batch_size'], shuffle=False)
+    model = MultiModalLightningTargetIdentifier.load_from_checkpoint(model_checkpoint_path, config=config)
+    summary = ModelSummary(model, max_depth=-1)
+    print(summary)
     trainer = Trainer(accelerator='gpu' if torch.cuda.is_available() else 'cpu')
-    test_results = trainer.test(model, test_loader)
+    trainer.test(model=model, dataloaders=test_data["pfam"])
+    trainer.test(model=model, dataloaders=test_data["rcnt"])
+    trainer.test(model=model, dataloaders=test_data["pharos"])
 
 
 def run_test(**modules):
+    # TODO: Wandb integration
+    with open('config.yml', 'r') as file:
+        config = yaml.safe_load(file)
+
     gc = modules.get('gc', False)
     go = modules.get('go', False)
     pvc = modules.get('pvc', False)
     psc = modules.get('psc', False)
-    test_data = load_test_data(gc, go, pvc, psc)
-    model_ckpt_path = 'checkpoints/seed42-epochepoch=76-val_aurocval_auroc=0.90.ckpt'
-    with open('config.yml', 'r') as file:
-        config = yaml.safe_load(file)
+
+    test_data = load_test_data(gc, go, pvc, psc, config)
+
+    model_ckpt_path = 'checkpoints/seed42-epoch=98-val_auroc=0.87.ckpt'
     test_model(test_data, model_ckpt_path, config)
