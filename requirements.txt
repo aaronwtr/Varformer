@@ -11,10 +11,10 @@ pandas==2.0.0
 pytorch_lightning==2.1.1
 PyYAML==6.0.1
 PyYAML==6.0.1
-Requests==2.31.0
+Requests~=2.28.2
 scikit_learn==1.2.2
-scipy==1.13.0
-seaborn==0.13.2
+scipy~=1.10.1
+seaborn~=0.12.2
 shap==0.41.0
 torch==2.1.1
 torchmetrics==1.2.0
@@ -22,3 +22,8 @@ tqdm==4.65.0
 umap_learn==0.5.4
 xgboost==1.7.5
 wandb==0.16.0
+
+scikit-learn~=1.2.2
+pysam~=0.22.1
+yaml~=0.2.5
+tabulate~=0.9.0
