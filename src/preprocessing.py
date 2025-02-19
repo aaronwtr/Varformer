@@ -177,10 +177,6 @@ class GeneCharacterisationPreprocessor:
         total_holdout = num_pfam_pos + num_rcnt_pos + num_pharos_pos + num_negs
 
         num_positives = len(self.full_data[self.full_data['target'] == 1])
-        print(f"Number of approved drug targets in the training data: {num_positives}")
-        print(f"Number of approved or putative drug targets in the holdout data: {total_holdout}\n")
-        print(f"Num positives and negatives:\n\t- Pfam: {num_pfam_pos}\n\t- Recently approved: {num_rcnt_pos}\n\t- "
-              f"Pharos: {num_pharos_pos}")
 
         # Remove holdout data from training data
         self.data = self.full_data[~self.full_data.index.isin(self.all_test_ids.index)]
@@ -881,7 +877,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
     it generates and processes embeddings of AlphaFold's residue-wise pLDDT score.
     """
 
-    def __init__(self, config, gcp=None, tune=False):
+    def __init__(self, config, gcp=None):
         if not gcp:
             super().__init__(config)
             self.gcp_data = self.data
@@ -928,21 +924,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             with open("../data/features/var_pat_features.pkl", "rb") as f:
                 self.var_pat_features = pkl.load(f)
 
-        # print("Obtaining AlphaFold protein structure embeddings")
-        # self.var_stc_features = self.variant_structure_input()
-
-        # if self.device == 'cuda':
-        #     # self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t48_15B_UR50D()
-        #     # self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t36_3B_UR50D()
-        #     self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t33_650M_UR50D()
-        #     self.esm_model = self.esm_model.half()
-        # else:
-        #     self.esm_model, self.esm_alphabet = esm.pretrained.esm2_t33_650M_UR50D()
-        # self.esm_model = self.esm_model.to(self.device)
-        # self.esm_batch_converter = self.esm_alphabet.get_batch_converter()
-        # self.esm_model.eval()
-        # self.var_seq_features = self.variant_sequence_input()
-
         self.norm = False
 
         # Ground truth
@@ -951,53 +932,49 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         self.pat_ensg_ids = pd.Series(list(self.var_pat_features.keys()))
 
-        if not tune:
-            # Get test data and remove from train feature matrix
-            self.pfam_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.pfam_ids)]
-            self.pfam_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_ids}
-            num_pfam_pos = len(self.pfam_pos_dict)
+        # Get test data and remove from train feature matrix
+        self.pfam_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.pfam_ids)]
+        self.pfam_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_ids}
+        num_pfam_pos = len(self.pfam_pos_dict)
 
-            self.rcnt_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.rcnt_ids)]
-            self.rcnt_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_ids}
-            num_rcnt_pos = len(self.rcnt_pos_dict)
+        self.rcnt_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.rcnt_ids)]
+        self.rcnt_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_ids}
+        num_rcnt_pos = len(self.rcnt_pos_dict)
 
-            self.pharos_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.pharos_ids)]
-            self.pharos_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_ids}
-            num_pharos_pos = len(self.pharos_pos_dict)
+        self.pharos_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.pharos_ids)]
+        self.pharos_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_ids}
+        num_pharos_pos = len(self.pharos_pos_dict)
 
-            self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
+        self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
 
-            self.pfam_negs = self.gcp.pfam_negs
-            self.rcnt_negs = self.gcp.rcnt_negs
-            self.pharos_negs = self.gcp.pharos_negs
+        self.pfam_negs = self.gcp.pfam_negs
+        self.rcnt_negs = self.gcp.rcnt_negs
+        self.pharos_negs = self.gcp.pharos_negs
 
-            self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs])
-            self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs])
-            self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs])
+        self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs])
+        self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs])
+        self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs])
 
-            self.pfam_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_negs if
-                                  ensg in self.var_pat_features}
-            self.rcnt_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_negs if
-                                  ensg in self.var_pat_features}
-            self.pharos_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_negs if
-                                    ensg in self.var_pat_features}
+        self.pfam_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_negs if
+                              ensg in self.var_pat_features}
+        self.rcnt_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_negs if
+                              ensg in self.var_pat_features}
+        self.pharos_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_negs if
+                                ensg in self.var_pat_features}
 
-            self.pfam_data = {**self.pfam_pos_dict, **self.pfam_neg_data}
-            self.rcnt_data = {**self.rcnt_pos_dict, **self.rcnt_neg_data}
-            self.pharos_data = {**self.pharos_pos_dict, **self.pharos_neg_data}
+        self.pfam_data = {**self.pfam_pos_dict, **self.pfam_neg_data}
+        self.rcnt_data = {**self.rcnt_pos_dict, **self.rcnt_neg_data}
+        self.pharos_data = {**self.pharos_pos_dict, **self.pharos_neg_data}
 
-            self.ensg_ids = self.pat_ensg_ids
+        self.ensg_ids = self.pat_ensg_ids
 
-            # remove all the test genes from the data dictionary
-            self.data = {key: value for key, value in self.var_pat_features.items()
-                         if key not in self.holdout_ids.tolist()}
-            pharos_pos_ensgs = list(self.pharos_pos_dict.keys())
-            # set the value of the putative positive targets from pharos 1
-            self.labels = {key: 1 if key in pharos_pos_ensgs else self.labels[key] for key in self.labels.keys()}
-            self.data['labels'] = self.labels
-        else:
-            self.data = self.var_pat_features
-            self.data['labels'] = self.labels
+        # remove all the test genes from the data dictionary
+        self.data = {key: value for key, value in self.var_pat_features.items()
+                     if key not in self.holdout_ids.tolist()}
+        pharos_pos_ensgs = list(self.pharos_pos_dict.keys())
+        # set the value of the putative positive targets from pharos 1
+        self.labels = {key: 1 if key in pharos_pos_ensgs else self.labels[key] for key in self.labels.keys()}
+        self.data['labels'] = self.labels
 
     def variant_gh_data(self, config):
         print("Preparing GH data for variant-level embeddings...")
@@ -1786,7 +1763,10 @@ class ModelPreprocessor:
     def initialise_model(self, train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes, test,
                          num_features, torch_dtype, config):
         hyperparams = config['hyperparameters']
-        train_combined, val_combined, test_combined, train_imbalance = self.normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes, test, torch_dtype, config)
+        train_combined, val_combined, test_combined, train_imbalance = self.normalise_data(train_raw, val_raw, labels,
+                                                                                           test_labels, train_genes,
+                                                                                           val_genes, test_genes, test,
+                                                                                           torch_dtype, config)
 
         max_genes_pvc = max([train_raw['pvc'][gene].shape[0] for gene in train_raw['pvc'].keys()])
         with open("../data/elgh/missense_mutation_map.pkl", "rb") as f:
@@ -1902,6 +1882,13 @@ class ModelPreprocessor:
                         max_variants=hparams['max_seq_len'],
                         test_source=key
                     )
+
+        #get from the test_datasets['pharos']['gc'] the gene names and the labels
+        test_gene_names = test_datasets['pharos']['gc'].gene_names
+        test_labels = test_datasets['pharos']['gc'].labels
+        subset_labels_test = {gene: test_labels[gene] for gene in test_gene_names if gene in test_labels}
+        subset_labels = {gene: labels[gene] for gene in test_gene_names if gene in labels}
+
 
         train_loader = dl.MultiModalDataLoader(
             datasets=train_datasets,
