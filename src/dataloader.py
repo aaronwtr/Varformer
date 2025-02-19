@@ -9,6 +9,7 @@ import pandas as pd
 
 from torch.utils.data import Dataset, BatchSampler, Sampler
 from typing import Dict, List, Tuple, Iterator, Union, Iterable
+from tabulate import tabulate
 
 
 class ModuleDataProcessor:
@@ -30,6 +31,14 @@ class ModuleDataProcessor:
             data['go'] = self.open_go_data(data['gc'])
         if self.pvc:
             data['pvc'] = self.open_pvc_data(data['gc'])
+        # TODO 1: do pos label check here
+        # TODO finding: So the error must be at the preprocessing stage. Data is already faulty here
+        # TODO idea: get all the test data at the PVC module to guarantee that the data is in there
+        # get pvc labels and run through gc test_labels to check if they are in there
+        pvc_data = data['pvc'].pharos_data
+        pvc_pharos_ensg = list(pvc_data.keys())
+        test_labels = data['gc'].test_labels
+        pvc_test_labels = {k: v for k, v in test_labels.items() if k in pvc_pharos_ensg}
         return self.homogenize_data(data)
 
     def open_gc_data(self):
@@ -42,8 +51,8 @@ class ModuleDataProcessor:
         print("Gene ontology features preprocessed!\n")
         return gop
 
-    def open_pvc_data(self, gc_data, tune=False):
-        pvc = preprocessing.PopulationVariantPreprocessor(config=self.config, gcp=gc_data, tune=tune)
+    def open_pvc_data(self, gc_data):
+        pvc = preprocessing.PopulationVariantPreprocessor(config=self.config, gcp=gc_data)
         print("Population variants preprocessed!\n")
         return pvc
 
@@ -107,13 +116,13 @@ class ModuleDataProcessor:
             pvc_ensg = list(pvc_dict.keys())
 
             common_genes = set(pvc_ensg).intersection(set(gc_ensg))
+            # TODO: check if pos is retained here
 
             for gene in common_genes:
                 if gene not in pvc_ensg:
                     pvc_dict.pop(gene, None)
 
             setattr(pvc_data, f"{source}_data", pvc_dict)
-
             gc_all_ids = gc_data.all_test_ids
             gc_ids = gc_all_ids[gc_all_ids.isin(common_genes)].drop_duplicates().index.tolist()
             setattr(gc_data, f"{source}_data", getattr(gc_data, f"{source}_data").loc[gc_ids])
@@ -180,6 +189,8 @@ class ModuleDataProcessor:
                 pfam_all_ids = [gene for gene in ensg_ids if gene in pfam_data_ids]
                 combined_test_genes["pfam"][module] = pfam_all_ids
 
+            pfam_labeled = {gene: test_labels[gene] for gene in pfam_all_ids}
+
             if hasattr(preprocessor, 'rcnt_data'):
                 rcnt_test_data = preprocessor.rcnt_data
 
@@ -197,6 +208,8 @@ class ModuleDataProcessor:
                 rcnt_all_ids = [gene for gene in ensg_ids if gene in rcnt_data_ids]
                 combined_test_genes["rcnt"][module] = rcnt_all_ids
 
+            rcnt_labeled = {gene: test_labels[gene] for gene in rcnt_all_ids}
+
             if hasattr(preprocessor, 'pharos_data'):
                 pharos_test_data = preprocessor.pharos_data
 
@@ -212,6 +225,33 @@ class ModuleDataProcessor:
                 # Ensure consistent order based on ensg_ids
                 pharos_all_ids = [gene for gene in ensg_ids if gene in pharos_data_ids]
                 combined_test_genes["pharos"][module] = pharos_all_ids
+
+                # make sure putative targets are labelled as positive in test set for pharos
+                pharos_pos_data = preprocessor.pharos_ids.tolist()
+                pharos_pos_data = [gene for gene in pharos_pos_data if gene in test_labels.keys()]
+                test_labels.update({gene: 1 for gene in pharos_pos_data})
+                pharos_labeled = {gene: test_labels[gene] for gene in pharos_all_ids}
+
+        train_targets = combined_train['gc']['target'].tolist()
+        num_positives = sum(train_targets)
+        num_negatives = len(train_targets) - num_positives
+        num_pfam_pos = sum(pfam_labeled.values())
+        num_pfam_neg = len(pfam_labeled) - num_pfam_pos
+        num_rcnt_pos = sum(rcnt_labeled.values())
+        num_rcnt_neg = len(rcnt_labeled) - num_rcnt_pos
+        num_pharos_pos = sum(pharos_labeled.values())
+        num_pharos_neg = len(pharos_labeled) - num_pharos_pos
+
+        data = [
+            ["Training Data", num_positives, num_negatives, "-"],
+            ["Pfam Test Data", num_pfam_pos, "-", num_pfam_neg],
+            ["Recent Test Data", num_rcnt_pos, "-", num_rcnt_neg],
+            ["Pharos Test Data", num_pharos_pos, "-", num_pharos_neg]
+        ]
+
+        headers = ["Data Source", "Approved Drug Targets", "Unlabelled Targets", "Putative Rejected Drug Targets"]
+
+        print(tabulate(data, headers=headers, tablefmt="pretty"))
 
         return {
             "train": combined_train,
