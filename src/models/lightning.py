@@ -15,8 +15,12 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
         self.config = config['hyperparameters']
         self.model = model
 
-    def _log(self, labels, step_type, loss, bin_preds, probas, test_source=None):
+    def _log(self, labels, step_type, loss, bin_preds, probas, pos_loss=None, neg_loss=None, test_source=None):
         if step_type in ['train', 'val']:
+            if pos_loss is not None:
+                self.log(f'{step_type}_pos_loss', pos_loss, batch_size=labels.shape[0])
+            if neg_loss is not None:
+                self.log(f'{step_type}_neg_loss', neg_loss, batch_size=labels.shape[0])
             self.log(f'{step_type}_loss', loss, batch_size=labels.shape[0])
             self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels), batch_size=labels.shape[0])
             self.log(f'{step_type}_auroc', self.model.auroc(probas, labels.int()),
@@ -49,7 +53,6 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
                     f'{step_type}_{test_source}_probas': probas.to(dtype=torch.float32).detach().cpu().numpy(),
                     f'{step_type}_{test_source}_labels': labels.to(dtype=torch.float32).detach().cpu().numpy()
                 })
-            print('break')
 
     def _common_step(self, batch, batch_idx, step_type):
         if len(batch) > 2:  # For transformer
@@ -75,7 +78,7 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
             self._log(labels, step_type, loss, bin_preds, probas)
         else:
             loss = None
-            self._log(labels, step_type, loss, bin_preds, probas, test_source)
+            self._log(labels, step_type, loss, bin_preds, probas, test_source=test_source)
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -281,16 +284,23 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
             logits, probas, bin_preds = self(batch, batch["pvc"]["mask"])
 
             labels = pvc_labels  # we can pick any of the three label set
+            pos_indices = labels == 1
+            neg_indices = labels == 0
+
+            pos_loss = F.binary_cross_entropy_with_logits(logits[pos_indices], labels[
+                pos_indices].float()) if pos_indices.any() else torch.tensor(0.0, device=self.device)
+            neg_loss = F.binary_cross_entropy_with_logits(logits[neg_indices], labels[
+                neg_indices].float()) if neg_indices.any() else torch.tensor(0.0, device=self.device)
             if step_type == 'train':
-                class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))],
+                class_weight = torch.tensor([1 if labels[i] == 1 else self.imbalance for i in range(len(labels))],
                                             device=self.device)
                 loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
-                self._log(labels, step_type, loss, bin_preds, probas)
+                self._log(labels, step_type, loss, bin_preds, probas, pos_loss, neg_loss)
             elif step_type == 'val':
                 if logits.shape != labels.shape:
                     logits = logits.unsqueeze(0)  # For the case where the batch size is 1
                 loss = F.binary_cross_entropy_with_logits(logits, labels.float())
-                self._log(labels, step_type, loss, bin_preds, probas)
+                self._log(labels, step_type, loss, bin_preds, probas, pos_loss, neg_loss)
             else:
                 loss = None
                 self._log(labels, step_type, loss, bin_preds, probas, test_source)
