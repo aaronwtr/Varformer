@@ -31,14 +31,6 @@ class ModuleDataProcessor:
             data['go'] = self.open_go_data(data['gc'])
         if self.pvc:
             data['pvc'] = self.open_pvc_data(data['gc'])
-        # TODO 1: do pos label check here
-        # TODO finding: So the error must be at the preprocessing stage. Data is already faulty here
-        # TODO idea: get all the test data at the PVC module to guarantee that the data is in there
-        # get pvc labels and run through gc test_labels to check if they are in there
-        pvc_data = data['pvc'].pharos_data
-        pvc_pharos_ensg = list(pvc_data.keys())
-        test_labels = data['gc'].test_labels
-        pvc_test_labels = {k: v for k, v in test_labels.items() if k in pvc_pharos_ensg}
         return self.homogenize_data(data)
 
     def open_gc_data(self):
