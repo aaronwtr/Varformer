@@ -120,7 +120,6 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
                  num_genes, num_iters, class_prior):
         self.save_hyperparameters()
         super().__init__(model=None, config=config, num_samples_per_class=num_samples_per_class)
-
         self.model = MultiModalTargetIdentifier(
             config=config,
             num_features_gc=num_features_gc,
@@ -156,14 +155,25 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
                     gc_labels = batch[key][1]
 
             # Forward pass through the model (using the pvc mask for transformer inputs)
-            logits, probas, bin_preds = self.model(
-                {
-                    'gc': batch['gc'],
-                    'go': batch['go'],
-                    'pvc': batch['pvc']
-                },
-                batch["pvc"]["mask"]
-            )
+            if self.config['return_attn']:
+                logits, probas, bin_preds, attn_weigths = self.model(
+                    {
+                        'gc': batch['gc'],
+                        'go': batch['go'],
+                        'pvc': batch['pvc']
+                    },
+                    batch["pvc"]["mask"]
+                )
+            else:
+                logits, probas, bin_preds = self.model(
+                    {
+                        'gc': batch['gc'],
+                        'go': batch['go'],
+                        'pvc': batch['pvc']
+                    },
+                    batch["pvc"]["mask"]
+                )
+
             labels = pvc_labels  # Use the labels from pvc branch
             eps = 1e-8  # to avoid log(0)
 
