@@ -83,9 +83,9 @@ class GeneCharacterisationPreprocessor:
             miva_feature_matrix.to_pickle('../data/features/raw_miva_feature_matrix.pkl')
 
         feature_extractors = {
-            'chem_features.pkl': self.chem_feature_extractor,
-            'gnomad_features.pkl': self.gnomad_feature_extractor,
-            'mouse_ko_features.pkl': self.mouse_knockout_feature_extractor,
+            #   'chem_features.pkl': self.chem_feature_extractor,
+            #   'gnomad_features.pkl': self.gnomad_feature_extractor,
+            #   'mouse_ko_features.pkl': self.mouse_knockout_feature_extractor,
             'gene_essentiality_features.pkl': self.gene_essentiality_feature_extractor,
             'ppi_features.pkl': self.ppi_feature_extractor,
         }
@@ -100,88 +100,142 @@ class GeneCharacterisationPreprocessor:
                 print(f"Loading {feature_file}...")
                 with open(f'../data/features/{feature_file}', 'rb') as fp:
                     setattr(self, feature_file.split('.')[0], pkl.load(fp))
+        #
+        # ensg_features = {
+        #     "chemical_interaction_count": self.chem_features,
+        #     "pli_lof_constraint": self.gnomad_features,
+        #     "mouse_ko_effect": self.mouse_ko_features,
+        #     "ppi_count": self.ppi_features,
+        #     "common_essentials": self.gene_essentiality_features,
+        # }
 
-        ensg_features = {
-            "chemical_interaction_count": self.chem_features,
-            "pli_lof_constraint": self.gnomad_features,
-            "mouse_ko_effect": self.mouse_ko_features,
-            "ppi_count": self.ppi_features,
+        self.ensg_features = {
+            # "ppi_count": self.ppi_features,
             "common_essentials": self.gene_essentiality_features,
         }
 
-        self.features, self.ensg_ids, self.uniprot_ids = featurise(ensg_features)
-        self.norm = True
+        self.features = self.load_opentargets_features()
+        for feature_name, gene_dict in self.ensg_features.items():
+            self.features[feature_name] = self.features['targetId'].map(gene_dict)
+
+        self.features = self.features[self.features['targetId'].isin(self.gh_data['Gene'])]
+        # check feature statistics in the features attribute here
+
+        self.features = self.features.fillna(0)
+
+        self.ensg_ids = self.features["targetId"]
+        # self.features, self.ensg_ids, self.uniprot_ids = featurise(ensg_features)
+        # self.norm = True
 
         # Ground truth
-        self.target = load_combined_labels()
+        self.features = self.features.rename(columns={'maxClinicalTrialPhase': 'target'})
+        self.features['target'] = self.features['target'].apply(lambda x: 1.0 if x >= 0.75 else 0.0)
+        self.features = self.features[[col for col in self.features if col != 'target'] + ['target']]
+        self.ot_targets = self.features[['targetId', 'target']]
+        self.target = load_combined_labels(self.ot_targets)
 
         # Combine features and target
         self.labels_dict = utils.utils.get_labels(self.ensg_ids, self.target)
         self.full_data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
-
-        # Get test data and remove from train feature matrix
-        self.pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.drgbl_targets_pfam)]
-
-        self.rcnt_ids = self.ensg_ids[self.ensg_ids.isin(self.rcnt_targets_fda)]
-
-        self.pharos_ids = self.ensg_ids[self.ensg_ids.isin(self.chem_targets_pharos)]
-
-        self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
-
-        self.data_neg = self.full_data[~self.full_data.index.isin(self.holdout_ids.index)]
-
-        common_essentials = self.full_data[self.full_data['common_essentials'] == 1]
-        common_essentials = common_essentials[common_essentials['target'] == 0]
-        common_essentials = common_essentials[common_essentials['pli_lof_constraint'] > 0.9]
-        negative_test_balance = common_essentials.sample(n=len(self.holdout_ids), random_state=42)
-        negative_test_ids = self.ensg_ids[self.ensg_ids.index.isin(negative_test_balance.index)]
-        num_negs = len(negative_test_ids)
+        self.full_data.set_index('targetId', inplace=True)
+        # feature statistics can be checked here!
 
         # we remove common_essentials as a feature because most of them get filtered out when combining modalities. We
         # strictly use them here to define negatives for the test set.
         self.ce_data = self.full_data
-        self.full_data = self.full_data.drop('common_essentials', axis=1)
+        # self.full_data = self.full_data.drop('common_essentials', axis=1)
         self.num_features = len(self.full_data.columns)
 
-        self.pfam_pos_data = self.full_data[self.full_data.index.isin(self.pfam_ids.index)]
-        num_pfam_pos = len(self.pfam_pos_data)
+        # Get test data and remove from train feature matrix
+        # self.pfam_ids = self.ensg_ids[self.ensg_ids.isin(self.drgbl_targets_pfam)]
+        # self.pfam_ensg = self.pfam_ids.tolist()
+        #
+        # self.rcnt_ids = self.ensg_ids[self.ensg_ids.isin(self.rcnt_targets_fda)]
+        # self.rcnt_ensg = self.rcnt_ids.tolist()
+        #
+        # self.pharos_ids = self.ensg_ids[self.ensg_ids.isin(self.chem_targets_pharos)]
+        # self.pharos_ensg = self.pharos_ids.tolist()
+        #
+        # self.holdout_ensg = self.pfam_ensg + self.rcnt_ensg + self.pharos_ensg
+        #
+        # self.data_neg = self.full_data[~self.full_data.index.isin(self.holdout_ensg)]
+        #
+        # self.pfam_pos_data = self.full_data[self.full_data.index.isin(self.pfam_ensg)]
+        # num_pfam_pos = len(self.pfam_pos_data)
+        #
+        # self.rcnt_pos_data = self.full_data[self.full_data.index.isin(self.rcnt_ensg)]
+        # self.rcnt_pos_data.loc[:, 'target'] = 1
+        # num_rcnt_pos = len(self.rcnt_pos_data)
+        #
+        # self.pharos_pos_data = self.full_data[self.full_data.index.isin(self.pharos_ensg)]
+        # self.pharos_pos_data.loc[:, 'target'] = 1
+        # num_pharos_pos = len(self.pharos_pos_data)
+        #
+        # self.num_pos = len(self.full_data[self.full_data['target'] == 1])
+        # self.num_neg = len(self.full_data[self.full_data['target'] == 0])
+        # self.class_prior = self.num_pos / self.num_neg
 
-        self.rcnt_pos_data = self.full_data[self.full_data.index.isin(self.rcnt_ids.index)]
-        self.rcnt_pos_data.loc[:, 'target'] = 1
-        num_rcnt_pos = len(self.rcnt_pos_data)
-
-        self.pharos_pos_data = self.full_data[self.full_data.index.isin(self.pharos_ids.index)]
-        self.pharos_pos_data.loc[:, 'target'] = 1
-        num_pharos_pos = len(self.pharos_pos_data)
-
-        self.pfam_negs = negative_test_ids.sample(n=num_pfam_pos, random_state=42)
-        negative_test_ids = negative_test_ids.drop(self.pfam_negs.index)
-        self.pfam_neg_data = self.full_data[self.full_data.index.isin(self.pfam_negs.index)]
-
-        self.rcnt_negs = negative_test_ids.sample(n=num_rcnt_pos, random_state=42)
-        negative_test_ids = negative_test_ids.drop(self.rcnt_negs.index)
-        self.rcnt_neg_data = self.full_data[self.full_data.index.isin(self.rcnt_negs.index)]
-
-        self.pharos_negs = negative_test_ids.sample(n=num_pharos_pos, random_state=42)
-        self.pharos_neg_data = self.full_data[self.full_data.index.isin(self.pharos_negs.index)]
-
-        self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs])
-        self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs])
-        self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs])
-        self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
-
-        self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
-        self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
-        self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
-
-        total_holdout = num_pfam_pos + num_rcnt_pos + num_pharos_pos + num_negs
-
-        num_positives = len(self.full_data[self.full_data['target'] == 1])
-
-        # Remove holdout data from training data
-        self.data = self.full_data[~self.full_data.index.isin(self.all_test_ids.index)]
+        # num_pfam_neg = int(num_pfam_pos / self.class_prior)
+        # num_rcnt_neg = int(num_rcnt_pos / self.class_prior)
+        # num_pharos_neg = int(num_pharos_pos / self.class_prior)
+        # total_negs = num_pfam_neg + num_rcnt_neg + num_pharos_neg
+        #
+        # common_essentials = self.ce_data[self.ce_data['common_essentials'] == 1]
+        # common_essentials = common_essentials[common_essentials['target'] == 0]
+        # common_essentials = common_essentials[common_essentials['geneticConstraint'] < -0.90]
+        # if total_negs >= len(common_essentials):
+        #     negative_test_balance = common_essentials
+        # else:
+        #     negative_test_balance = common_essentials.sample(n=total_negs,
+        #                                                      random_state=config['hyperparameters']['seed'])
+        #
+        # negative_test_ids = self.ensg_ids[self.ensg_ids.isin(negative_test_balance.index)]
+        # pfam_neg_ratio = float(num_pfam_neg / total_negs)
+        # rcnt_neg_ratio = float(num_rcnt_neg / total_negs)
+        # pharos_neg_ratio = float(num_pharos_neg / total_negs)
+        #
+        # num_pfam_neg = int(len(negative_test_ids) * pfam_neg_ratio)
+        # num_rcnt_neg = int(len(negative_test_ids) * rcnt_neg_ratio)
+        # num_pharos_neg = int(len(negative_test_ids) * pharos_neg_ratio)
+        #
+        # negative_test_ids = negative_test_ids.to_frame()
+        # negative_test_ids.set_index('targetId', inplace=True)
+        #
+        # self.pfam_negs = negative_test_ids.sample(n=num_pfam_neg, random_state=42)
+        # negative_test_ids = negative_test_ids.drop(self.pfam_negs.index)
+        # self.pfam_neg_data = self.full_data[self.full_data.index.isin(self.pfam_negs.index)]
+        #
+        # self.rcnt_negs = negative_test_ids.sample(n=num_rcnt_neg, random_state=42)
+        # negative_test_ids = negative_test_ids.drop(self.rcnt_negs.index)
+        # self.rcnt_neg_data = self.full_data[self.full_data.index.isin(self.rcnt_negs.index)]
+        #
+        # self.pharos_negs = negative_test_ids.sample(n=num_pharos_neg, random_state=42)
+        # self.pharos_neg_data = self.full_data[self.full_data.index.isin(self.pharos_negs.index)]
+        #
+        # self.pfam_ids = self.pfam_ids.to_frame()
+        # self.pfam_ids.set_index('targetId', inplace=True)
+        # self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs])
+        #
+        # self.rcnt_ids = self.rcnt_ids.to_frame()
+        # self.rcnt_ids.set_index('targetId', inplace=True)
+        # self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs])
+        #
+        # self.pharos_ids = self.pharos_ids.to_frame()
+        # self.pharos_ids.set_index('targetId', inplace=True)
+        # self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs])
+        # self.all_test_ids = pd.concat([self.pfam_ids_all, self.rcnt_ids_all, self.pharos_ids_all])
+        #
+        # self.pfam_data = pd.concat([self.pfam_pos_data, self.pfam_neg_data]).sample(frac=1)
+        # self.rcnt_data = pd.concat([self.rcnt_pos_data, self.rcnt_neg_data]).sample(frac=1)
+        # self.pharos_data = pd.concat([self.pharos_pos_data, self.pharos_neg_data]).sample(frac=1)
+        #
+        # # Remove holdout data from training data
+        # self.data = self.full_data[~self.full_data.index.isin(self.all_test_ids.index)]
+        self.data = self.full_data
         self.labels = self.labels_dict
-        self.test_labels = {key: self.labels[key] for key in self.all_test_ids.tolist()}
+        # # map the all_test_ids pd.Series to a list
+        # all_test_ids_list = self.all_test_ids.index.tolist()
+        # self.test_labels = {key: self.labels[key] for key in all_test_ids_list}
 
     def _get_files(self):
         """
@@ -299,6 +353,15 @@ class GeneCharacterisationPreprocessor:
         chem_targets_pharos = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name='chem_targets')
         chem_targets_pharos_genes = chem_targets_pharos['ENSG'].tolist()
         self.chem_targets_pharos = chem_targets_pharos_genes
+
+    def load_opentargets_features(self):
+        feature_path = self.config['paths']['OT_PATH']
+        ot_df = pd.read_pickle(feature_path)
+        cols_rm = ["isInMembrane", "isSecreted", "isCancerDriverGene", "tissueSpecificity"]
+        cols = ot_df.columns
+        cols_to_keep = [col for col in cols if col not in cols_rm]
+        ot_df = ot_df[cols_to_keep]
+        return ot_df
 
     def chem_feature_extractor(self):
         """
@@ -596,22 +659,22 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
             self.target = gcp.target
             self.gcp_data = gcp.data
             self.full_gcp_data = gcp.full_data
-            self.gcp_pfam_pos = gcp.pfam_pos_data
-            self.gcp_rcnt_pos = gcp.rcnt_pos_data
-            self.gcp_pharos_pos = gcp.pharos_pos_data
-            self.gcp_pfam_neg = gcp.pfam_neg_data
-            self.gcp_rcnt_neg = gcp.rcnt_neg_data
-            self.gcp_pharos_neg = gcp.pharos_neg_data
-            self.pfam_ids = gcp.pfam_ids
-            self.rcnt_ids = gcp.rcnt_ids
-            self.pharos_ids = gcp.pharos_ids
-            self.pfam_neg_data = gcp.pfam_neg_data
-            self.rcnt_neg_data = gcp.rcnt_neg_data
-            self.pharos_neg_data = gcp.pharos_neg_data
-            self.pfam_ids_all = gcp.pfam_ids_all
-            self.rcnt_ids_all = gcp.rcnt_ids_all
-            self.pharos_ids_all = gcp.pharos_ids_all
-            self.drgbl_targets_pfam = gcp.drgbl_targets_pfam
+            # self.gcp_pfam_pos = gcp.pfam_pos_data
+            # self.gcp_rcnt_pos = gcp.rcnt_pos_data
+            # self.gcp_pharos_pos = gcp.pharos_pos_data
+            # self.gcp_pfam_neg = gcp.pfam_neg_data
+            # self.gcp_rcnt_neg = gcp.rcnt_neg_data
+            # self.gcp_pharos_neg = gcp.pharos_neg_data
+            # self.pfam_ids = gcp.pfam_ids
+            # self.rcnt_ids = gcp.rcnt_ids
+            # self.pharos_ids = gcp.pharos_ids
+            # self.pfam_neg_data = gcp.pfam_neg_data
+            # self.rcnt_neg_data = gcp.rcnt_neg_data
+            # self.pharos_neg_data = gcp.pharos_neg_data
+            # self.pfam_ids_all = gcp.pfam_ids_all
+            # self.rcnt_ids_all = gcp.rcnt_ids_all
+            # self.pharos_ids_all = gcp.pharos_ids_all
+            # self.drgbl_targets_pfam = gcp.drgbl_targets_pfam
             # self.gcp_acmg = gcp.acmg_data
 
         print("Gene Ontology Preprocessor booting up...")
@@ -634,51 +697,44 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         self.combine_go_features()
 
         self.data = self.gene_ontology_features
+        self.data = self.data.set_index('ENSG')
+        self.data.index.name = 'targetId'
 
-        # self.acmg_data = self.data[self.data['ENSG'].isin(self.acmg_ids)]
-        # self.acmg_data = self.acmg_data.drop(columns=['ENSG'])
-        # self.acmg_data = self.acmg_data.set_index(self.gcp_acmg.index)
-        # self.acmg_data['target'] = self.gcp_acmg['target']
-
-        self.pfam_data = self.data[self.data['ENSG'].isin(self.pfam_ids)]
-        self.pfam_data = self.pfam_data.drop(columns=['ENSG'])
-        self.pfam_pos_data = self.pfam_data.set_index(self.gcp_pfam_pos.index)
-        self.pfam_pos_data['target'] = self.gcp_pfam_pos['target']
-
-        self.rcnt_data = self.data[self.data['ENSG'].isin(self.rcnt_ids)]
-        self.rcnt_data = self.rcnt_data.drop(columns=['ENSG'])
-        self.rcnt_pos_data = self.rcnt_data.set_index(self.gcp_rcnt_pos.index)
-        self.rcnt_pos_data['target'] = self.gcp_rcnt_pos['target']
-
-        self.pharos_data = self.data[self.data['ENSG'].isin(self.pharos_ids)]
-        self.pharos_data = self.pharos_data.drop(columns=['ENSG'])
-        self.pharos_pos_data = self.pharos_data.set_index(self.gcp_pharos_pos.index)
-        self.pharos_pos_data['target'] = self.gcp_pharos_pos['target']
-
-        neg_data = self.data.set_index(self.full_gcp_data.index)
-        pfam_neg_data = neg_data[neg_data.index.isin(self.pfam_neg_data.index)]
-        pfam_neg_data = pfam_neg_data.drop(columns=['ENSG'])
-        pfam_neg_data['target'] = 0
-
-        rcnt_neg_data = neg_data[neg_data.index.isin(self.rcnt_neg_data.index)]
-        rcnt_neg_data = rcnt_neg_data.drop(columns=['ENSG'])
-        rcnt_neg_data['target'] = 0
-
-        pharos_neg_data = neg_data[neg_data.index.isin(self.pharos_neg_data.index)]
-        pharos_neg_data = pharos_neg_data.drop(columns=['ENSG'])
-        pharos_neg_data['target'] = 0
-
-        self.pfam_data = pd.concat([self.pfam_pos_data, pfam_neg_data]).sample(frac=1)
-        self.rcnt_data = pd.concat([self.rcnt_pos_data, rcnt_neg_data]).sample(frac=1)
-        self.pharos_data = pd.concat([self.pharos_pos_data, pharos_neg_data]).sample(frac=1)
-
-        self.data = self.data.set_index(self.full_gcp_data.index)
-        self.data = self.data[~self.data.index.isin(self.pfam_ids_all.index)]
-        self.data = self.data[~self.data.index.isin(self.rcnt_ids_all.index)]
-        self.data = self.data[~self.data.index.isin(self.pharos_ids_all.index)]
-        self.data = self.data.drop(columns=['ENSG'])
-
-        self.data['target'] = self.gcp_data['target']
+        # self.pfam_data = self.data[self.data.index.isin(self.pfam_ids.index)]
+        # self.pfam_pos_data = self.pfam_data
+        # self.pfam_pos_data['target'] = 1.0
+        #
+        # self.rcnt_data = self.data[self.data.index.isin(self.rcnt_ids.index)]
+        # self.rcnt_pos_data = self.rcnt_data
+        # self.rcnt_pos_data['target'] = 1.0
+        #
+        # self.pharos_data = self.data[self.data.index.isin(self.pharos_ids.index)]
+        # self.pharos_pos_data = self.pharos_data
+        # self.pharos_pos_data['target'] = 1.0
+        #
+        # pfam_neg_data = self.data[self.data.index.isin(self.pfam_neg_data.index)]
+        # pfam_neg_data['target'] = 0.0
+        #
+        # rcnt_neg_data = self.data[self.data.index.isin(self.rcnt_neg_data.index)]
+        # rcnt_neg_data['target'] = 0.0
+        #
+        # pharos_neg_data = self.data[self.data.index.isin(self.pharos_neg_data.index)]
+        # pharos_neg_data['target'] = 0.0
+        #
+        # self.pfam_data = pd.concat([self.pfam_pos_data, pfam_neg_data]).sample(frac=1)
+        # self.rcnt_data = pd.concat([self.rcnt_pos_data, rcnt_neg_data]).sample(frac=1)
+        # self.pharos_data = pd.concat([self.pharos_pos_data, pharos_neg_data]).sample(frac=1)
+        #
+        # self.data = self.data[~self.data.index.isin(self.pfam_ids_all.index)]
+        # self.data = self.data[~self.data.index.isin(self.rcnt_ids_all.index)]
+        # self.data = self.data[~self.data.index.isin(self.pharos_ids_all.index)]
+        #
+        # target_mapping = self.gcp_data['target']
+        #
+        # self.data['target'] = float('nan')
+        # # Update self.data's target column where the index matches targetId in gcp_data
+        # self.data['target'] = self.data['target'].where(~self.data.index.isin(target_mapping.index), self.data.index.map(target_mapping))
+        # self.data = self.data[~self.data['target'].isna()]
 
         self.num_features = len(self.data.columns) - 1  # subtract 1 for the target column
 
@@ -713,8 +769,10 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
             all_features_mol_func = sorted(list(all_features_mol_func))
             all_features_sub_loc = sorted(list(all_features_sub_loc))
 
-            feature_dict_bio_proc = {ensg: [0] * len(all_features_bio_proc) for ensg in protein_atlas_features['Ensembl']}
-            feature_dict_mol_func = {ensg: [0] * len(all_features_mol_func) for ensg in protein_atlas_features['Ensembl']}
+            feature_dict_bio_proc = {ensg: [0] * len(all_features_bio_proc) for ensg in
+                                     protein_atlas_features['Ensembl']}
+            feature_dict_mol_func = {ensg: [0] * len(all_features_mol_func) for ensg in
+                                     protein_atlas_features['Ensembl']}
             feature_dict_sub_loc = {ensg: [0] * len(all_features_sub_loc) for ensg in protein_atlas_features['Ensembl']}
 
             bio_proc_feature_names = [f'biological_process__{feature}' for feature in all_features_bio_proc]
@@ -896,15 +954,15 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             self.target = gcp.target
             self.gcp_data = gcp.data
             self.full_gcp_data = gcp.full_data
-            self.gcp_pfam_pos = gcp.pfam_pos_data
-            self.gcp_rcnt_pos = gcp.rcnt_pos_data
-            self.gcp_pharos_pos = gcp.pharos_pos_data
-            self.gcp_pfam_neg = gcp.pfam_neg_data
-            self.gcp_rcnt_neg = gcp.rcnt_neg_data
-            self.gcp_pharos_neg = gcp.pharos_neg_data
-            self.drgbl_targets_pfam = gcp.drgbl_targets_pfam
-            self.rcnt_targets_fda = gcp.rcnt_targets_fda
-            self.chem_targets_pharos = gcp.chem_targets_pharos
+            # self.gcp_pfam_pos = gcp.pfam_pos_data
+            # self.gcp_rcnt_pos = gcp.rcnt_pos_data
+            # self.gcp_pharos_pos = gcp.pharos_pos_data
+            # self.gcp_pfam_neg = gcp.pfam_neg_data
+            # self.gcp_rcnt_neg = gcp.rcnt_neg_data
+            # self.gcp_pharos_neg = gcp.pharos_neg_data
+            # self.drgbl_targets_pfam = gcp.drgbl_targets_pfam
+            # self.rcnt_targets_fda = gcp.rcnt_targets_fda
+            # self.chem_targets_pharos = gcp.chem_targets_pharos
             self.ensg_ids = gcp.ensg_ids
             self.gcp_ce_data = gcp.ce_data
 
@@ -927,53 +985,50 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.norm = False
 
         # Ground truth
-        self.target = load_combined_labels()
-        self.labels = {key: 1 if key in self.target['Ensembl'].tolist() else 0 for key in self.var_pat_features.keys()}
+        self.target = self.full_gcp_data['target']
+        self.labels = {key: 1 if key in self.target.tolist() else 0 for key in self.var_pat_features.keys()}
 
-        self.pat_ensg_ids = pd.Series(list(self.var_pat_features.keys()))
-
-        # Get test data and remove from train feature matrix
-        self.pfam_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.pfam_ids)]
-        self.pfam_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_ids}
-        num_pfam_pos = len(self.pfam_pos_dict)
-
-        self.rcnt_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.rcnt_ids)]
-        self.rcnt_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_ids}
-        num_rcnt_pos = len(self.rcnt_pos_dict)
-
-        self.pharos_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.pharos_ids)]
-        self.pharos_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_ids}
-        num_pharos_pos = len(self.pharos_pos_dict)
-
-        self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
-
-        self.pfam_negs = self.gcp.pfam_negs
-        self.rcnt_negs = self.gcp.rcnt_negs
-        self.pharos_negs = self.gcp.pharos_negs
-
-        self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs])
-        self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs])
-        self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs])
-
-        self.pfam_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_negs if
-                              ensg in self.var_pat_features}
-        self.rcnt_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_negs if
-                              ensg in self.var_pat_features}
-        self.pharos_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_negs if
-                                ensg in self.var_pat_features}
-
-        self.pfam_data = {**self.pfam_pos_dict, **self.pfam_neg_data}
-        self.rcnt_data = {**self.rcnt_pos_dict, **self.rcnt_neg_data}
-        self.pharos_data = {**self.pharos_pos_dict, **self.pharos_neg_data}
-
-        self.ensg_ids = self.pat_ensg_ids
-
+        # self.pat_ensg_ids = pd.Series(list(self.var_pat_features.keys()))
+        #
+        # # Get test data and remove from train feature matrix
+        # self.pfam_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.pfam_ids.index)]
+        # self.pfam_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_ids}
+        #
+        # self.rcnt_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.rcnt_ids.index)]
+        # self.rcnt_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_ids}
+        #
+        # self.pharos_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.pharos_ids.index)]
+        # self.pharos_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_ids}
+        #
+        # self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
+        #
+        # self.pfam_negs = self.gcp.pfam_negs
+        # self.rcnt_negs = self.gcp.rcnt_negs
+        # self.pharos_negs = self.gcp.pharos_negs
+        #
+        # self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs])
+        # self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs])
+        # self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs])
+        #
+        # self.pfam_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_negs if
+        #                       ensg in self.var_pat_features}
+        # self.rcnt_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_negs if
+        #                       ensg in self.var_pat_features}
+        # self.pharos_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_negs if
+        #                         ensg in self.var_pat_features}
+        #
+        # self.pfam_data = {**self.pfam_pos_dict, **self.pfam_neg_data}
+        # self.rcnt_data = {**self.rcnt_pos_dict, **self.rcnt_neg_data}
+        # self.pharos_data = {**self.pharos_pos_dict, **self.pharos_neg_data}
+        #
+        # self.ensg_ids = self.pat_ensg_ids
         # remove all the test genes from the data dictionary
-        self.data = {key: value for key, value in self.var_pat_features.items()
-                     if key not in self.holdout_ids.tolist()}
-        pharos_pos_ensgs = list(self.pharos_pos_dict.keys())
+        self.data = {key: value for key, value in self.var_pat_features.items()}
+        # if key not in self.holdout_ids.tolist()}
+        # pharos_pos_ensgs = list(self.pharos_pos_dict.keys())
         # set the value of the putative positive targets from pharos 1
-        self.labels = {key: 1 if key in pharos_pos_ensgs else self.labels[key] for key in self.labels.keys()}
+        self.data = {key: value for key, value in self.var_pat_features.items()}
+        # self.labels = {key: 1 if key in pharos_pos_ensgs else self.labels[key] for key in self.labels.keys()}
         self.data['labels'] = self.labels
 
     def variant_gh_data(self, config):
@@ -1072,7 +1127,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             ref_aa = row['AA_ref']
             alt_aa = row['AA_alt']
             mut = f"{ref_aa}>{alt_aa}"
-            pos = row['Protein_pos_shard']    # 0-indexed
+            pos = row['Protein_pos_shard']  # 0-indexed
             # pos = row['Protein_position']
             pat_value = row['am_pathogenicity'] * row['AF']
             if np.isnan(pat_value):
@@ -1708,21 +1763,20 @@ class ModelPreprocessor:
         self.gc_data = data['train']['gc']
         self.go_data = data['train']['go']
         self.pvc_data = data['train']['pvc'].copy()
-        self.pvc_data.pop('labels')
-        self.labels = self.gc_data['target'].to_dict()
+        self.labels = data["labels"]
         self.test_labels = data["test_labels"]
+        self.test_labels_per_source = data["test_labels_per_source"]
         self.genes = data['genes']
         self.num_features = data['num_features']
         self.test_data = data['test_data']
         self.test_genes = data['test_genes']
-        self.train_genes, self.val_genes = train_test_split(self.genes, test_size=0.2, random_state=config['hyperparameters']['seed'])
+        self.train_genes, self.val_genes = train_test_split(self.genes, test_size=0.2,
+                                                            random_state=config['hyperparameters']['seed'])
+        self.class_prior = data['class_prior']
         self.torch_dtype = torch.bfloat16 if config['hyperparameters']['precision'] == 'bf16' else torch.float32
         torch.set_default_dtype(self.torch_dtype)
 
     def model_init(self):
-        self.gc_data = self.gc_data.drop(columns=['target'])
-        self.go_data = self.go_data.drop(columns=['target'])
-
         gc_train_raw = self.gc_data.loc[self.train_genes, :]
         gc_val_raw = self.gc_data.loc[self.val_genes, :]
 
@@ -1751,7 +1805,7 @@ class ModelPreprocessor:
             self.test_labels,
             self.train_genes,
             self.val_genes,
-            self.test_genes,
+            self.test_labels_per_source,
             self.test_data,
             self.num_features,
             self.torch_dtype,
@@ -1763,10 +1817,9 @@ class ModelPreprocessor:
     def initialise_model(self, train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes, test,
                          num_features, torch_dtype, config):
         hyperparams = config['hyperparameters']
-        train_combined, val_combined, test_combined, train_imbalance = self.normalise_data(train_raw, val_raw, labels,
-                                                                                           test_labels, train_genes,
-                                                                                           val_genes, test_genes, test,
-                                                                                           torch_dtype, config)
+        (train_combined, val_combined, test_combined,
+         num_samples_per_class) = self.normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_genes,
+                                                      test_genes, test, torch_dtype, config)
 
         max_genes_pvc = max([train_raw['pvc'][gene].shape[0] for gene in train_raw['pvc'].keys()])
         with open("../data/elgh/missense_mutation_map.pkl", "rb") as f:
@@ -1778,25 +1831,27 @@ class ModelPreprocessor:
 
         model = MultiModalLightningTargetIdentifier(
             config=config,
-            imbalance=train_imbalance,
-            gc_features_dim=gc_features_dim,
+            num_features_gc=gc_features_dim,
             num_features_go=go_features_dim,
             num_mutations=num_mutations,
             max_seq_len=hyperparams['max_seq_len'],
             num_genes=max_genes_pvc,
+            num_samples_per_class=num_samples_per_class,
+            class_prior=self.class_prior,
             num_iters=len(train_combined)
         )
 
         accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'
 
         hyperparameters = dict(
-            depth=hyperparams['num_layers'],
+            depth=hyperparams['depth_cls_head'],
             lr=hyperparams['lr_start'],
             batch_size=hyperparams['batch_size'],
             optimizer=hyperparams['optimizer'],
             epochs=hyperparams['epochs'],
             dropout=hyperparams['dropout'],
-            width=hyperparams['width'],
+            gc_width=hyperparams['gc_width'],
+            go_width=hyperparams['go_width'],
             weight_decay=hyperparams['weight_decay']
         )
 
@@ -1817,10 +1872,10 @@ class ModelPreprocessor:
                 val_norm = val_raw[module_str].values
                 train_norm = train_data.values
 
-                scaler = MinMaxScaler()
-                train_norm = scaler.fit_transform(train_norm)
-                val_norm = scaler.transform(val_norm)
-                scalers[module_str] = scaler
+                # scaler = MinMaxScaler()
+                # train_norm = scaler.fit_transform(train_norm)
+                # val_norm = scaler.transform(val_norm)
+                # scalers[module_str] = scaler
 
                 train_norm = {gene: train_norm[i] for i, gene in enumerate(train_genes)}
                 val_norm = {gene: val_norm[i] for i, gene in enumerate(val_genes)}
@@ -1840,12 +1895,12 @@ class ModelPreprocessor:
                 )
 
                 for key, modalities in test_raw.items():
-                    normed = scaler.transform(modalities[module_str].values)
-                    normed = {gene: normed[i] for i, gene in enumerate(test_genes[key][module_str])}
+                    # normed = scaler.transform(modalities[module_str].values)
+                    # normed = {gene: normed[i] for i, gene in enumerate(test_genes[key][module_str])}
                     test_datasets[key][module_str] = dl.MultiModalData(
-                        data=normed,
+                        data=modalities[module_str],
                         labels=test_labels,
-                        gene_names=test_genes[key][module_str],
+                        gene_names=test_genes[key],
                         dtype=torch_dtype,
                         test_source=key
                     )
@@ -1872,7 +1927,7 @@ class ModelPreprocessor:
                     test_datasets[key][module_str] = dl.MultiModalData(
                         data=None,
                         labels=None,
-                        gene_names=test_genes[key][module_str],
+                        gene_names=test_genes[key],
                         dtype=torch_dtype,
                         variant_data={
                             'data': modalities[module_str],
@@ -1888,7 +1943,6 @@ class ModelPreprocessor:
         test_labels = test_datasets['pharos']['gc'].labels
         subset_labels_test = {gene: test_labels[gene] for gene in test_gene_names if gene in test_labels}
         subset_labels = {gene: labels[gene] for gene in test_gene_names if gene in labels}
-
 
         train_loader = dl.MultiModalDataLoader(
             datasets=train_datasets,
@@ -1910,10 +1964,311 @@ class ModelPreprocessor:
                 shuffle=False
             )
 
-        label_imb_raw = next(iter(train_datasets.values())).label_imbalance()
-        label_imbalance = label_imb_raw.item() if isinstance(label_imb_raw, torch.Tensor) else label_imb_raw
+        num_maj_samples, num_min_samples = next(iter(train_datasets.values())).samples_per_class()
 
-        return train_loader, val_loader, test_loaders, label_imbalance
+        return train_loader, val_loader, test_loaders, (num_maj_samples, num_min_samples)
+
+
+def extract_pvc_features(gene, pvc_data, max_variants=100):
+    """
+    Extract fixed-length features from variable-length protein variant call data for logistic regression.
+
+    Args:
+        gene: Gene identifier
+        pvc_data: Dictionary mapping genes to torch tensors of shape (N_g, 4) where N_g varies per gene
+                  The 4 features are: pathogenicity, position, variant identity, gene identity
+        max_variants: Maximum number of variants to consider (for padding/truncation)
+
+    Returns:
+        numpy array of fixed-length features derived from the PVC data
+    """
+    # If gene not in pvc_data, return zeros
+    if gene not in pvc_data:
+        return np.zeros(12)  # Return zeros for all features
+
+    # Get the tensor for this gene
+    tensor = pvc_data[gene]
+
+    # Convert to numpy for easier manipulation
+    if isinstance(tensor, torch.Tensor):
+        tensor = tensor.cpu().numpy()
+
+    # Handle empty tensor
+    if tensor.shape[0] == 0:
+        return np.zeros(12)
+
+    # Extract each feature column
+    pathogenicity = tensor[:, 0]
+    positions = tensor[:, 1]
+    variant_ids = tensor[:, 2]
+    gene_ids = tensor[:, 3]
+
+    # Statistical features (12 total)
+    features = []
+
+    # 1. Basic count statistics
+    num_variants = len(pathogenicity)
+    features.append(num_variants)  # Total number of variants
+
+    # 2. Pathogenicity statistics
+    features.append(np.mean(pathogenicity))  # Mean pathogenicity
+    features.append(np.std(pathogenicity) if num_variants > 1 else 0)  # Std dev of pathogenicity
+    features.append(np.max(pathogenicity) if num_variants > 0 else 0)  # Max pathogenicity
+    features.append(np.min(pathogenicity) if num_variants > 0 else 0)  # Min pathogenicity
+
+    # 3. Position statistics
+    features.append(np.mean(positions))  # Mean position
+    features.append(np.std(positions) if num_variants > 1 else 0)  # Std dev of positions
+    features.append(len(np.unique(positions)) / max(1, num_variants))  # Position diversity ratio
+
+    # 4. Variant distribution
+    unique_variants = np.unique(variant_ids)
+    features.append(len(unique_variants))  # Number of unique variants
+    features.append(len(unique_variants) / max(1, num_variants))  # Variant diversity ratio
+
+    # 5. Position distribution features
+    if num_variants > 1:
+        # Calculate distance between consecutive positions
+        sorted_positions = np.sort(positions)
+        position_diffs = np.diff(sorted_positions)
+        features.append(np.mean(position_diffs))  # Mean distance between variants
+        features.append(np.std(position_diffs))  # Std dev of distances between variants
+    else:
+        features.extend([0, 0])  # Placeholder values when not enough variants
+
+    return np.array(features)
+
+
+class LogisticRegressionPreprocessor:
+    def __init__(self, config, data):
+        """
+        Initialize the preprocessor for logistic regression model
+
+        Args:
+            config: Configuration dictionary
+            data: Data dictionary containing train, test data and other metadata
+        """
+        self.config = config
+        self.data = data
+        self.gc_data = data['train']['gc']
+        self.go_data = data['train']['go']
+        self.pvc_data = data['train']['pvc'].copy()
+        self.pvc_data.pop('labels')
+        self.labels = self.gc_data['target'].to_dict()
+        self.test_labels = data["test_labels"]
+        self.genes = data['genes']
+        self.num_features = data['num_features']
+        self.test_data = data['test_data']
+        self.test_genes = data['test_genes']
+        self.train_genes, self.val_genes = train_test_split(self.genes, test_size=0.2,
+                                                            random_state=config['hyperparameters']['seed'])
+        self.class_prior = data['class_prior']
+        self.scalers = {}
+        self.max_variants = config['hyperparameters'].get('max_seq_len', 100)
+
+    def prepare_features(self):
+        """
+        Prepare features for logistic regression by processing and combining
+        gene-centric (gc), gene ontology (go), and protein variant calls (pvc) data
+
+        Returns:
+            Dictionary containing processed train, validation, and test data
+            with features and labels
+        """
+        print("Preparing features for logistic regression...")
+
+        # Drop the target column from feature sets
+        self.gc_data = self.gc_data.drop(columns=['target'])
+        self.go_data = self.go_data.drop(columns=['target'])
+
+        # Split data into train and validation sets
+        gc_train_raw = self.gc_data.loc[self.train_genes, :]
+        gc_val_raw = self.gc_data.loc[self.val_genes, :]
+
+        go_train_raw = self.go_data.loc[self.train_genes, :]
+        go_val_raw = self.go_data.loc[self.val_genes, :]
+
+        pvc_train_raw = {k: v for k, v in self.pvc_data.items() if k in self.train_genes}
+        pvc_val_raw = {k: v for k, v in self.pvc_data.items() if k in self.val_genes}
+
+        # Organize raw data
+        train_raw = {
+            'gc': gc_train_raw,
+            'go': go_train_raw,
+            'pvc': pvc_train_raw
+        }
+
+        val_raw = {
+            'gc': gc_val_raw,
+            'go': go_val_raw,
+            'pvc': pvc_val_raw
+        }
+
+        # Process and combine the features
+        processed_data = self.process_and_combine_features(
+            train_raw,
+            val_raw,
+            self.labels,
+            self.test_labels,
+            self.train_genes,
+            self.val_genes,
+            self.test_genes,
+            self.test_data
+        )
+
+        return processed_data
+
+    def process_and_combine_features(self, train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes,
+                                     test_raw):
+        """
+        Process and combine features from different modalities for logistic regression
+
+        Args:
+            train_raw: Raw training data for different modalities
+            val_raw: Raw validation data for different modalities
+            labels: Training and validation labels
+            test_labels: Test labels
+            train_genes: List of genes in training set
+            val_genes: List of genes in validation set
+            test_genes: Dictionary of genes in test sets
+            test_raw: Raw test data for different modalities
+
+        Returns:
+            Dictionary containing processed data for training, validation, and testing
+        """
+        # Initialize dictionaries to store processed data
+        train_features = {}
+        train_labels_list = []
+        val_features = {}
+        val_labels_list = []
+        test_features = {test_set: {} for test_set in test_raw.keys()}
+        test_labels_dict = {test_set: [] for test_set in test_raw.keys()}
+
+        # Process gene-centric (gc) and gene ontology (go) features
+        for module_str in ['gc', 'go']:
+            # Scale the features
+            scaler = MinMaxScaler()
+            train_norm = scaler.fit_transform(train_raw[module_str].values)
+            val_norm = scaler.transform(val_raw[module_str].values)
+            self.scalers[module_str] = scaler
+
+            # Store normalized features for each gene
+            train_features[module_str] = {train_genes[i]: train_norm[i] for i in range(len(train_genes))}
+            val_features[module_str] = {val_genes[i]: val_norm[i] for i in range(len(val_genes))}
+
+            # Process test data for each test set
+            for test_set, modalities in test_raw.items():
+                test_norm = scaler.transform(modalities[module_str].values)
+                test_genes_list = test_genes[test_set][module_str]
+                test_features[test_set][module_str] = {test_genes_list[i]: test_norm[i] for i in
+                                                       range(len(test_genes_list))}
+
+        # Process protein variant calls (pvc) features using the dedicated function
+        print("Processing PVC features...")
+        train_features['pvc'] = self.process_pvc_batch(train_genes, train_raw['pvc'], self.max_variants)
+        val_features['pvc'] = self.process_pvc_batch(val_genes, val_raw['pvc'], self.max_variants)
+
+        for test_set, modalities in test_raw.items():
+            test_genes_list = test_genes[test_set]['gc']  # Using gc gene list for reference
+            test_features[test_set]['pvc'] = self.process_pvc_batch(test_genes_list, modalities['pvc'],
+                                                                    self.max_variants)
+
+        # Combine features from all modalities into a single feature vector for each gene
+        print("Combining features from all modalities...")
+        combined_train_features = {}
+        combined_val_features = {}
+        combined_test_features = {test_set: {} for test_set in test_raw.keys()}
+
+        # Create feature arrays ensuring all features are available
+        for gene in train_genes:
+            if gene in labels:
+                gc_feat = train_features['gc'].get(gene, np.zeros(train_raw['gc'].shape[1]))
+                go_feat = train_features['go'].get(gene, np.zeros(train_raw['go'].shape[1]))
+                pvc_feat = train_features['pvc'].get(gene, np.zeros(12))  # 12 PVC features
+                combined_train_features[gene] = np.concatenate([gc_feat, go_feat, pvc_feat])
+                train_labels_list.append((gene, labels[gene]))
+
+        for gene in val_genes:
+            if gene in labels:
+                gc_feat = val_features['gc'].get(gene, np.zeros(val_raw['gc'].shape[1]))
+                go_feat = val_features['go'].get(gene, np.zeros(val_raw['go'].shape[1]))
+                pvc_feat = val_features['pvc'].get(gene, np.zeros(12))
+                combined_val_features[gene] = np.concatenate([gc_feat, go_feat, pvc_feat])
+                val_labels_list.append((gene, labels[gene]))
+
+        for test_set in test_raw.keys():
+            test_gc_shape = test_raw[test_set]['gc'].shape[1]
+            test_go_shape = test_raw[test_set]['go'].shape[1]
+
+            for gene in test_genes[test_set]['gc']:
+                if gene in test_labels:
+                    gc_feat = test_features[test_set]['gc'].get(gene, np.zeros(test_gc_shape))
+                    go_feat = test_features[test_set]['go'].get(gene, np.zeros(test_go_shape))
+                    pvc_feat = test_features[test_set]['pvc'].get(gene, np.zeros(12))
+                    combined_test_features[test_set][gene] = np.concatenate([gc_feat, go_feat, pvc_feat])
+                    test_labels_dict[test_set].append((gene, test_labels[gene]))
+
+        # Convert to numpy arrays for scikit-learn
+        X_train = np.array([combined_train_features[gene[0]] for gene in train_labels_list])
+        y_train = np.array([label[1] for label in train_labels_list])
+
+        X_val = np.array([combined_val_features[gene[0]] for gene in val_labels_list])
+        y_val = np.array([label[1] for label in val_labels_list])
+
+        X_test = {}
+        y_test = {}
+        test_gene_lists = {}
+        for test_set in test_raw.keys():
+            X_test[test_set] = np.array(
+                [combined_test_features[test_set][gene[0]] for gene in test_labels_dict[test_set]])
+            y_test[test_set] = np.array([label[1] for label in test_labels_dict[test_set]])
+            test_gene_lists[test_set] = [gene[0] for gene in test_labels_dict[test_set]]
+
+        # Handle missing values
+        X_train = np.nan_to_num(X_train)
+        X_val = np.nan_to_num(X_val)
+        for test_set in X_test:
+            X_test[test_set] = np.nan_to_num(X_test[test_set])
+
+        # Log feature dimensions
+        print(f"Features dimensions - Train: {X_train.shape}, Val: {X_val.shape}")
+        for test_set in X_test:
+            print(f"Test {test_set}: {X_test[test_set].shape}")
+
+        # Document the feature set composition for interpretability
+        feature_composition = {
+            'gc_features': train_raw['gc'].shape[1],
+            'go_features': train_raw['go'].shape[1],
+            'pvc_features': 12,
+            'total_features': X_train.shape[1]
+        }
+        print(f"Feature composition: {feature_composition}")
+
+        return {
+            'train': {'X': X_train, 'y': y_train, 'genes': [gene[0] for gene in train_labels_list]},
+            'val': {'X': X_val, 'y': y_val, 'genes': [gene[0] for gene in val_labels_list]},
+            'test': {test_set: {'X': X_test[test_set], 'y': y_test[test_set], 'genes': test_gene_lists[test_set]}
+                     for test_set in test_raw.keys()},
+            'feature_composition': feature_composition
+        }
+
+    @staticmethod
+    def process_pvc_batch(genes, pvc_data, max_variants=100):
+        """
+        Process a batch of genes to extract PVC features.
+
+        Args:
+            genes: List of gene identifiers
+            pvc_data: Dictionary mapping genes to variant data tensors
+            max_variants: Maximum number of variants to consider
+
+        Returns:
+            Dictionary mapping genes to extracted feature vectors
+        """
+        features = {}
+        for gene in genes:
+            features[gene] = extract_pvc_features(gene, pvc_data, max_variants)
+        return features
 
 
 # Deprecated
