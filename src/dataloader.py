@@ -13,15 +13,16 @@ from tabulate import tabulate
 
 
 class ModuleDataProcessor:
-    def __init__(self, gc, go, pvc, psc):
+    def __init__(self, gc, go, pvc, psc, config=None):
         assert any([gc, go, pvc, psc]), "Select at least one module to train the teacher model."
         self.gc = gc
         self.go = go
         self.pvc = pvc
         self.psc = psc
 
-        with open("config.yml", 'r') as stream:
-            self.config = yaml.safe_load(stream)
+        if config is None:
+            with open("config.yml", 'r') as stream:
+                self.config = yaml.safe_load(stream)
 
     def process(self):
         data = {'gc': None, 'go': None, 'pvc': None}
@@ -67,8 +68,33 @@ class ModuleDataProcessor:
         data = getattr(_data, f"{source}_data")
         all_test_ids = _data.all_test_ids
         data_ids = data.index.tolist()
-        all_test_ensgs = all_test_ids[all_test_ids.index.isin(data_ids)].tolist()
-        return list(dict.fromkeys(all_test_ensgs))
+        return list(set(all_test_ids[all_test_ids.index.isin(data_ids)].index.tolist()))
+
+    @staticmethod
+    def _clean_test_data(combined_test_data):
+        """
+        Remove target columns and labels from test data.
+        Handles missing columns/keys gracefully without errors.
+        """
+        # Handle DataFrame columns for GC and GO
+        for source in ['pfam', 'rcnt', 'pharos']:
+            for modality in ['gc', 'go']:
+                try:
+                    if modality in combined_test_data[source] and isinstance(combined_test_data[source][modality],
+                                                                             pd.DataFrame):
+                        if 'target' in combined_test_data[source][modality].columns:
+                            combined_test_data[source][modality].drop(columns=['target'], inplace=True)
+                except (KeyError, AttributeError):
+                    pass
+
+            # Handle dictionary labels for PVC
+            try:
+                if 'pvc' in combined_test_data[source] and isinstance(combined_test_data[source]['pvc'], dict):
+                    combined_test_data[source]['pvc'].pop('labels', None)  # None ensures no error if key doesn't exist
+            except KeyError:
+                pass
+
+        return combined_test_data
 
     def homogenize_data(self, data):
         gc_data = data['gc']
@@ -77,169 +103,112 @@ class ModuleDataProcessor:
 
         test_sources = ['pfam', 'rcnt', 'pharos']
 
-        ensg_pvc = list(pvc_data.data.keys())
-        ensg_gc = list(gc_data.ensg_ids.tolist())
+        # Get gene sets from each modality
+        ensg_pvc = set(pvc_data.data.keys())
+        if 'labels' in ensg_pvc:  # Remove 'labels' key if present
+            ensg_pvc.remove('labels')
 
-        dropped_genes = list(set(ensg_gc) - set(ensg_pvc))
-        dropped_gene_idx = gc_data.ensg_ids[gc_data.ensg_ids.isin(dropped_genes)].index.tolist()
+        ensg_gc = set(gc_data.data.index.tolist())
+        ensg_go = set(go_data.data.index.tolist())
 
-        # homogenize train data
-        data['gc'].data = data['gc'].data.drop(dropped_gene_idx, errors='ignore')
-        data['go'].data = data['go'].data.drop(dropped_gene_idx, errors='ignore')
-        gc_df_index = data['gc'].data.index.tolist()
-        gc_ensg_ids = gc_data.ensg_ids[gc_df_index]
-        dropped_genes = list(set(ensg_pvc) - set(gc_ensg_ids))
-        for gene in dropped_genes:
-            if gene != 'labels':
-                try:
-                    pvc_data.data.pop(gene)
+        # Find the intersection of all three sets
+        common_genes = ensg_gc.intersection(ensg_pvc).intersection(ensg_go)
+
+        print(f"Original gene counts: GC={len(ensg_gc)}, GO={len(ensg_go)}, PVC={len(ensg_pvc)}")
+        print(f"Common genes across all modalities: {len(common_genes)}")
+
+        # Keep only common genes in each modality
+        data['gc'].data = data['gc'].data[data['gc'].data.index.isin(common_genes)]
+        data['go'].data = data['go'].data[data['go'].data.index.isin(common_genes)]
+
+        data['go'].data = data['go'].data.loc[:, (data['go'].data != 0).any(axis=0)]
+
+        # For PVC data which is in dictionary format
+        for gene in list(pvc_data.data.keys()):
+            if gene != 'labels' and gene not in common_genes:
+                pvc_data.data.pop(gene)
+                if gene in pvc_data.labels:
                     pvc_data.labels.pop(gene)
-                except KeyError:
-                    print(f"Gene {gene} not found in dataframe")
 
-        for gene in list(pvc_data.labels.keys()):
-            if gene not in list(pvc_data.data.keys()):
-                pvc_data.labels.pop(gene)
+        # Verify all modalities now have the same number of genes
+        gc_count = len(data['gc'].data)
+        go_count = len(data['go'].data)
+        pvc_count = len(pvc_data.data) - (1 if 'labels' in pvc_data.data else 0)
 
-        # homogenize test data
-        for source in test_sources:
-            gc_ensg = self._get_genes_per_source(gc_data, source)
-            pvc_dict = getattr(pvc_data, f"{source}_data")
-            pvc_ensg = list(pvc_dict.keys())
+        assert gc_count == go_count == pvc_count, "Gene counts don't match across modalities"
 
-            common_genes = set(pvc_ensg).intersection(set(gc_ensg))
-            # TODO: check if pos is retained here
+        gc_data = data['gc']
+        go_data = data['go']
+        pvc_data = data['pvc']
 
-            for gene in common_genes:
-                if gene not in pvc_ensg:
-                    pvc_dict.pop(gene, None)
+        test_data_result = self.get_test_data(gc_data, go_data, pvc_data)
 
-            setattr(pvc_data, f"{source}_data", pvc_dict)
-            gc_all_ids = gc_data.all_test_ids
-            gc_ids = gc_all_ids[gc_all_ids.isin(common_genes)].drop_duplicates().index.tolist()
-            setattr(gc_data, f"{source}_data", getattr(gc_data, f"{source}_data").loc[gc_ids])
-            setattr(go_data, f"{source}_data", getattr(go_data, f"{source}_data").loc[gc_ids])
+        combined_test_data = test_data_result["test_data"]
+        combined_test_genes = test_data_result["all_test_ids"]
+        test_labels = test_data_result["test_labels"]
+        test_labels_per_source = test_data_result["test_genes"]
+        class_prior = test_data_result["class_prior"]
 
-        data = {
-            "gc": gc_data,
-            "go": go_data,
-            "pvc": pvc_data
-        }
-
-        data['gc'].data.index = gc_ensg_ids
-        data['go'].data.index = gc_ensg_ids
-
-        return self.combine_modalities(data)
-
-    @staticmethod
-    def combine_modalities(data_dict):
-        """
-        Combines different modalities' data and their corresponding features
-        """
+        feature_data = None
+        config = None
         combined_train = {}
-        combined_genes = set()
         combined_features = 0
-        combined_config = {}
-
-        for module, preprocessor in data_dict.items():
-            combined_train[module] = preprocessor.data
-            if module == 'pvc':
-                combined_genes = list(set(preprocessor.data.keys()))
-            if module == 'gc':
-                ensg_ids = preprocessor.ensg_ids
-                combined_config = preprocessor.config
-                test_labels = preprocessor.test_labels
+        for module, preprocessor in data.items():
+            feature_data = preprocessor.data
             combined_features += preprocessor.num_features
+            if isinstance(feature_data, pd.DataFrame):
+                feature_data = feature_data[~feature_data.index.isin(combined_test_genes)]
+                config = preprocessor.config
+            elif isinstance(feature_data, dict):
+                feature_data = {gene: feature_data[gene] for gene in feature_data if gene not in combined_test_genes}
+                feature_data.pop('labels')
+            else:
+                raise ValueError("Unsupported data type for feature_data. Should be DataFrame for GC and GO. Should"
+                                 "be dict for PVC.")
 
-        combined_genes.remove('labels')
+            combined_train[module] = feature_data
 
-        combined_test_data = {
-            "pfam": {},
-            "rcnt": {},
-            "pharos": {}
-        }
-        combined_test_genes = {
-            "pfam": {},
-            "rcnt": {},
-            "pharos": {}
-        }
+        assert config is not None, "Config should be set!"
+        assert class_prior is not None, "Class prior should be set!"
 
-        for module, preprocessor in data_dict.items():
-            if hasattr(preprocessor, 'pfam_data'):
-                pfam_test_data = preprocessor.pfam_data
+        if isinstance(feature_data, pd.DataFrame):
+            combined_genes = set(feature_data.index.tolist())
+        elif isinstance(feature_data, dict):
+            combined_genes = set(feature_data.keys())
+        else:
+            raise ValueError("Unsupported data type for feature_data. Should be DataFrame for GC and GO. Should"
+                             "be dict for PVC.")
 
-                if isinstance(preprocessor.pfam_data, pd.DataFrame):
-                    pfam_test_data = pfam_test_data.drop(columns=['target'])
-                    pfam_data_ids = preprocessor.pfam_data.index.tolist()
-                    pfam_data_ids = ensg_ids.loc[pfam_data_ids].tolist()
-                else:
-                    pfam_data_ids = list(preprocessor.pfam_data.keys())
+        labels = dict(zip(combined_train['gc'].index, combined_train['gc']['target'])) if 'target' in combined_train[
+            'gc'].columns else None
+        assert labels is not None, "Labels should be present in the GC data at this point!"
 
-                combined_test_data["pfam"][module] = pfam_test_data
+        if 'target' in combined_train['gc'].columns:
+            combined_train['gc'].drop(columns=['target'], inplace=True)
+        if 'target' in combined_train['go'].columns:
+            combined_train['go'].drop(columns=['target'], inplace=True)
 
-                # Ensure consistent order based on ensg_ids
-                pfam_all_ids = [gene for gene in ensg_ids if gene in pfam_data_ids]
-                combined_test_genes["pfam"][module] = pfam_all_ids
+        num_train_positives = sum(list(labels.values()))
+        num_train_negatives = len(labels) - num_train_positives
 
-            pfam_labeled = {gene: test_labels[gene] for gene in pfam_all_ids}
+        num_pfam_pos = sum(combined_test_data['pfam']['gc']['target'])
+        num_pfam_neg = len(combined_test_data['pfam']['gc']) - num_pfam_pos
 
-            if hasattr(preprocessor, 'rcnt_data'):
-                rcnt_test_data = preprocessor.rcnt_data
+        num_rcnt_pos = sum(combined_test_data['rcnt']['gc']['target'])
+        num_rcnt_neg = len(combined_test_data['rcnt']['gc']) - num_rcnt_pos
 
-                if isinstance(preprocessor.rcnt_data, pd.DataFrame):
-                    rcnt_test_data = rcnt_test_data.drop(columns=['target'])
-                    rcnt_data_ids = preprocessor.rcnt_data.index.tolist()
-                    rcnt_data_ids = ensg_ids.loc[rcnt_data_ids].tolist()
-
-                else:
-                    rcnt_data_ids = list(preprocessor.rcnt_data.keys())
-
-                combined_test_data["rcnt"][module] = rcnt_test_data
-
-                # Ensure consistent order based on ensg_ids
-                rcnt_all_ids = [gene for gene in ensg_ids if gene in rcnt_data_ids]
-                combined_test_genes["rcnt"][module] = rcnt_all_ids
-
-            rcnt_labeled = {gene: test_labels[gene] for gene in rcnt_all_ids}
-
-            if hasattr(preprocessor, 'pharos_data'):
-                pharos_test_data = preprocessor.pharos_data
-
-                if isinstance(preprocessor.pharos_data, pd.DataFrame):
-                    pharos_test_data = pharos_test_data.drop(columns=['target'])
-                    pharos_data_ids = preprocessor.pharos_data.index.tolist()
-                    pharos_data_ids = ensg_ids.loc[pharos_data_ids].tolist()
-                else:
-                    pharos_data_ids = list(preprocessor.pharos_data.keys())
-
-                combined_test_data["pharos"][module] = pharos_test_data
-
-                # Ensure consistent order based on ensg_ids
-                pharos_all_ids = [gene for gene in ensg_ids if gene in pharos_data_ids]
-                combined_test_genes["pharos"][module] = pharos_all_ids
-
-                # make sure putative targets are labelled as positive in test set for pharos
-                pharos_pos_data = preprocessor.pharos_ids.tolist()
-                pharos_pos_data = [gene for gene in pharos_pos_data if gene in test_labels.keys()]
-                test_labels.update({gene: 1 for gene in pharos_pos_data})
-                pharos_labeled = {gene: test_labels[gene] for gene in pharos_all_ids}
-
-        train_targets = combined_train['gc']['target'].tolist()
-        num_positives = sum(train_targets)
-        num_negatives = len(train_targets) - num_positives
-        num_pfam_pos = sum(pfam_labeled.values())
-        num_pfam_neg = len(pfam_labeled) - num_pfam_pos
-        num_rcnt_pos = sum(rcnt_labeled.values())
-        num_rcnt_neg = len(rcnt_labeled) - num_rcnt_pos
-        num_pharos_pos = sum(pharos_labeled.values())
-        num_pharos_neg = len(pharos_labeled) - num_pharos_pos
+        num_pharos_pos = sum(combined_test_data['pharos']['gc']['target'])
+        num_pharos_neg = len(combined_test_data['pharos']['gc']) - num_pharos_pos
 
         data = [
-            ["Training Data", num_positives, num_negatives, "-"],
+            ["Training Data", num_train_positives, num_train_negatives, "-"],
             ["Pfam Test Data", num_pfam_pos, "-", num_pfam_neg],
             ["Recent Test Data", num_rcnt_pos, "-", num_rcnt_neg],
             ["Pharos Test Data", num_pharos_pos, "-", num_pharos_neg]
         ]
+
+        # remove the column target from gc and go test data
+        combined_test_data = self._clean_test_data(combined_test_data)
 
         headers = ["Data Source", "Approved Drug Targets", "Unlabelled Targets", "Putative Rejected Drug Targets"]
 
@@ -247,12 +216,151 @@ class ModuleDataProcessor:
 
         return {
             "train": combined_train,
+            "labels": labels,
             "genes": list(combined_genes),
             "num_features": combined_features,
-            "config": combined_config,
+            "config": config,
             "test_data": combined_test_data,
             "test_labels": test_labels,
-            "test_genes": combined_test_genes
+            "test_labels_per_source": test_labels_per_source,
+            "test_genes": combined_test_genes,
+            "class_prior": float(class_prior)
+        }
+
+    def get_test_data(self, gc_data, go_data, pvc_data):
+        """Extract test data from preprocessors and organize it properly."""
+        # Extract test target IDs for each source
+        pfam_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(gc_data.drgbl_targets_pfam)]
+        rcnt_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(gc_data.rcnt_targets_fda)]
+        pharos_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(gc_data.chem_targets_pharos)]
+
+        # Convert to lists for easier handling
+        pfam_ensg = pfam_ids.tolist()
+        rcnt_ensg = rcnt_ids.tolist()
+        pharos_ensg = pharos_ids.tolist()
+
+        # Collect all holdout gene IDs
+        holdout_ensg = pfam_ensg + rcnt_ensg + pharos_ensg
+
+        # Extract positive test data
+        pfam_pos_data_gc = gc_data.data[gc_data.data.index.isin(pfam_ensg)]
+        pfam_pos_data_go = go_data.data[go_data.data.index.isin(pfam_ensg)]
+
+        pvc_labels = pvc_data.data['labels']
+        pfam_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pfam_ensg if ensg in list(pvc_labels.keys())}
+
+        rcnt_pos_data_gc = gc_data.data[gc_data.data.index.isin(rcnt_ensg)]
+        rcnt_pos_data_go = go_data.data[go_data.data.index.isin(rcnt_ensg)]
+        rcnt_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in rcnt_ensg if ensg in list(pvc_labels.keys())}
+
+        pharos_pos_data_gc = gc_data.data[gc_data.data.index.isin(pharos_ensg)]
+        pharos_pos_data_go = go_data.data[go_data.data.index.isin(pharos_ensg)]
+        pharos_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pharos_ensg if ensg in list(pvc_labels.keys())}
+        pharos_pos_data_gc['target'] = 1
+        pharos_pos_data_go['target'] = 1
+
+        # Calculate class ratio
+        num_pos = len(gc_data.data[gc_data.data['target'] == 1])
+        num_neg = len(gc_data.data[gc_data.data['target'] == 0])
+        class_prior = num_pos / (num_pos + num_neg)
+
+        # Calculate needed negative samples for each test source
+        num_pfam_neg = int(len(pfam_pos_data_gc) / class_prior)
+        num_rcnt_neg = int(len(rcnt_pos_data_gc) / class_prior)
+        num_pharos_neg = int(len(pharos_pos_data_gc) / class_prior)
+
+        # Select and distribute negative samples
+        total_negs = num_pfam_neg + num_rcnt_neg + num_pharos_neg
+        # negative_candidates = gc_data.ce_data[gc_data.ce_data['common_essentials'] == 1]
+        negative_candidates = gc_data.data[gc_data.data['target'] == 0]
+        negative_candidates = negative_candidates[negative_candidates['geneticConstraint'] < -0.90]
+
+        if total_negs >= len(negative_candidates):
+            negative_test_balance = negative_candidates
+        else:
+            negative_test_balance = negative_candidates.sample(n=total_negs,
+                                                               random_state=self.config['hyperparameters']['seed'])
+
+        negative_test_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(negative_test_balance.index)]
+
+        pfam_neg_ratio = float(num_pfam_neg / total_negs)
+        rcnt_neg_ratio = float(num_rcnt_neg / total_negs)
+        pharos_neg_ratio = float(num_pharos_neg / total_negs)
+
+        num_pfam_neg = int(len(negative_test_ids) * pfam_neg_ratio)
+        num_rcnt_neg = int(len(negative_test_ids) * rcnt_neg_ratio)
+        num_pharos_neg = int(len(negative_test_ids) * pharos_neg_ratio)
+
+        # Sample negative examples
+        negative_test_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(negative_candidates.index)]
+        negative_test_ids = negative_test_ids.to_frame()
+        negative_test_ids.set_index('targetId', inplace=True)
+
+        # Allocate negatives to each test source
+        pfam_negs = negative_test_ids.sample(n=num_pfam_neg, random_state=self.config['hyperparameters']['seed'])
+        negative_test_ids = negative_test_ids.drop(pfam_negs.index)
+        pfam_neg_data_gc = gc_data.data[gc_data.data.index.isin(pfam_negs.index)]
+        pfam_neg_data_go = go_data.data[go_data.data.index.isin(pfam_negs.index)]
+        pfam_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pfam_negs.index if ensg in list(pvc_labels.keys())}
+
+        rcnt_negs = negative_test_ids.sample(n=num_rcnt_neg, random_state=self.config['hyperparameters']['seed'])
+        negative_test_ids = negative_test_ids.drop(rcnt_negs.index)
+        rcnt_neg_data_gc = gc_data.data[gc_data.data.index.isin(rcnt_negs.index)]
+        rcnt_neg_data_go = go_data.data[go_data.data.index.isin(rcnt_negs.index)]
+        rcnt_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in rcnt_negs.index if ensg in list(pvc_labels.keys())}
+
+        pharos_negs = negative_test_ids.sample(n=num_pharos_neg, random_state=self.config['hyperparameters']['seed'])
+        pharos_neg_data_gc = gc_data.data[gc_data.data.index.isin(pharos_negs.index)]
+        pharos_neg_data_go = go_data.data[go_data.data.index.isin(pharos_negs.index)]
+        pharos_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pharos_negs.index if ensg in list(pvc_labels.keys())}
+        pharos_neg_data_gc['target'] = 0
+        pharos_neg_data_go['target'] = 0
+
+        # Combine positive and negative data for each source
+        pfam_data_gc = pd.concat([pfam_pos_data_gc, pfam_neg_data_gc])
+        pfam_data_go = pd.concat([pfam_pos_data_go, pfam_neg_data_go])
+        pfam_data_pvc = {**pfam_pos_data_pvc, **pfam_neg_data_pvc}
+
+        rcnt_data_gc = pd.concat([rcnt_pos_data_gc, rcnt_neg_data_gc])
+        rcnt_data_go = pd.concat([rcnt_pos_data_go, rcnt_neg_data_go])
+        rcnt_data_pvc = {**rcnt_pos_data_pvc, **rcnt_neg_data_pvc}
+
+        pharos_data_gc = pd.concat([pharos_pos_data_gc, pharos_neg_data_gc])
+        pharos_data_go = pd.concat([pharos_pos_data_go, pharos_neg_data_go])
+        pharos_data_pvc = {**pharos_pos_data_pvc, **pharos_neg_data_pvc}
+
+        test_labels = {gene: 1 for gene in pfam_data_gc.index if gene in pfam_pos_data_gc.index}
+
+        # Set up test data structure
+        test_data = {
+            "pfam": {
+                "gc": pfam_data_gc,
+                "go": pfam_data_go,
+                "pvc": pfam_data_pvc
+            },
+            "rcnt": {
+                "gc": rcnt_data_gc,
+                "go": rcnt_data_go,
+                "pvc": rcnt_data_pvc
+            },
+            "pharos": {
+                "gc": pharos_data_gc,
+                "go": pharos_data_go,
+                "pvc": pharos_data_pvc
+            }
+        }
+
+        pfam_ids_all = pfam_data_gc.index.tolist()
+        rcnt_ids_all = rcnt_data_gc.index.tolist()
+        pharos_ids_all = pharos_data_gc.index.tolist()
+        all_test_ids = pfam_ids_all + rcnt_ids_all + pharos_ids_all
+
+        return {
+            "test_data": test_data,
+            "test_genes": {"pfam": pfam_ids_all, "rcnt": rcnt_ids_all, "pharos": pharos_ids_all},
+            "all_test_ids": all_test_ids,
+            "test_labels": test_labels,
+            "class_prior": class_prior
         }
 
 
@@ -390,6 +498,10 @@ class MultiModalData(Dataset):
 
     def label_imbalance(self):
         return sum(list(self.labels.values())) / len(self.labels)
+
+    def samples_per_class(self):
+        labels = list(self.labels.values())
+        return labels.count(0), labels.count(1)
 
     def padding(self, features):
         if features.size(0) < self.max_variants:
