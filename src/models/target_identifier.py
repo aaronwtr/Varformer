@@ -187,9 +187,9 @@ class MultiModalTargetIdentifierV1(BaseTargetIdentifier):
         return logits, probabilities, binary_predictions
 
 
-class MultiModalTargetIdentifier(torch.nn.Module):  # Changed inheritance: now directly from torch.nn.Module
+class MultiModalTargetIdentifier(torch.nn.Module):
     def __init__(self, config, num_features_gc, num_features_go, num_mutations, max_seq_len, num_genes):
-        super(MultiModalTargetIdentifier, self).__init__()  # Call super().__init__() of nn.Module directly
+        super(MultiModalTargetIdentifier, self).__init__()
 
         self.num_features_gc = num_features_gc
         self.num_features_go = num_features_go
@@ -198,56 +198,99 @@ class MultiModalTargetIdentifier(torch.nn.Module):  # Changed inheritance: now d
         self.num_genes = num_genes
         self.config = config
         self.hyperparams = self.config['hyperparameters']
-        self.dropout = float(self.hyperparams['dropout'])
+        self.dropout = nn.Dropout(float(self.hyperparams['dropout']))
 
         # 1. GC Branch MLP
-        gc_layers = []
         gc_width = int(config['hyperparameters']['gc_width'])
-        num_layers = int(config['hyperparameters']['num_layers'])
-        layer_sizes_gc = [num_features_gc] + [gc_width] * num_layers  # MLP layer sizes for GC branch
-        layer_size_prev_gc = layer_sizes_gc[0]
-        for layer_size_gc in layer_sizes_gc[1:]:
-            gc_layers += [
-                nn.Linear(layer_size_prev_gc, layer_size_gc),
-                nn.BatchNorm1d(layer_size_gc),
-                nn.ReLU(),
-                nn.Dropout(p=float(config['hyperparameters']['dropout']))
-            ]
-            layer_size_prev_gc = layer_size_gc
-        self.gc_feature_extractor = nn.Sequential(*gc_layers)  # Sequential MLP for GC branch
+        # gc_layers = []
+        # layer_sizes_gc = [num_features_gc] + [gc_width] * num_layers  # MLP layer sizes for GC branch
+        # layer_size_prev_gc = layer_sizes_gc[0]
+        # for layer_size_gc in layer_sizes_gc[1:]:
+        #     gc_layers += [
+        #         nn.Linear(layer_size_prev_gc, layer_size_gc),
+        #         nn.BatchNorm1d(layer_size_gc),
+        #         nn.ReLU(),
+        #         nn.Dropout(p=float(config['hyperparameters']['dropout']))
+        #     ]
+        #     layer_size_prev_gc = layer_size_gc
+        # self.gc_feature_extractor = nn.Sequential(*gc_layers)  # Sequential MLP for GC branch
+
+        self.gc_projection = nn.Sequential(
+            nn.Linear(num_features_gc, gc_width),
+            nn.LayerNorm(gc_width),
+            nn.ReLU(),
+            nn.Dropout(p=float(config['hyperparameters']['dropout']))
+        )
 
         # 2. GO Branch MLP
-        go_layers = []
-        go_width = int(config['hyperparameters']['go_width'])
-        layer_sizes_go = [num_features_go] + [go_width] * num_layers  # MLP layer sizes for GO branch
-        layer_size_prev_go = layer_sizes_go[0]
-        for layer_size_go in layer_sizes_go[1:]:
-            go_layers += [
-                nn.Linear(layer_size_prev_go, layer_size_go),
-                nn.BatchNorm1d(layer_size_go),
-                nn.ReLU(),
-                nn.Dropout(p=float(config['hyperparameters']['dropout']))
-            ]
-            layer_size_prev_go = layer_size_go
-        self.go_feature_extractor = nn.Sequential(*go_layers)  # Sequential MLP for GO branch
+        # go_layers = []
+        # go_width = int(config['hyperparameters']['go_width'])
+        # layer_sizes_go = [num_features_go] + [go_width] * num_layers  # MLP layer sizes for GO branch
+        # layer_size_prev_go = layer_sizes_go[0]
+        # for layer_size_go in layer_sizes_go[1:]:
+        #     go_layers += [
+        #         nn.Linear(layer_size_prev_go, layer_size_go),
+        #         nn.BatchNorm1d(layer_size_go),
+        #         nn.ReLU(),
+        #         nn.Dropout(p=float(config['hyperparameters']['dropout']))
+        #     ]
+        #     layer_size_prev_go = layer_size_go
+        # self.go_feature_extractor = nn.Sequential(*go_layers)  # Sequential MLP for GO branch
 
-        self.pvc_branch = VarformerTargetIdentifier(
+        go_width = int(config['hyperparameters']['go_width'])
+        self.go_projection = nn.Sequential(
+            nn.Linear(num_features_go, go_width),
+            nn.LayerNorm(go_width),
+            nn.ReLU(),
+            nn.Dropout(p=float(config['hyperparameters']['dropout']))
+        )
+
+        # 3. PVC Branch (Transformer)
+        self.varformer = VarformerTargetIdentifier(
             config=config,
             num_mutations=num_mutations,
             max_seq_len=max_seq_len,
             d_model=int(config['hyperparameters']['d_model']),
         )
 
-        inp_dim_classifier = self.hyperparams['gc_width'] + self.hyperparams['go_width'] + self.hyperparams['d_model']
-        self.classification_head = nn.Sequential(
-            nn.Linear(inp_dim_classifier, inp_dim_classifier // 2),
-            nn.ReLU(),
-            nn.Dropout(self.dropout),
-            nn.Linear(inp_dim_classifier // 2, inp_dim_classifier // 4),
-            nn.ReLU(),
-            nn.Dropout(self.dropout),
-            nn.Linear(inp_dim_classifier // 4, 1)
+        # Gene-Variant Attention
+        gene_feature_dim = gc_width + go_width
+        variant_feature_dim = int(config['hyperparameters']['d_model'])
+        attention_dim = int(config['hyperparameters']['gv_attn_dim'])
+
+        self.gene_variant_attention = GeneVariantAttention(
+            gene_feature_dim=gene_feature_dim,
+            variant_feature_dim=variant_feature_dim,
+            attention_dim=attention_dim,
+            nhead=int(config['hyperparameters']['nhead'])
         )
+
+        # num_layers = int(config['hyperparameters']['num_layers'])
+        # inp_dim_classifier = gene_feature_dim + attention_dim
+        # self.classification_head = nn.Sequential(
+        #     nn.Linear(inp_dim_classifier, inp_dim_classifier // 2),
+        #     nn.ReLU(),
+        #     self.dropout,
+        #     nn.Linear(inp_dim_classifier // 2, inp_dim_classifier // 4),
+        #     nn.ReLU(),
+        #     self.dropout,
+        #     nn.Linear(inp_dim_classifier // 4, 1)
+        # )
+
+        cls_head_layers = []
+        depth_cls_head = int(config['hyperparameters']['depth_cls_head'])
+        inp_dim_classifier = gene_feature_dim + attention_dim
+        hidden_dim = inp_dim_classifier
+        for _ in range(depth_cls_head):
+            hidden_dim = hidden_dim // 2
+            cls_head_layers += [
+                nn.Linear(inp_dim_classifier, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(p=float(config['hyperparameters']['dropout']))
+            ]
+        cls_head_layers += [nn.Linear(hidden_dim, 1)]
+        self.classification_head = nn.Sequential(*cls_head_layers)
 
         self.acc = Accuracy(task="binary", threshold=self.hyperparams['threshold'])
         self.auroc = AUROC(task="binary")
@@ -259,11 +302,12 @@ class MultiModalTargetIdentifier(torch.nn.Module):  # Changed inheritance: now d
 
     def forward(self, x, mask=None):
         # 1. Process GC and GO features through their linear layers
-        z_gc = self.gc_feature_extractor(x['gc'][0])
-        z_go = self.go_feature_extractor(x['go'][0])
+        z_gc = self.gc_projection(x['gc'][0])
+        z_go = self.go_projection(x['go'][0])
+        z_gene = torch.cat([z_gc, z_go], dim=-1)
 
         # 2. Get gene embeddings from Varformer
-        z_pvc, attn_weights = self.pvc_branch(
+        z_pvc = self.varformer(
             {
                 'pathogenicity': x['pvc']['pathogenicity'],
                 'position': x['pvc']['position'],
@@ -272,12 +316,63 @@ class MultiModalTargetIdentifier(torch.nn.Module):  # Changed inheritance: now d
             mask=mask
         )
 
+        # Apply Gene-Variant Attention
+        z_var, variant_attn_weights = self.gene_variant_attention(z_gene, z_pvc)
+
         # 3. Concatenate processed GC, GO, and PVC features
-        concatenated_features = torch.cat([z_gc, z_go, z_pvc], dim=-1)
+        concatenated_features = torch.cat([z_gene, z_var], dim=-1)
 
         # 4. Feed concatenated features into the linear classifier
         logits = self.classification_head(concatenated_features).squeeze()
-        sigmoid = nn.Sigmoid()
-        probabilities = sigmoid(logits)
+        probabilities = torch.sigmoid(logits)
         binary_predictions = (probabilities > float(self.hyperparams['threshold'])).float()
-        return logits, probabilities, binary_predictions
+        if self.hyperparams['return_attn']:
+            return logits, probabilities, binary_predictions, variant_attn_weights
+        else:
+            return logits, probabilities, binary_predictions
+
+
+class GeneVariantAttention(nn.Module):
+    def __init__(self, gene_feature_dim, variant_feature_dim, attention_dim, nhead=1):
+        """
+        Implements gene-variant attention mechanism.
+
+        Args:
+        - gene_feature_dim (int): Number of gene-level features (GC + GO).
+        - variant_feature_dim (int): Embedding size of variant features (output of Varformer).
+        - attention_dim (int): Attention projection dimension.
+        - nhead (int): Number of attention heads (default 1 for interpretability).
+        """
+        super(GeneVariantAttention, self).__init__()
+
+        self.query_layer = nn.Linear(gene_feature_dim, attention_dim)  # Gene as Query
+        self.key_layer = nn.Linear(variant_feature_dim, attention_dim)  # Variant as Key
+        self.value_layer = nn.Linear(variant_feature_dim, attention_dim)  # Variant as Value
+
+        self.attn = nn.MultiheadAttention(embed_dim=attention_dim, num_heads=nhead, batch_first=True)
+
+    def forward(self, gene_features, variant_embeddings):
+        """
+        Args:
+        - gene_features: Tensor [B, gene_feature_dim] – Combined gene context features.
+        - variant_embeddings: Tensor [B, S, variant_feature_dim] – Output from Varformer.
+
+        Returns:
+        - attn_output: [B, attention_dim] – Variant-informed gene representation.
+        - attn_weights: [B, S] – Attention scores over variants.
+        """
+        B, S, E = variant_embeddings.shape  # B = batch_size, S = max_seq_len (variants per gene)
+
+        # Project features into attention space
+        Q = self.query_layer(gene_features).unsqueeze(1)  # Shape: [B, 1, attention_dim]
+        K = self.key_layer(variant_embeddings)  # Shape: [B, S, attention_dim]
+        V = self.value_layer(variant_embeddings)  # Shape: [B, S, attention_dim]
+
+        # Compute attention (Q attends to K/V)
+        attn_output, attn_weights = self.attn(Q, K, V)
+
+        # Remove sequence dimension since each gene has one query
+        attn_output = attn_output.squeeze(1)  # [B, attention_dim]
+        attn_weights = attn_weights.squeeze(1)  # [B, S]
+
+        return attn_output, attn_weights
