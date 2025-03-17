@@ -21,7 +21,7 @@ class ModuleDataProcessor:
         self.psc = psc
 
         if config is None:
-            with open("config.yml", 'r') as stream:
+            with open("cluster_config.yml", 'r') as stream:
                 self.config = yaml.safe_load(stream)
 
     def process(self):
@@ -256,7 +256,7 @@ class ModuleDataProcessor:
         pharos_pos_data_gc = gc_data.data[gc_data.data.index.isin(pharos_ensg)]
         pharos_pos_data_go = go_data.data[go_data.data.index.isin(pharos_ensg)]
         pharos_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pharos_ensg if ensg in list(pvc_labels.keys())}
-        pharos_pos_data_gc['target'] = 1
+        pharos_pos_data_gc.loc[:, 'target'] = 1
         pharos_pos_data_go['target'] = 1
 
         # Calculate class ratio
@@ -313,8 +313,8 @@ class ModuleDataProcessor:
         pharos_neg_data_gc = gc_data.data[gc_data.data.index.isin(pharos_negs.index)]
         pharos_neg_data_go = go_data.data[go_data.data.index.isin(pharos_negs.index)]
         pharos_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pharos_negs.index if ensg in list(pvc_labels.keys())}
-        pharos_neg_data_gc['target'] = 0
-        pharos_neg_data_go['target'] = 0
+        pharos_neg_data_gc.loc[:, 'target'] = 0
+        pharos_neg_data_go.loc[:, 'target'] = 0
 
         # Combine positive and negative data for each source
         pfam_data_gc = pd.concat([pfam_pos_data_gc, pfam_neg_data_gc])
@@ -329,7 +329,15 @@ class ModuleDataProcessor:
         pharos_data_go = pd.concat([pharos_pos_data_go, pharos_neg_data_go])
         pharos_data_pvc = {**pharos_pos_data_pvc, **pharos_neg_data_pvc}
 
-        test_labels = {gene: 1 for gene in pfam_data_gc.index if gene in pfam_pos_data_gc.index}
+        test_labels = {}
+
+        all_pos_genes = set(pfam_ensg + rcnt_ensg + pharos_ensg)
+        for gene in all_pos_genes:
+            test_labels[gene] = 1
+
+        all_neg_genes = set(list(pfam_negs.index) + list(rcnt_negs.index) + list(pharos_negs.index))
+        for gene in all_neg_genes:
+            test_labels[gene] = 0
 
         # Set up test data structure
         test_data = {
