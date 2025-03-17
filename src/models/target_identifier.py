@@ -280,16 +280,17 @@ class MultiModalTargetIdentifier(torch.nn.Module):
         cls_head_layers = []
         depth_cls_head = int(config['hyperparameters']['depth_cls_head'])
         inp_dim_classifier = gene_feature_dim + attention_dim
-        hidden_dim = inp_dim_classifier
+        current_dim = inp_dim_classifier
         for _ in range(depth_cls_head):
-            hidden_dim = hidden_dim // 2
+            hidden_dim = current_dim // 2
             cls_head_layers += [
-                nn.Linear(inp_dim_classifier, hidden_dim),
+                nn.Linear(current_dim, hidden_dim),  # Use current_dim instead of inp_dim_classifier
                 nn.LayerNorm(hidden_dim),
                 nn.ReLU(),
                 nn.Dropout(p=float(config['hyperparameters']['dropout']))
             ]
-        cls_head_layers += [nn.Linear(hidden_dim, 1)]
+            current_dim = hidden_dim  # Update current_dim for the next layer
+        cls_head_layers += [nn.Linear(current_dim, 1)]
         self.classification_head = nn.Sequential(*cls_head_layers)
 
         self.acc = Accuracy(task="binary", threshold=self.hyperparams['threshold'])
@@ -323,6 +324,8 @@ class MultiModalTargetIdentifier(torch.nn.Module):
         concatenated_features = torch.cat([z_gene, z_var], dim=-1)
 
         # 4. Feed concatenated features into the linear classifier
+        # RuntimeError: mat1 and mat2 shapes cannot be multiplied (128x336 and 672x168)
+        # TODO: Look at the model architecture in detail
         logits = self.classification_head(concatenated_features).squeeze()
         probabilities = torch.sigmoid(logits)
         binary_predictions = (probabilities > float(self.hyperparams['threshold'])).float()
