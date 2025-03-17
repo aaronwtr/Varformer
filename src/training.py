@@ -41,7 +41,7 @@ def tune():
         direction="maximize",
         sampler=sampler
     )
-    n_trials = 100  # Initial trial budget for TPE (adjust as needed)
+    n_trials = 5  # Initial trial budget for TPE (adjust as needed)
 
     study.optimize(
         objective,
@@ -62,9 +62,8 @@ def tune():
 
 
 def objective(trial: optuna.trial.Trial) -> float:
-    with open("config.yml", 'r') as stream:
+    with open("cluster_config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
-
     # Explicit categorical values for hyperparameters
     config['hyperparameters']['lr_start'] = trial.suggest_categorical('lr_start', [5e-6, 1e-5, 3e-5, 1e-4, 3e-4])
     config['hyperparameters']['lr_fraction'] = trial.suggest_categorical('lr_fraction',
@@ -130,7 +129,7 @@ def objective(trial: optuna.trial.Trial) -> float:
         project="varformer-hyperparameter-tuning",
         dir="/data/scratch/bty174/genomic-drug-targeting/src/",
         config=hyperparameters,
-        group="varformer-tuning-run-4"
+        group="varformer-tuning-run-5"
     )
 
     data = ModuleDataProcessor(True, True, True, False).process()
@@ -226,6 +225,9 @@ def train_model(data):
 
     preprocessor = ModelPreprocessor(config, data)
     model, train_combined, val_combined, test_combined, hyperparameters, accelerator = preprocessor.model_init()
+
+    # print the architecture of model
+    print(model)
 
     # Log model parameters
     model_summary = ModelSummary(model)
