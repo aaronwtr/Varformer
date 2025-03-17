@@ -17,11 +17,22 @@ class BaseLightningTargetIdentifier(pl.LightningModule):
         self.model = model
 
     def _log(self, labels, step_type, loss, bin_preds, probas, pos_loss=None, neg_loss=None, test_source=None):
+        if bin_preds.shape != labels.shape:
+            if bin_preds.dim() == 0:
+                bin_preds = bin_preds.unsqueeze(0)
+            if labels.dim() == 0:
+                labels = labels.unsqueeze(0)
+        if probas.shape != labels.shape:
+            if probas.dim() == 0:
+                probas = probas.unsqueeze(0)
+            if labels.dim() == 0:
+                labels = labels.unsqueeze(0)
         if step_type in ['train', 'val']:
             if pos_loss is not None:
                 self.log(f'{step_type}_pos_loss', pos_loss, batch_size=labels.shape[0])
             if neg_loss is not None:
                 self.log(f'{step_type}_neg_loss', neg_loss, batch_size=labels.shape[0])
+
             self.log(f'{step_type}_loss', loss, batch_size=labels.shape[0])
             self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels), batch_size=labels.shape[0])
             self.log(f'{step_type}_auroc', self.model.auroc(probas, labels.int()),
@@ -218,6 +229,12 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
                 self._log(labels, step_type, loss, bin_preds, probas)
 
             elif step_type == 'val':
+                if logits.shape != labels.shape:
+                    if logits.dim() == 0:
+                        logits = logits.unsqueeze(0)
+
+                    if labels.dim() == 0:
+                        labels = labels.unsqueeze(0)
                 loss = F.binary_cross_entropy_with_logits(logits, labels.float())
                 self._log(labels, step_type, loss, bin_preds, probas)
                 self.val_step_probas.append(probas.detach().cpu())
