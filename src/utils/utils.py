@@ -146,11 +146,11 @@ def load_fda_labels() -> pd.DataFrame:
     return pd.read_excel("../data/FDA_approved_drug_targets_2023_Q3.xlsx")
 
 
-def load_combined_labels(ot_targets) -> pd.DataFrame:
+def load_combined_labels(ot_targets, config) -> pd.DataFrame:
     """
     Load the HPA/manual FDA and citeline labels pkl file and combine them with Platform Known Drugs from ChEMBL
     """
-    with open("../data/labels/citeline_manual_labels.pkl", "rb") as f:
+    with open(config['paths']['CITELINE_LABELS'], "rb") as f:
         labels = pkl.load(f)
     labels = labels.drop(columns=["Gene"])
     labels_ensembl = labels["Ensembl"].tolist()
