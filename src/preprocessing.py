@@ -573,6 +573,8 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
     data: pd.DataFrame
 
     def __init__(self, config, gcp=None):
+        self.hpa_tissue_specificity_features = None
+        self.gtex_tissue_specificity_features = None
         self.protein_atlas_feature_names = None
         if not gcp:
             super(GeneOntologyPreprocessor, self).__init__(config)
@@ -622,7 +624,8 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         self.protein_atlas_feature_extractor()
 
         self.tissue_specificity_features = None
-        self.tissue_expression_feature_extractor()
+        self.hpa_tissue_expression_feature_extractor()
+        self.gtex_tissue_expression_feature_extractor()
 
         print("Combining gene ontology features...")
         self.gene_ontology_features = None
@@ -631,42 +634,6 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         self.data = self.gene_ontology_features
         self.data = self.data.set_index('ENSG')
         self.data.index.name = 'targetId'
-
-        # self.pfam_data = self.data[self.data.index.isin(self.pfam_ids.index)]
-        # self.pfam_pos_data = self.pfam_data
-        # self.pfam_pos_data['target'] = 1.0
-        #
-        # self.rcnt_data = self.data[self.data.index.isin(self.rcnt_ids.index)]
-        # self.rcnt_pos_data = self.rcnt_data
-        # self.rcnt_pos_data['target'] = 1.0
-        #
-        # self.pharos_data = self.data[self.data.index.isin(self.pharos_ids.index)]
-        # self.pharos_pos_data = self.pharos_data
-        # self.pharos_pos_data['target'] = 1.0
-        #
-        # pfam_neg_data = self.data[self.data.index.isin(self.pfam_neg_data.index)]
-        # pfam_neg_data['target'] = 0.0
-        #
-        # rcnt_neg_data = self.data[self.data.index.isin(self.rcnt_neg_data.index)]
-        # rcnt_neg_data['target'] = 0.0
-        #
-        # pharos_neg_data = self.data[self.data.index.isin(self.pharos_neg_data.index)]
-        # pharos_neg_data['target'] = 0.0
-        #
-        # self.pfam_data = pd.concat([self.pfam_pos_data, pfam_neg_data]).sample(frac=1)
-        # self.rcnt_data = pd.concat([self.rcnt_pos_data, rcnt_neg_data]).sample(frac=1)
-        # self.pharos_data = pd.concat([self.pharos_pos_data, pharos_neg_data]).sample(frac=1)
-        #
-        # self.data = self.data[~self.data.index.isin(self.pfam_ids_all.index)]
-        # self.data = self.data[~self.data.index.isin(self.rcnt_ids_all.index)]
-        # self.data = self.data[~self.data.index.isin(self.pharos_ids_all.index)]
-        #
-        # target_mapping = self.gcp_data['target']
-        #
-        # self.data['target'] = float('nan')
-        # # Update self.data's target column where the index matches targetId in gcp_data
-        # self.data['target'] = self.data['target'].where(~self.data.index.isin(target_mapping.index), self.data.index.map(target_mapping))
-        # self.data = self.data[~self.data['target'].isna()]
 
         self.num_features = len(self.data.columns) - 1  # subtract 1 for the target column
 
@@ -754,15 +721,14 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
             with open(f'{features_dir}/protein_atlas_feature_names.pkl', 'wb') as f:
                 pkl.dump(self.protein_atlas_feature_names, f)
 
-    def tissue_expression_feature_extractor(self):
+    def hpa_tissue_expression_feature_extractor(self):
         # check if the tissue expression data has already been processed
         features_dir = self.config['paths']['FEATURES_DIR']
-        if os.path.exists(f'{features_dir}/tissue_specificity_features.pkl'):
-            with open(f'{features_dir}/tissue_specificity_features.pkl', 'rb') as f:
-                self.tissue_specificity_features = pkl.load(f)
-            return
+        if os.path.exists(f'{features_dir}/hpa_tissue_specificity_features.pkl'):
+            with open(f'{features_dir}/hpa_tissue_specificity_features.pkl', 'rb') as f:
+                self.hpa_tissue_specificity_features = pkl.load(f)
         else:
-            tissue_expression = pd.read_csv(self.config['paths']['TISSUE_EXPRESSION_PATH'], sep='\t')  # 1,197,500
+            tissue_expression = pd.read_csv(self.config['paths']['TISSUE_EXPRESSION_HPA'], sep='\t')  # 1,197,500
             tissue_expression = tissue_expression[tissue_expression['Reliability'] != 'Uncertain']  # 1,014,693
             tissue_expression = tissue_expression[tissue_expression['Level'] != 'Uncertain']  # 1,014,693
 
@@ -775,13 +741,60 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
                 else:
                     gene_tissue_dict[gene] = [tissue]
 
-            self.tissue_specificity_features = gene_tissue_dict
-            with open(f'{features_dir}/tissue_specificity_features.pkl', 'wb') as f:
+            self.hpa_tissue_specificity_features = gene_tissue_dict
+            with open(f'{features_dir}/hpa_tissue_specificity_features.pkl', 'wb') as f:
                 pkl.dump(gene_tissue_dict, f)
+
+    def gtex_tissue_expression_feature_extractor(self):
+        features_dir = self.config['paths']['FEATURES_DIR']
+        if os.path.exists(f'{features_dir}/gtex_tissue_specificity_features.pkl'):
+            with open(f'{features_dir}/gtex_tissue_specificity_features.pkl', 'rb') as f:
+                self.gtex_tissue_specificity_features = pkl.load(f)
+        else:
+            with gzip.open(self.config['paths']['TISSUE_EXPRESSION_GTEX'], 'rt') as f:
+                next(f)
+                dim_line = next(f)
+                rows, cols = map(int, dim_line.strip().split())
+                header_line = next(f)
+                column_names = header_line.strip().split('\t')
+                data = []
+                for line in f:
+                    data.append(line.strip().split('\t'))
+
+            gtex_data = pd.DataFrame(data)
+            gtex_data.columns = column_names
+            gtex_data = gtex_data.set_index(gtex_data.columns[0])
+
+            for col in gtex_data.columns[1:]:
+                gtex_data[col] = gtex_data[col].astype(float)
+
+            if 'Description' in gtex_data.columns:
+                gtex_data = gtex_data.drop(columns=['Description'])
+
+            gtex_data = (gtex_data > 0).astype(float)
+
+            gtex_data.index = gtex_data.index.str.split('.').str[0]
+
+            if gtex_data.index.duplicated().any():
+                gtex_data = gtex_data.groupby(gtex_data.index).max()
+
+            # Create dictionary mapping gene IDs to list of expressed tissues
+            gene_tissue_dict = {}
+            for gene_id in gtex_data.index:
+                expressed_tissues = gtex_data.columns[gtex_data.loc[gene_id] == 1.0].tolist()
+
+                gene_tissue_dict[gene_id] = expressed_tissues
+
+            # Save the tissue dictionary
+            with open(f'{features_dir}/gtex_tissue_specificity_features.pkl', 'wb') as f:
+                pkl.dump(gene_tissue_dict, f)
+
+            self.gtex_tissue_specificity_features = gene_tissue_dict
 
     def combine_go_features(self):
         ensg_features = {
-            "tissue_specificity": self.tissue_specificity_features,
+            "tissue_specificity_hpa": self.hpa_tissue_specificity_features,
+            "tissue_specificity_gtex": self.gtex_tissue_specificity_features,
             "biological_processes": self.protein_atlas_features['biological_processes'],
             "molecular_functions": self.protein_atlas_features['molecular_processes'],
             "subcellular_locations": self.protein_atlas_features['subcellular_locations']
@@ -846,19 +859,33 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
 
         feature_matrix = feature_matrix.fillna(0)
 
-        feature_matrix['tissue_specificity'] = feature_matrix['tissue_specificity'].apply(
-            lambda x: x if isinstance(x, list) else [])
+        # Replace tissue_specificity columns with empty lists if they're not already lists
+        for col in ['tissue_specificity_hpa', 'tissue_specificity_gtex']:
+            feature_matrix[col] = feature_matrix[col].apply(lambda x: x if isinstance(x, list) else [])
 
-        # Get the unique tissues
-        unique_tissues = set(tissue for tissues_list in feature_matrix['tissue_specificity'] for tissue in tissues_list)
+        # Get unique tissues from both data sources
+        unique_hpa_tissues = set(tissue for tissues_list in feature_matrix['tissue_specificity_hpa']
+                                 for tissue in tissues_list)
+        unique_gtex_tissues = set(tissue for tissues_list in feature_matrix['tissue_specificity_gtex']
+                                  for tissue in tissues_list)
 
-        # Create new columns for each unique tissue
-        for tissue in unique_tissues:
-            feature_matrix[f'tissue_specificity_{tissue.replace(" ", "_")}'] = feature_matrix[
-                'tissue_specificity'].apply(
+        # Create new columns for each unique HPA tissue
+        for tissue in unique_hpa_tissues:
+            tissue_col = f'tissue_hpa_{tissue.replace(" ", "_")}'
+            feature_matrix[tissue_col] = feature_matrix['tissue_specificity_hpa'].apply(
                 lambda x: 1 if tissue in x else 0)
 
-        feature_matrix = feature_matrix.drop('tissue_specificity', axis=1)
+        # Create new columns for each unique GTEx tissue
+        for tissue in unique_gtex_tissues:
+            tissue_col = f'tissue_gtex_{tissue.replace(" ", "_")}'
+            feature_matrix[tissue_col] = feature_matrix['tissue_specificity_gtex'].apply(
+                lambda x: 1 if tissue in x else 0)
+
+        feature_matrix = feature_matrix.drop(['tissue_specificity_hpa', 'tissue_specificity_gtex'], axis=1)
+        with pd.option_context('mode.chained_assignment', None):
+            feature_matrix = feature_matrix.loc[:, (feature_matrix != 0).any(axis=0)]
+
+        # Fill any remaining NaN values with 0
         self.gene_ontology_features = feature_matrix.fillna(0)
 
 
