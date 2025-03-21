@@ -8,129 +8,12 @@ from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, StepLR, Expone
 from models.target_identifier import MultiModalTargetIdentifier
 
 
-class BaseLightningTargetIdentifier(pl.LightningModule):
-    def __init__(self, model, config, num_samples_per_class, beta=0.9999):
-        super().__init__()
-        self.beta = beta
-        self.num_samples_per_class = num_samples_per_class
-        self.config = config['hyperparameters']
-        self.model = model
-
-    def _log(self, labels, step_type, loss, bin_preds, probas, pos_loss=None, neg_loss=None, test_source=None):
-        if bin_preds.shape != labels.shape:
-            if bin_preds.dim() == 0:
-                bin_preds = bin_preds.unsqueeze(0)
-            if labels.dim() == 0:
-                labels = labels.unsqueeze(0)
-        if probas.shape != labels.shape:
-            if probas.dim() == 0:
-                probas = probas.unsqueeze(0)
-            if labels.dim() == 0:
-                labels = labels.unsqueeze(0)
-        if step_type in ['train', 'val']:
-            if pos_loss is not None:
-                self.log(f'{step_type}_pos_loss', pos_loss, batch_size=labels.shape[0])
-            if neg_loss is not None:
-                self.log(f'{step_type}_neg_loss', neg_loss, batch_size=labels.shape[0])
-
-            self.log(f'{step_type}_loss', loss, batch_size=labels.shape[0])
-            self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels), batch_size=labels.shape[0])
-            self.log(f'{step_type}_auroc', self.model.auroc(probas, labels.int()),
-                     batch_size=labels.shape[0])
-            self.log(f'{step_type}_spearman', self.model.spearman(probas, labels.float()),
-                     batch_size=labels.shape[0])
-            self.log(f'{step_type}_recall', self.model.recall(bin_preds, labels.long()),
-                     batch_size=labels.shape[0])
-            self.log(f'{step_type}_precision', self.model.precision(bin_preds, labels.long()),
-                     batch_size=labels.shape[0])
-            self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()),
-                     batch_size=labels.shape[0]),
-            self.log(f'{step_type}_auprc', self.model.auprc(probas, labels.long()),
-                     batch_size=labels.shape[0])
-        else:
-            self.log(f'{step_type}_acc_{test_source}', self.model.acc(bin_preds, labels),
-                     batch_size=labels.shape[0])
-            self.log(f'{step_type}_auroc_{test_source}', self.model.auroc(bin_preds, labels.int()),
-                     batch_size=labels.shape[0])
-            self.log(f'{step_type}_spearman_{test_source}', self.model.spearman(probas, labels.float()),
-                     batch_size=labels.shape[0])
-            self.log(f'{step_type}_recall_{test_source}', self.model.recall(bin_preds, labels.long()),
-                     batch_size=labels.shape[0])
-            self.log(f'{step_type}_precision_{test_source}', self.model.precision(bin_preds, labels.long()),
-                     batch_size=labels.shape[0])
-            self.log(f'{step_type}_f1_{test_source}', self.model.f1(bin_preds, labels.long()),
-                     batch_size=labels.shape[0])
-            self.log(f'{step_type}_auprc_{test_source}', self.model.auprc(probas, labels.long()),
-                     batch_size=labels.shape[0])
-
-            logger_type = self.logger.__class__.__name__
-            if logger_type == "WandbLogger":
-                self.logger.experiment.log({
-                    f'{step_type}_{test_source}_predictions': bin_preds.detach().cpu().numpy(),
-                    f'{step_type}_{test_source}_probas': probas.to(dtype=torch.float32).detach().cpu().numpy(),
-                    f'{step_type}_{test_source}_labels': labels.to(dtype=torch.float32).detach().cpu().numpy()
-                })
-
-    def _common_step(self, batch, batch_idx, step_type):
-        if len(batch) > 2:  # For transformer
-            features = {key: batch[key] for key in ['pathogenicity', 'position', 'mutation', 'gene']}
-            labels = batch['labels']
-            masks = batch['mask']
-            test_source = batch['test_source'][0]
-
-            logits, probas, bin_preds, _ = self(features, masks)
-        else:  # For regular MLP
-            features, labels = batch
-            test_source = None
-            logits, probas, bin_preds = self(features)
-
-        labels = (labels > float(self.config['threshold'])).float()
-        if step_type == 'train':
-            class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))],
-                                        device=self.device)
-            loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
-            self._log(labels, step_type, loss, bin_preds, probas)
-        elif step_type == 'val':
-            loss = F.binary_cross_entropy_with_logits(logits, labels.float())
-            self._log(labels, step_type, loss, bin_preds, probas)
-        else:
-            loss = None
-            self._log(labels, step_type, loss, bin_preds, probas, test_source=test_source)
-        return loss
-
-    def training_step(self, batch, batch_idx):
-        return self._common_step(batch, batch_idx, 'train')
-
-    def validation_step(self, batch, batch_idx):
-        return self._common_step(batch, batch_idx, 'val')
-
-    def test_step(self, batch, batch_idx):
-        return self._common_step(batch, batch_idx, 'test')
-
-    def configure_optimizers(self):
-        weight_decay = float(self.config.get('weight_decay', 0))
-        if self.config['optimizer'] == "Adam":
-            optimizer = torch.optim.Adam(self.parameters(), lr=float(self.config['lr_start']),
-                                         weight_decay=weight_decay)
-        elif self.config['optimizer'] == "SGD":
-            optimizer = torch.optim.SGD(self.parameters(), lr=float(self.config['lr_start']), weight_decay=weight_decay)
-        elif self.config['optimizer'] == "RMSprop":
-            optimizer = torch.optim.RMSprop(self.parameters(), lr=float(self.config['lr_start']),
-                                            weight_decay=weight_decay)
-        elif self.config['optimizer'] == "AdamW":
-            optimizer = torch.optim.AdamW(self.parameters(), lr=float(self.config['lr_start']),
-                                          weight_decay=weight_decay)
-        else:
-            raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
-
-        return optimizer
-
-
-class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
+class MultiModalLightningTargetIdentifier(pl.LightningModule):
     def __init__(self, config, num_samples_per_class, num_features_gc, num_features_go, num_mutations, max_seq_len,
                  num_genes, num_iters, class_prior):
         self.save_hyperparameters()
         super().__init__(model=None, config=config, num_samples_per_class=num_samples_per_class)
+
         self.model = MultiModalTargetIdentifier(
             config=config,
             num_features_gc=num_features_gc,
@@ -260,6 +143,61 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
     def test_step(self, batch, batch_idx):
         return self._common_step(batch, batch_idx, 'test')
 
+    def _log(self, labels, step_type, loss, bin_preds, probas, pos_loss=None, neg_loss=None, test_source=None):
+        if bin_preds.shape != labels.shape:
+            if bin_preds.dim() == 0:
+                bin_preds = bin_preds.unsqueeze(0)
+            if labels.dim() == 0:
+                labels = labels.unsqueeze(0)
+        if probas.shape != labels.shape:
+            if probas.dim() == 0:
+                probas = probas.unsqueeze(0)
+            if labels.dim() == 0:
+                labels = labels.unsqueeze(0)
+        if step_type in ['train', 'val']:
+            if pos_loss is not None:
+                self.log(f'{step_type}_pos_loss', pos_loss, batch_size=labels.shape[0])
+            if neg_loss is not None:
+                self.log(f'{step_type}_neg_loss', neg_loss, batch_size=labels.shape[0])
+
+            self.log(f'{step_type}_loss', loss, batch_size=labels.shape[0])
+            self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels), batch_size=labels.shape[0])
+            self.log(f'{step_type}_auroc', self.model.auroc(probas, labels.int()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_spearman', self.model.spearman(probas, labels.float()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_recall', self.model.recall(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_precision', self.model.precision(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()),
+                     batch_size=labels.shape[0]),
+            self.log(f'{step_type}_auprc', self.model.auprc(probas, labels.long()),
+                     batch_size=labels.shape[0])
+        else:
+            self.log(f'{step_type}_acc_{test_source}', self.model.acc(bin_preds, labels),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_auroc_{test_source}', self.model.auroc(bin_preds, labels.int()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_spearman_{test_source}', self.model.spearman(probas, labels.float()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_recall_{test_source}', self.model.recall(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_precision_{test_source}', self.model.precision(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_f1_{test_source}', self.model.f1(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_auprc_{test_source}', self.model.auprc(probas, labels.long()),
+                     batch_size=labels.shape[0])
+
+            logger_type = self.logger.__class__.__name__
+            if logger_type == "WandbLogger":
+                self.logger.experiment.log({
+                    f'{step_type}_{test_source}_predictions': bin_preds.detach().cpu().numpy(),
+                    f'{step_type}_{test_source}_probas': probas.to(dtype=torch.float32).detach().cpu().numpy(),
+                    f'{step_type}_{test_source}_labels': labels.to(dtype=torch.float32).detach().cpu().numpy()
+                })
+
     def configure_optimizers(self):
         weight_decay = float(self.config.get('weight_decay', 0))
         if self.config['optimizer'] == "Adam":
@@ -329,6 +267,124 @@ class MultiModalLightningTargetIdentifier(BaseLightningTargetIdentifier):
 
 
 # legacy
+class BaseLightningTargetIdentifier(pl.LightningModule):
+    def __init__(self, model, config, num_samples_per_class, beta=0.9999):
+        super().__init__()
+        self.beta = beta
+        self.num_samples_per_class = num_samples_per_class
+        self.config = config['hyperparameters']
+        self.model = model
+
+    def _log(self, labels, step_type, loss, bin_preds, probas, pos_loss=None, neg_loss=None, test_source=None):
+        if bin_preds.shape != labels.shape:
+            if bin_preds.dim() == 0:
+                bin_preds = bin_preds.unsqueeze(0)
+            if labels.dim() == 0:
+                labels = labels.unsqueeze(0)
+        if probas.shape != labels.shape:
+            if probas.dim() == 0:
+                probas = probas.unsqueeze(0)
+            if labels.dim() == 0:
+                labels = labels.unsqueeze(0)
+        if step_type in ['train', 'val']:
+            if pos_loss is not None:
+                self.log(f'{step_type}_pos_loss', pos_loss, batch_size=labels.shape[0])
+            if neg_loss is not None:
+                self.log(f'{step_type}_neg_loss', neg_loss, batch_size=labels.shape[0])
+
+            self.log(f'{step_type}_loss', loss, batch_size=labels.shape[0])
+            self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels), batch_size=labels.shape[0])
+            self.log(f'{step_type}_auroc', self.model.auroc(probas, labels.int()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_spearman', self.model.spearman(probas, labels.float()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_recall', self.model.recall(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_precision', self.model.precision(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_f1', self.model.f1(bin_preds, labels.long()),
+                     batch_size=labels.shape[0]),
+            self.log(f'{step_type}_auprc', self.model.auprc(probas, labels.long()),
+                     batch_size=labels.shape[0])
+        else:
+            self.log(f'{step_type}_acc_{test_source}', self.model.acc(bin_preds, labels),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_auroc_{test_source}', self.model.auroc(bin_preds, labels.int()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_spearman_{test_source}', self.model.spearman(probas, labels.float()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_recall_{test_source}', self.model.recall(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_precision_{test_source}', self.model.precision(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_f1_{test_source}', self.model.f1(bin_preds, labels.long()),
+                     batch_size=labels.shape[0])
+            self.log(f'{step_type}_auprc_{test_source}', self.model.auprc(probas, labels.long()),
+                     batch_size=labels.shape[0])
+
+            logger_type = self.logger.__class__.__name__
+            if logger_type == "WandbLogger":
+                self.logger.experiment.log({
+                    f'{step_type}_{test_source}_predictions': bin_preds.detach().cpu().numpy(),
+                    f'{step_type}_{test_source}_probas': probas.to(dtype=torch.float32).detach().cpu().numpy(),
+                    f'{step_type}_{test_source}_labels': labels.to(dtype=torch.float32).detach().cpu().numpy()
+                })
+
+    def _common_step(self, batch, batch_idx, step_type):
+        if len(batch) > 2:  # For transformer
+            features = {key: batch[key] for key in ['pathogenicity', 'position', 'mutation', 'gene']}
+            labels = batch['labels']
+            masks = batch['mask']
+            test_source = batch['test_source'][0]
+
+            logits, probas, bin_preds, _ = self(features, masks)
+        else:  # For regular MLP
+            features, labels = batch
+            test_source = None
+            logits, probas, bin_preds = self(features)
+
+        labels = (labels > float(self.config['threshold'])).float()
+        if step_type == 'train':
+            class_weight = torch.tensor([1 if labels[i] == 0 else self.imbalance for i in range(len(labels))],
+                                        device=self.device)
+            loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
+            self._log(labels, step_type, loss, bin_preds, probas)
+        elif step_type == 'val':
+            loss = F.binary_cross_entropy_with_logits(logits, labels.float())
+            self._log(labels, step_type, loss, bin_preds, probas)
+        else:
+            loss = None
+            self._log(labels, step_type, loss, bin_preds, probas, test_source=test_source)
+        return loss
+
+    def training_step(self, batch, batch_idx):
+        return self._common_step(batch, batch_idx, 'train')
+
+    def validation_step(self, batch, batch_idx):
+        return self._common_step(batch, batch_idx, 'val')
+
+    def test_step(self, batch, batch_idx):
+        return self._common_step(batch, batch_idx, 'test')
+
+    def configure_optimizers(self):
+        weight_decay = float(self.config.get('weight_decay', 0))
+        if self.config['optimizer'] == "Adam":
+            optimizer = torch.optim.Adam(self.parameters(), lr=float(self.config['lr_start']),
+                                         weight_decay=weight_decay)
+        elif self.config['optimizer'] == "SGD":
+            optimizer = torch.optim.SGD(self.parameters(), lr=float(self.config['lr_start']), weight_decay=weight_decay)
+        elif self.config['optimizer'] == "RMSprop":
+            optimizer = torch.optim.RMSprop(self.parameters(), lr=float(self.config['lr_start']),
+                                            weight_decay=weight_decay)
+        elif self.config['optimizer'] == "AdamW":
+            optimizer = torch.optim.AdamW(self.parameters(), lr=float(self.config['lr_start']),
+                                          weight_decay=weight_decay)
+        else:
+            raise ValueError(f"Optimizer {self.config['optimizer']} not recognized.")
+
+        return optimizer
+
+
 class MLPLightningTargetIdentifier(BaseLightningTargetIdentifier):
     def __init__(self, model, config, imbalance):
         super().__init__(model, config, imbalance)
