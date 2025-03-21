@@ -1,5 +1,10 @@
 paths:
+  DATA_DIR: "../data"
+  FEATURES_DIR: "../data/features"
+  RAW_GH: "../data/features/raw_miva_feature_matrix.pkl"
   ALL_GH: "../data/elgh/gh_parts/processed_gh_data/filtered_csqs.pkl"
+  CITELINE_LABELS: "../data/labels/citeline_manual_labels.pkl"
+  MISSENSE_MAP: "../data/elgh/missense_mutation_map.pkl"
   MIVA_PATH: "../data/elgh/all_functional.gatk_PASS.FS_30.DP_0.GQ_20.AB_0.01.functional.missingness_lt_0.genotype_counts.present_in_ELGH.n_transcripts_corrected.txt"
   GENOME_PATH: "../data/hg38.fasta"
   VP_INFERENCE_PATH: "../models/VariPred/VariPred/predict.sh"
@@ -16,18 +21,19 @@ paths:
   ADULT_ACTIONABLE_GENES_PATH: "../data/test_data/ACI-overview-adult.tsv"
   PREDIATRIC_ACTIONABLE_GENES_PATH: "../data/test_data/ACI-overview-pediatric.tsv"
   BINDING_AFFINITY_PATH: "data/bindingdb/BindingDB_All_202312.tsv"
-  TISSUE_EXPRESSION_PATH: "../data/hpa/normal_tissue.tsv"
+  TISSUE_EXPRESSION_HPA: "../data/hpa/normal_tissue.tsv"
   TISSUE_EXPRESSION_DESC_PATH: "../data/hpa/rna_single_cell_cluster_description.tsv"
+  TISSUE_EXPRESSION_GTEX: "../data/gtex/GTEx_Analysis_v10_RNASeQCv2.4.2_gene_median_tpm.gct.gz"
 
 hyperparameters:
   # training and optimization
   optimizer: AdamW
   pusb: True
-  precision: "bf16-mixed"
-  # precision: "32"
+  # precision: "bf16-mixed"
+  precision: "32"
   epochs: 100
   gradient_clip_val: null
-  batch_size: 512
+  batch_size: 128
   grad_accum: null
   lr_start: 1e-3
   lr_end: 1e-6
@@ -37,17 +43,17 @@ hyperparameters:
 
   # architecture
   varformer_usage: True
-  gc_width: 32
-  go_width: 32
+  gc_width: 8 # 32
+  go_width: 32 # 512
   max_seq_len: 1024 # varformer
-  num_encoder_layers: 1   # varformer
-  d_model: 768  # varformer
-  dim_feedforward: 2048  # varformer
-  gv_attn_dim: 256  # gene-variant attention
-  nhead: 1  # varformer / gene-variant attention
-  depth_cls_head: 1   # output classification head depth
+  num_encoder_layers: 1 # 3   # varformer
+  d_model: 16 # 128  # varformer
+  dim_feedforward: 128 # 2048  # varformer
+  gv_attn_dim: 32 #128  # gene-variant attention
+  nhead: 1 # 4  # varformer / gene-variant attention
+  depth_cls_head: 1 # 8   # output classification head depth
   reduction: None # choose from "padding", "pooling" or None
-  dropout: 0.3
+  dropout: 0
   threshold: 0.5
 
   # logistic regression
