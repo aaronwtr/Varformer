@@ -41,7 +41,7 @@ def tune():
         direction="maximize",
         sampler=sampler
     )
-    n_trials = 5  # Initial trial budget for TPE (adjust as needed)
+    n_trials = 100  # Initial trial budget for TPE (adjust as needed)
 
     study.optimize(
         objective,
@@ -65,30 +65,29 @@ def objective(trial: optuna.trial.Trial) -> float:
     with open("cluster_config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
     # Explicit categorical values for hyperparameters
-    config['hyperparameters']['lr_start'] = trial.suggest_categorical('lr_start', [5e-6, 1e-5, 3e-5, 1e-4, 3e-4])
+    config['hyperparameters']['lr_start'] = trial.suggest_categorical('lr_start', [1e-5, 3e-5, 1e-4])
     config['hyperparameters']['lr_fraction'] = trial.suggest_categorical('lr_fraction',
-                                                                         [1 / 5, 1 / 10, 1 / 50, 1 / 100])
+                                                                         [1 / 10, 1 / 50, 1/100])
     config['hyperparameters']['lr_end'] = float(config['hyperparameters']['lr_start']) * float(
         config['hyperparameters']['lr_fraction'])
 
-    config['hyperparameters']['weight_decay'] = trial.suggest_categorical('weight_decay', [1e-5, 3e-5,
-                                                                                           1e-4, 3e-4, 1e-3, 5e-3])
+    config['hyperparameters']['weight_decay'] = trial.suggest_categorical('weight_decay', [3e-5, 1e-4, 3e-4, 1e-3])
     config['hyperparameters']['batch_size'] = trial.suggest_categorical('batch_size', [64, 128, 256, 512, 1024])
-    config['hyperparameters']['dropout'] = trial.suggest_categorical('dropout', [0.0, 0.1, 0.2, 0.3])
-    config['hyperparameters']['depth_cls_head'] = trial.suggest_categorical('depth_cls_head', [2, 4, 6, 8])
-    config['hyperparameters']['num_encoder_layers'] = trial.suggest_categorical('num_encoder_layers', [2, 3, 4, 6, 8])
-    config['hyperparameters']['nhead'] = trial.suggest_categorical('nhead', [2, 4, 8, 16])
-    config['hyperparameters']['gc_width'] = trial.suggest_categorical('gc_width', [16, 32, 64, 128])
-    config['hyperparameters']['go_width'] = trial.suggest_categorical('go_width', [128, 256, 512])
-    config['hyperparameters']['d_model'] = trial.suggest_categorical('d_model', [128, 256, 512, 1024])
-    config['hyperparameters']['gv_attn_dim'] = trial.suggest_categorical('gv_attn_dim', [128, 256, 512, 1024])
-    config['hyperparameters']['dim_feedforward'] = trial.suggest_categorical('dim_feedforward', [512, 1024, 2048, 4096])
+    config['hyperparameters']['dropout'] = trial.suggest_categorical('dropout', [0.1, 0.2, 0.3])
+    config['hyperparameters']['depth_cls_head'] = trial.suggest_categorical('depth_cls_head', [4, 6, 8, 10])
+    config['hyperparameters']['num_encoder_layers'] = trial.suggest_categorical('num_encoder_layers', [3, 4, 5, 6])
+    config['hyperparameters']['nhead'] = trial.suggest_categorical('nhead', [4, 8])
+    config['hyperparameters']['gc_width'] = trial.suggest_categorical('gc_width', [16, 32, 64])
+    config['hyperparameters']['go_width'] = trial.suggest_categorical('go_width', [256, 512])
+    config['hyperparameters']['d_model'] = trial.suggest_categorical('d_model', [256, 512])
+    config['hyperparameters']['gv_attn_dim'] = trial.suggest_categorical('gv_attn_dim', [256, 512, 1024])
+    config['hyperparameters']['dim_feedforward'] = trial.suggest_categorical('dim_feedforward', [1024, 2048, 4096])
 
     scheduler_name = trial.suggest_categorical('scheduler', ['CosineAnnealingLR'])
     config['hyperparameters']['scheduler'] = scheduler_name
 
     if scheduler_name == 'CosineAnnealingLR':
-        config['hyperparameters']['T0'] = trial.suggest_categorical('T0_cosine', [50, 100, 200, 500])
+        config['hyperparameters']['T0'] = trial.suggest_categorical('T0_cosine', [100, 200, 500])
     elif scheduler_name == 'ExponentialLR':
         config['hyperparameters']['gamma'] = trial.suggest_categorical('gamma_exp', [0.85, 0.9, 0.95, 0.99])
     # No scheduler case can be handled by default in the training loop if scheduler is None
