@@ -163,7 +163,6 @@ class GeneCharacterisationPreprocessor:
         # self.full_data = self.full_data.drop('common_essentials', axis=1)
         self.num_features = len(self.full_data.columns)
 
-        # # Remove holdout data from training data
         self.data = self.full_data
         self.labels = self.labels_dict
 
@@ -880,10 +879,10 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
             tissue_col = f'tissue_gtex_{tissue.replace(" ", "_")}'
             feature_matrix[tissue_col] = feature_matrix['tissue_specificity_gtex'].apply(
                 lambda x: 1 if tissue in x else 0)
+            feature_matrix = feature_matrix.copy()
 
         feature_matrix = feature_matrix.drop(['tissue_specificity_hpa', 'tissue_specificity_gtex'], axis=1)
-        with pd.option_context('mode.chained_assignment', None):
-            feature_matrix = feature_matrix.loc[:, (feature_matrix != 0).any(axis=0)]
+        feature_matrix = feature_matrix.loc[:, (feature_matrix != 0).any(axis=0)]
 
         # Fill any remaining NaN values with 0
         self.gene_ontology_features = feature_matrix.fillna(0)
