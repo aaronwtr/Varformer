@@ -281,50 +281,153 @@ def feature_correlation(dataframe):
     # plt.savefig('../plots/features/feature_correlations.pdf')
 
 
-def correlation_heatmap(df):
-    feature_df = df.iloc[:, 1:]
+def correlation_heatmap(df, top_n=None, filename=None):
+    feature_df = df.iloc[:, :-1]  # Select all columns except the last one (target)
     correlation_matrix = feature_df.corr()
 
+    # If top_n is provided, select only the top N features by absolute correlation
+    if top_n is not None and top_n < len(correlation_matrix.columns):
+        # Calculate the mean absolute correlation for each feature (excluding self-correlation)
+        abs_corr = correlation_matrix.abs()
+        # Set diagonal to 0 to exclude self-correlation
+        np.fill_diagonal(abs_corr.values, 0)
+        mean_abs_corr = abs_corr.mean()
+
+        # Get the top N features
+        top_features = mean_abs_corr.nlargest(top_n).index.tolist()
+        # Filter correlation matrix to include only top features
+        correlation_matrix = correlation_matrix.loc[top_features, top_features]
+
+    # Create a mask for the upper triangle
+    mask = np.triu(np.ones_like(correlation_matrix, dtype=bool))
+
     # Create a heatmap
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(correlation_matrix, cmap="Blues", annot=True, fmt=".2f")
-    plt.title("Pearson Correlation Heatmap")
-    # plt.savefig('../plots/feature_correlation_heatmaps/feature_correlations_heatmap_nov2023.pdf')
-    # plt.savefig('../plots/feature_correlation_heatmaps/feature_correlations_heatmap_nov2023.png')
+    figsize = (10, 8)
+    plt.figure(figsize=figsize)
+    heatmap = sns.heatmap(correlation_matrix,
+                          cmap="Blues",
+                          annot=False,
+                          mask=mask,  # Apply the mask
+                          square=True,
+                          xticklabels=True,
+                          yticklabels=True)  # Make the cells square
+
+    # Rotate x-axis labels
+    plt.xticks(rotation=45, ha='right', fontsize=4)  # Set smaller font size for x-axis
+    plt.yticks(fontsize=4)
+
+    # Get current axes
+    ax = plt.gca()
+
+    # Get current tick positions and labels
+    y_ticks = ax.get_yticks()
+    y_ticklabels = [item.get_text() for item in ax.get_yticklabels()]
+    x_ticks = ax.get_xticks()
+    x_ticklabels = [item.get_text() for item in ax.get_xticklabels()]
+
+    # Remove the top tick on y-axis and last tick on x-axis
+    ax.set_yticks(y_ticks[1:])  # Remove first y tick
+    ax.set_yticklabels(y_ticklabels[1:])  # Remove first y label
+
+    ax.set_xticks(x_ticks[:-1])  # Remove last x tick
+    ax.set_xticklabels(x_ticklabels[:-1])  # Remove last x label
+
+    base_path = '../plots/feature_correlations/'
+    if not filename:
+        filename = f'{base_path}feature_correlation_heatmap'
+    else:
+        filename = f'{base_path}feature_correlation_heatmap_{filename}'
+    if top_n is not None:
+        filename += f'_top{top_n}'
+    filename += '.pdf'
+
+    plt.tight_layout()  # Adjust layout to make room for rotated labels
+    plt.savefig(filename,
+                dpi=300,
+                bbox_inches='tight')
     plt.close()
 
 
-# def umap(df):
-#     features = df.iloc[:, :-1]  # Select all columns except the last one (target)
-#     target = df['target']
-#
-#     # Create the UMAP reducer object
-#     reducer = UMAP()
-#
-#     # Fit and transform the data into a lower-dimensional UMAP embedding
-#     embedding = reducer.fit_transform(features)
-#
-#     # Create the scatter plot
-#     plt.figure(figsize=(10, 8))
-#
-#     # Separate the embeddings based on the target
-#     embedding_0 = embedding[target == 0]
-#     embedding_1 = embedding[target == 1]
-#
-#     # Plot the points labeled as 0
-#     plt.scatter(embedding_0[:, 0], embedding_0[:, 1], c='tab:gray', s=5, label='Unknown target status')
-#
-#     # Plot the points labeled as 1
-#     plt.scatter(embedding_1[:, 0], embedding_1[:, 1], c='tab:blue', s=5, alpha=0.7, label='Approved drug targets')
-#
-#     plt.xlabel('UMAP 1')
-#     plt.ylabel('UMAP 2')
-#     plt.xticks([])
-#     plt.yticks([])
-#
-#     # TODO: Use config to determine plot name
-#     # plt.savefig('../plots/umap_transformer_autoencoder_h256_io1024.pdf', dpi=300)
-#     # plt.show()
+def correlation_screeplot(df, top_n=None, filename=None):
+    # Extract features (all columns except the last one which is assumed to be the target)
+    feature_df = df.iloc[:, :-1]
+
+    # Calculate correlation matrix
+    correlation_matrix = feature_df.corr()
+
+    # Calculate mean absolute correlation for each feature (excluding self-correlation)
+    abs_corr = correlation_matrix.abs()
+    np.fill_diagonal(abs_corr.values, 0)  # Exclude self-correlation
+    mean_abs_corr = abs_corr.mean()
+
+    # Sort features by descending correlation
+    sorted_corr = mean_abs_corr.sort_values(ascending=False)
+
+    # Create the screeplot
+    plt.figure(figsize=(12, 6))
+
+    # Plot the correlations
+    plt.plot(range(1, len(sorted_corr) + 1), sorted_corr.values, 'o-', color='tab:blue', markersize=4)
+
+    # Add vertical line at top_n if specified
+    if top_n is not None and top_n < len(sorted_corr):
+        plt.axvline(x=top_n, color='red', linestyle='--',
+                    label=f'Top {top_n} features cutoff')
+
+    # Add labels and title
+    plt.xlabel('Feature Rank')
+    plt.ylabel('Mean Absolute Correlation')
+    plt.grid(True, linestyle='--', alpha=0.7)
+
+    if top_n is not None:
+        plt.legend()
+
+    plt.tight_layout()
+
+    # Save the plot
+    base_path = '../plots/feature_correlations/'
+    if not filename:
+        filename = f'{base_path}feature_correlation_screeplot'
+    else:
+        filename = f'{base_path}feature_correlation_screeplot_{filename}'
+    if top_n is not None:
+        filename += f'_top{top_n}'
+
+    plt.savefig(f"{filename}.pdf", dpi=300, bbox_inches='tight')
+    plt.close()
+
+
+def umap(df):
+    features = df.iloc[:, :-1]  # Select all columns except the last one (target)
+    target = df['target']
+
+    # Create the UMAP reducer object
+    reducer = UMAP()
+
+    # Fit and transform the data into a lower-dimensional UMAP embedding
+    embedding = reducer.fit_transform(features)
+
+    # Create the scatter plot
+    plt.figure(figsize=(10, 8))
+
+    # Separate the embeddings based on the target
+    embedding_0 = embedding[target == 0]
+    embedding_1 = embedding[target == 1]
+
+    # Plot the points labeled as 0
+    plt.scatter(embedding_0[:, 0], embedding_0[:, 1], c='tab:gray', s=5, label='Unknown target status')
+
+    # Plot the points labeled as 1
+    plt.scatter(embedding_1[:, 0], embedding_1[:, 1], c='tab:blue', s=5, alpha=0.7, label='Approved drug targets')
+
+    plt.xlabel('UMAP 1')
+    plt.ylabel('UMAP 2')
+    plt.xticks([])
+    plt.yticks([])
+
+    # TODO: Use config to determine plot name
+    # plt.savefig('../plots/umap_transformer_autoencoder_h256_io1024.pdf', dpi=300)
+    # plt.show()
 
 
 def plot_kde(pseudo_labels):
