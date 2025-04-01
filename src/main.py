@@ -19,7 +19,9 @@ def main(mode="training", config=None):
     elif mode == "testing":
         testing.run_test(pvc=True, go=True, gc=True)
     elif mode == "random":
-        training.random()
+        training.random(pvc=True, go=True, gc=True, config=config)
+    elif mode == "drugnome_ai":
+        training.drugnome_ai()
     else:
         raise ValueError("Invalid mode. Pick from 'training' or 'tuning', 'kfold_student',"
                          "'kfold_teacher, 'testing', or 'puupl'")
