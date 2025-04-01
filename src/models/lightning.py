@@ -12,8 +12,9 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
     def __init__(self, config, num_samples_per_class, num_features_gc, num_features_go, num_mutations, max_seq_len,
                  num_genes, num_iters, class_prior):
         self.save_hyperparameters()
-        super().__init__(model=None, config=config, num_samples_per_class=num_samples_per_class)
+        super().__init__()
 
+        self.config = config['hyperparameters']
         self.model = MultiModalTargetIdentifier(
             config=config,
             num_features_gc=num_features_gc,
@@ -122,6 +123,8 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
                 self._log(labels, step_type, loss, bin_preds, probas)
                 self.val_step_probas.append(probas.detach().cpu())
             else:
+                if 'best_threshold' in self.model.config:
+                    bin_preds = (probas > self.model.config['best_threshold']).float()
                 loss = None
                 self._log(labels, step_type, loss, bin_preds, probas, test_source=test_source)
             return loss
@@ -164,7 +167,8 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
             self.log(f'{step_type}_acc', self.model.acc(bin_preds, labels), batch_size=labels.shape[0])
             self.log(f'{step_type}_auroc', self.model.auroc(probas, labels.int()),
                      batch_size=labels.shape[0])
-            self.log(f'{step_type}_spearman', self.model.spearman(probas, labels.float()),
+            self.model_spearman = self.model.spearman(probas, labels.float())
+            self.log(f'{step_type}_spearman', self.model_spearman,
                      batch_size=labels.shape[0])
             self.log(f'{step_type}_recall', self.model.recall(bin_preds, labels.long()),
                      batch_size=labels.shape[0])
