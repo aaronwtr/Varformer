@@ -858,7 +858,6 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
 
         feature_matrix = feature_matrix.fillna(0)
 
-        # Replace tissue_specificity columns with empty lists if they're not already lists
         for col in ['tissue_specificity_hpa', 'tissue_specificity_gtex']:
             feature_matrix[col] = feature_matrix[col].apply(lambda x: x if isinstance(x, list) else [])
 
@@ -2017,8 +2016,7 @@ class LogisticRegressionPreprocessor:
         self.gc_data = data['train']['gc']
         self.go_data = data['train']['go']
         self.pvc_data = data['train']['pvc'].copy()
-        self.pvc_data.pop('labels')
-        self.labels = self.gc_data['target'].to_dict()
+        self.labels = self.data["labels"]
         self.test_labels = data["test_labels"]
         self.genes = data['genes']
         self.num_features = data['num_features']
@@ -2040,10 +2038,6 @@ class LogisticRegressionPreprocessor:
             with features and labels
         """
         print("Preparing features for logistic regression...")
-
-        # Drop the target column from feature sets
-        self.gc_data = self.gc_data.drop(columns=['target'])
-        self.go_data = self.go_data.drop(columns=['target'])
 
         # Split data into train and validation sets
         gc_train_raw = self.gc_data.loc[self.train_genes, :]
@@ -2111,21 +2105,23 @@ class LogisticRegressionPreprocessor:
         # Process gene-centric (gc) and gene ontology (go) features
         for module_str in ['gc', 'go']:
             # Scale the features
-            scaler = MinMaxScaler()
-            train_norm = scaler.fit_transform(train_raw[module_str].values)
-            val_norm = scaler.transform(val_raw[module_str].values)
-            self.scalers[module_str] = scaler
+            # scaler = MinMaxScaler()
+            # train_norm = scaler.fit_transform(train_raw[module_str].values)
+            # val_norm = scaler.transform(val_raw[module_str].values)
+            # self.scalers[module_str] = scaler
+            train_feat = train_raw[module_str].values
+            val_feat = val_raw[module_str].values
 
-            # Store normalized features for each gene
-            train_features[module_str] = {train_genes[i]: train_norm[i] for i in range(len(train_genes))}
-            val_features[module_str] = {val_genes[i]: val_norm[i] for i in range(len(val_genes))}
+            train_features[module_str] = {train_genes[i]: train_feat[i] for i in range(len(train_genes))}
+            val_features[module_str] = {val_genes[i]: val_feat[i] for i in range(len(val_genes))}
 
             # Process test data for each test set
             for test_set, modalities in test_raw.items():
-                test_norm = scaler.transform(modalities[module_str].values)
-                test_genes_list = test_genes[test_set][module_str]
-                test_features[test_set][module_str] = {test_genes_list[i]: test_norm[i] for i in
-                                                       range(len(test_genes_list))}
+                test_feat_df = modalities[module_str]
+                test_feat = test_feat_df.values
+                test_feat_genes = test_feat_df.index.tolist()
+                test_features[test_set][module_str] = {test_feat_genes[i]: test_feat[i] for i in
+                                                       range(len(test_feat_genes))}
 
         # Process protein variant calls (pvc) features using the dedicated function
         print("Processing PVC features...")
@@ -2133,7 +2129,7 @@ class LogisticRegressionPreprocessor:
         val_features['pvc'] = self.process_pvc_batch(val_genes, val_raw['pvc'], self.max_variants)
 
         for test_set, modalities in test_raw.items():
-            test_genes_list = test_genes[test_set]['gc']  # Using gc gene list for reference
+            test_genes_list = list(test_features[test_set]['gc'].keys())  # Using gc gene list for reference
             test_features[test_set]['pvc'] = self.process_pvc_batch(test_genes_list, modalities['pvc'],
                                                                     self.max_variants)
 
@@ -2164,7 +2160,7 @@ class LogisticRegressionPreprocessor:
             test_gc_shape = test_raw[test_set]['gc'].shape[1]
             test_go_shape = test_raw[test_set]['go'].shape[1]
 
-            for gene in test_genes[test_set]['gc']:
+            for gene in list(test_features[test_set]['gc'].keys()):
                 if gene in test_labels:
                     gc_feat = test_features[test_set]['gc'].get(gene, np.zeros(test_gc_shape))
                     go_feat = test_features[test_set]['go'].get(gene, np.zeros(test_go_shape))
