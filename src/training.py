@@ -32,6 +32,7 @@ from models.target_identifier import MultiModalTargetIdentifier
 from models.lightning import (MLPLightningTargetIdentifier, ShardedVarformerLightningTargetIdentifier,
                               MultiModalLightningTargetIdentifier)
 from preprocessing import ModelPreprocessor, LogisticRegressionPreprocessor
+from utils.custom_callbacks import BestThresholdCallback
 
 
 def tune():
@@ -64,30 +65,34 @@ def tune():
 def objective(trial: optuna.trial.Trial) -> float:
     with open("cluster_config.yml", 'r') as stream:
         config = yaml.safe_load(stream)
+    pl.seed_everything(config['hyperparameters']['seed'])
     # Explicit categorical values for hyperparameters
-    config['hyperparameters']['lr_start'] = trial.suggest_categorical('lr_start', [1e-5, 3e-5, 1e-4])
-    config['hyperparameters']['lr_fraction'] = trial.suggest_categorical('lr_fraction',
-                                                                         [1 / 10, 1 / 50, 1/100])
+    config['hyperparameters']['lr_start'] = trial.suggest_categorical(
+        'lr_start', [1e-5, 3e-5, 1e-4])  # Retain all – 3e-5 performed best overall
+    config['hyperparameters']['lr_fraction'] = trial.suggest_categorical(
+        'lr_fraction', [1 / 10, 1 / 100])
     config['hyperparameters']['lr_end'] = float(config['hyperparameters']['lr_start']) * float(
         config['hyperparameters']['lr_fraction'])
-
-    config['hyperparameters']['weight_decay'] = trial.suggest_categorical('weight_decay', [3e-5, 1e-4, 3e-4, 1e-3])
-    config['hyperparameters']['batch_size'] = trial.suggest_categorical('batch_size', [64, 128, 256, 512, 1024])
+    config['hyperparameters']['weight_decay'] = trial.suggest_categorical(
+        'weight_decay',
+        [5e-4, 3e-4, 5e-3, 3e-3])
+    config['hyperparameters']['batch_size'] = trial.suggest_categorical(
+        'batch_size', [64, 128, 256, 512])
     config['hyperparameters']['dropout'] = trial.suggest_categorical('dropout', [0.1, 0.2, 0.3])
-    config['hyperparameters']['depth_cls_head'] = trial.suggest_categorical('depth_cls_head', [4, 6, 8, 10])
-    config['hyperparameters']['num_encoder_layers'] = trial.suggest_categorical('num_encoder_layers', [3, 4, 5, 6])
-    config['hyperparameters']['nhead'] = trial.suggest_categorical('nhead', [4, 8])
+    config['hyperparameters']['depth_cls_head'] = trial.suggest_categorical('depth_cls_head', [2, 4, 6])
+    config['hyperparameters']['num_encoder_layers'] = trial.suggest_categorical('num_encoder_layers', [4, 6, 8])
+    config['hyperparameters']['nhead'] = trial.suggest_categorical('nhead', [4, 8, 16])
     config['hyperparameters']['gc_width'] = trial.suggest_categorical('gc_width', [16, 32, 64])
     config['hyperparameters']['go_width'] = trial.suggest_categorical('go_width', [256, 512])
-    config['hyperparameters']['d_model'] = trial.suggest_categorical('d_model', [256, 512])
-    config['hyperparameters']['gv_attn_dim'] = trial.suggest_categorical('gv_attn_dim', [256, 512, 1024])
+    config['hyperparameters']['d_model'] = trial.suggest_categorical('d_model', [256, 512, 768, 1024])
+    config['hyperparameters']['gv_attn_dim'] = trial.suggest_categorical('gv_attn_dim', [512, 1024, 2048])
     config['hyperparameters']['dim_feedforward'] = trial.suggest_categorical('dim_feedforward', [1024, 2048, 4096])
 
     scheduler_name = trial.suggest_categorical('scheduler', ['CosineAnnealingLR'])
     config['hyperparameters']['scheduler'] = scheduler_name
 
     if scheduler_name == 'CosineAnnealingLR':
-        config['hyperparameters']['T0'] = trial.suggest_categorical('T0_cosine', [100, 200, 500])
+        config['hyperparameters']['T0'] = trial.suggest_categorical('T0_cosine', [100, 200])
     elif scheduler_name == 'ExponentialLR':
         config['hyperparameters']['gamma'] = trial.suggest_categorical('gamma_exp', [0.85, 0.9, 0.95, 0.99])
     # No scheduler case can be handled by default in the training loop if scheduler is None
@@ -128,7 +133,7 @@ def objective(trial: optuna.trial.Trial) -> float:
         project="varformer-hyperparameter-tuning",
         dir="/data/scratch/bty174/genomic-drug-targeting/src/",
         config=hyperparameters,
-        group="varformer-tuning-run-5"
+        group="varformer-tuning-run-6"
     )
 
     data = ModuleDataProcessor(True, True, True, False).process()
@@ -146,25 +151,48 @@ def objective(trial: optuna.trial.Trial) -> float:
     lr_monitor = LearningRateMonitor(logging_interval='step')
     early_stop_callback = PyTorchLightningPruningCallback(trial, monitor='val_f1')
 
-    # checkpoint_callback = ModelCheckpoint(
-    #     monitor='val_f1',
-    #     dirpath="/data/scratch/bty174/genomic-drug-targeting/src/lightning_logs",
-    #     filename='{epoch:02d}-{val_f1:.2f}',
-    #     save_top_k=1,
-    #     mode='max'
-    # )
-
-    trainer_kwargs = {
-        'max_epochs': int(config['hyperparameters']['epochs']),
-        'accelerator': accelerator,
-        'enable_progress_bar': True,
-        'log_every_n_steps': 1,
-        'precision': config['hyperparameters']['precision'],
-        'logger': WandbLogger(wandb.run),
-        'callbacks': [lr_monitor, early_stop_callback],
-        'deterministic': True,
-        'num_sanity_val_steps': 0
-    }
+    if torch.cuda.device_count() > 1:
+        trainer_kwargs = {
+            'max_epochs': int(config['hyperparameters']['epochs']),
+            'accelerator': accelerator,
+            'enable_progress_bar': True,
+            'log_every_n_steps': 1,
+            'precision': config['hyperparameters']['precision'],
+            'logger': WandbLogger(wandb.run),
+            'callbacks': [lr_monitor, early_stop_callback],
+            'strategy': "ddp_find_unused_parameters_true",
+            'devices': -1,
+            'deterministic': True,
+            'num_sanity_val_steps': 0
+        }
+    else:
+        # eff_batch_size = int(config['hyperparameters']['grad_accum']) * int(config['hyperparameters']['batch_size'])
+        # print(f"\nTraining with effective batch size {eff_batch_size}\n")
+        if config['hyperparameters']['grad_accum'] is not None:
+            trainer_kwargs = {
+                'max_epochs': int(config['hyperparameters']['epochs']),
+                'accelerator': accelerator,
+                'enable_progress_bar': True,
+                'log_every_n_steps': 1,
+                'precision': config['hyperparameters']['precision'],
+                'logger': WandbLogger(wandb.run),
+                'callbacks': [lr_monitor, early_stop_callback],
+                'deterministic': True,
+                'num_sanity_val_steps': 0
+            }
+        else:
+            trainer_kwargs = {
+                'max_epochs': int(config['hyperparameters']['epochs']),
+                'accelerator': accelerator,
+                'enable_progress_bar': True,
+                'log_every_n_steps': 1,
+                'precision': config['hyperparameters']['precision'],
+                'logger': WandbLogger(wandb.run),
+                'callbacks': [lr_monitor, early_stop_callback],
+                'deterministic': True,
+                'accumulate_grad_batches': config['hyperparameters']['grad_accum'],
+                'num_sanity_val_steps': 0
+            }
 
     # Only add gradient_clip_val if it exists and is not None
     if config['hyperparameters'].get('gradient_clip_val') is not None:
@@ -219,14 +247,11 @@ def train_model(data):
     run = wandb.init(
         project="drug-target-prediction",
         config=hyperparameters,
-        group="multimodal-training-run-1"
+        group="multimodal-training-run-2"
     )
 
     preprocessor = ModelPreprocessor(config, data)
     model, train_combined, val_combined, test_combined, hyperparameters, accelerator = preprocessor.model_init()
-
-    # print the architecture of model
-    print(model)
 
     # Log model parameters
     model_summary = ModelSummary(model)
@@ -241,14 +266,20 @@ def train_model(data):
 
     lr_monitor = LearningRateMonitor(logging_interval='step')
     checkpoint_callback = ModelCheckpoint(
-        monitor='val_auroc',
+        monitor='val_spearman',
         dirpath=checkpoint_dir,
-        filename=f"seed{config['hyperparameters']['seed']}" + '-{epoch:02d}-{val_auroc:.2f}',
+        filename=f"seed{config['hyperparameters']['seed']}" + '-{epoch:02d}-{val_spearman:.2f}',
         save_top_k=1,
         mode='max',
         save_last=True
     )
 
+    best_threshold_callback = BestThresholdCallback(
+        monitor='val_spearman',
+        mode='max'
+    )
+
+    utils.utils.set_seed(config['hyperparameters']['seed'])
     # Configure trainer based on available GPUs
     if torch.cuda.device_count() > 1:
         trainer = pl.Trainer(
@@ -257,7 +288,7 @@ def train_model(data):
             enable_progress_bar=True,
             log_every_n_steps=1,
             logger=WandbLogger(wandb.run),
-            callbacks=[lr_monitor],
+            callbacks=[lr_monitor, checkpoint_callback, best_threshold_callback],
             precision=config['hyperparameters']['precision'],
             strategy="ddp_find_unused_parameters_true",
             devices=-1,
@@ -275,7 +306,7 @@ def train_model(data):
                 log_every_n_steps=1,
                 precision=config['hyperparameters']['precision'],
                 logger=WandbLogger(wandb.run),
-                callbacks=[lr_monitor, checkpoint_callback],
+                callbacks=[lr_monitor, checkpoint_callback, best_threshold_callback],
                 gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
                 accumulate_grad_batches=config['hyperparameters']['grad_accum'],
                 deterministic=True
@@ -288,7 +319,7 @@ def train_model(data):
                 log_every_n_steps=10,
                 precision=config['hyperparameters']['precision'],
                 logger=WandbLogger(wandb.run),
-                callbacks=[lr_monitor, checkpoint_callback],
+                callbacks=[lr_monitor, checkpoint_callback, best_threshold_callback],
                 gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
                 deterministic=True
             )
@@ -304,7 +335,6 @@ def train_model(data):
 
 
 def kfold_teacher(**modules):
-    pl.seed_everything(42)
     torch.set_float32_matmul_precision('medium')
 
     print("Training teacher model...\n")
@@ -315,6 +345,8 @@ def kfold_teacher(**modules):
     psc = modules.get('psc', False)
     config = modules.get('config', None)
 
+    if config is not None:
+        pl.seed_everything(config['hyperparameters']['seed'])
     data = ModuleDataProcessor(gc, go, pvc, psc, config=config).process()
 
     train_model(data)
@@ -453,6 +485,10 @@ def logistic_regression(**modules):
         wandb.log({f"test_{dataset_name}_predictions": predictions_table})
 
     run.finish()
+
+
+def random():
+    raise NotImplementedError("Random training is not implemented yet.")
 
 
 # legacy code
