@@ -18,6 +18,8 @@ def main(mode="training", config=None):
         training.logistic_regression(pvc=True, go=True, gc=True, config=config)
     elif mode == "testing":
         testing.run_test(pvc=True, go=True, gc=True)
+    elif mode == "random":
+        training.random()
     else:
         raise ValueError("Invalid mode. Pick from 'training' or 'tuning', 'kfold_student',"
                          "'kfold_teacher, 'testing', or 'puupl'")
@@ -30,4 +32,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     main(mode=args.mode, config=args.config)
 
-    # TODO: Debug dimensionality issue in model
+    # TODO:
+    #  - [] Implement class-prior normalized random baseline
