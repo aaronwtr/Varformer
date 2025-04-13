@@ -21,7 +21,7 @@ def main(mode="training", config=None):
     elif mode == "random":
         training.random(pvc=True, go=True, gc=True, config=config)
     elif mode == "drugnome_ai":
-        training.drugnome_ai()
+        training.drugnome_ai(pvc=True, go=True, gc=True, config=config)
     else:
         raise ValueError("Invalid mode. Pick from 'training' or 'tuning', 'kfold_student',"
                          "'kfold_teacher, 'testing', or 'puupl'")
@@ -33,6 +33,3 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=str, help="Path to the configuration file.")
     args = parser.parse_args()
     main(mode=args.mode, config=args.config)
-
-    # TODO:
-    #  - [] Implement class-prior normalized random baseline
