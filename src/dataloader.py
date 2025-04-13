@@ -207,6 +207,11 @@ class ModuleDataProcessor:
             ["Pharos Test Data", num_pharos_pos, "-", num_pharos_neg]
         ]
 
+        import pickle
+        # save the test_data to a pickle file
+        with open("../data/test_data/full_test_labels.pkl", 'wb') as f:
+            pickle.dump(test_labels, f)
+
         # remove the column target from gc and go test data
         combined_test_data = self._clean_test_data(combined_test_data)
 
