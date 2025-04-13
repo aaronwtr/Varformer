@@ -7,6 +7,7 @@ import optuna
 import wandb
 import datetime
 import utils
+import subprocess
 
 import pytorch_lightning as pl
 import pandas as pd
@@ -524,7 +525,7 @@ def random(**modules):
         threshold = np.percentile(random_probs, (1 - class_prior) * 100)
 
         # Create binary predictions based on this threshold
-        random_preds = (random_probs >= threshold).astype(int)
+        random_preds = (random_probs >= 0.5).astype(int)
 
         # Calculate metrics
         test_accuracy = accuracy_score(y_test, random_preds)
@@ -550,8 +551,48 @@ def random(**modules):
     run.finish()
 
 
-def drugnome_ai():
-    raise NotImplementedError("DrugNome AI is not implemented yet.")
+def drugnome_ai(**modules):
+    # check if drugnome_ai_labels.txt already exists
+    if not os.path.exists("../benchmark/data/drugnomeai/drugnome_ai_labels.txt"):
+        drugnome_ai_labels = pd.read_csv("../benchmark/data/drugnomeai/gene_druggable_labels.csv")
+        # drugnome_ai_labels = drugnome_ai_labels[drugnome_ai_labels['druggability_tier'] == 'Tier 1']
+
+        gc = modules.get('gc', False)
+        go = modules.get('go', False)
+        pvc = modules.get('pvc', False)
+        psc = modules.get('psc', False)
+        config = modules.get('config', None)
+
+        data = ModuleDataProcessor(gc, go, pvc, psc, config=config).process()
+        test_data = list(data['test_labels'].keys())
+
+        gene_to_hgnc = utils.utils.map_gene_names(test_data, 'ensg', 'symb')
+        test_data_hgnc = [gene_to_hgnc[gene] for gene in test_data if gene in gene_to_hgnc]
+        with open("../benchmark/data/drugnomeai/test_genes.txt", 'w') as f:
+            for gene in test_data_hgnc:
+                f.write(str(gene) + '\n')
+
+        print("break")
+        # drugnome_ai_labels = drugnome_ai_labels[~drugnome_ai_labels['ensembl_gene_id'].isin(test_data)]
+        # # write a .txt file separated by new lines with the HGNC gene names of the genes in the drugnome_ai_labels dataframe
+        # with open("../benchmark/data/drugnomeai/drugnome_ai_labels.txt", 'w') as f:
+        #     for gene in drugnome_ai_labels['Gene_Name']:
+        #         f.write(str(gene) + '\n')
+        # print("DrugnomeAI labels written to file.")
+    else:
+        print("DrugnomeAI labels already exist. Skipping...")
+
+        subprocess.run(
+            [
+                "python",
+                "/Users/aaronw/Desktop/PhD/Research/QMUL/Research/genetic-drug-targeting-and-classification/benchmark"
+                "/DrugnomeAI-release/drugnome_ai/modules/main/__main__.py",
+                "-o", "/Users/aaronw/Desktop/PhD/Research/QMUL/Research/genetic-drug-targeting-and-classification"
+                      "/benchmark/DrugnomeAI-release/drugnome_ai/output/processed-feature-tables",
+                "-k", "/Users/aaronw/Desktop/PhD/Research/QMUL/Research/genetic-drug-targeting-and-classification"
+                      "/benchmark/data/drugnomeai/drugnome_ai_labels.txt"
+            ]
+        )
 
 
 # legacy code
