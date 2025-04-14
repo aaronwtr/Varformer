@@ -1,5 +1,7 @@
 import torch
 import yaml
+
+from datetime import datetime
 from models.lightning import MultiModalLightningTargetIdentifier
 from dataloader import ModuleDataProcessor
 from pytorch_lightning import Trainer
@@ -40,7 +42,10 @@ def run_inference(model, test_data, batch_size=32):
     trainer = Trainer(accelerator="gpu" if torch.cuda.is_available() else "cpu", devices=1)
 
     # Run inference
-    predictions = trainer.predict(model, dataloaders=test_data, batch_size=batch_size)
+    results = trainer.predict(model, dataloaders=test_data, batch_size=batch_size)
+
+    # Separate predictions and attention weights
+    predictions, variant_attn_weights = zip(*results)
     return predictions
 
 
@@ -55,5 +60,7 @@ def run_inference_pipeline(config, checkpoint, output):
     predictions = run_inference(model, test_data)
 
     # Save predictions
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output = f"predictions_{timestamp}.pkl"
     torch.save(predictions, output)
     print(f"Predictions saved to {output}")
