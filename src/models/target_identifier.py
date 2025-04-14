@@ -325,7 +325,6 @@ class MultiModalTargetIdentifier(torch.nn.Module):
 
         # 4. Feed concatenated features into the linear classifier
         # RuntimeError: mat1 and mat2 shapes cannot be multiplied (128x336 and 672x168)
-        # TODO: Look at the model architecture in detail
         logits = self.classification_head(concatenated_features).squeeze()
         probabilities = torch.sigmoid(logits)
         binary_predictions = (probabilities > float(self.hyperparams['threshold'])).float()
