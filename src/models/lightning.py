@@ -10,7 +10,7 @@ from models.target_identifier import MultiModalTargetIdentifier
 
 class MultiModalLightningTargetIdentifier(pl.LightningModule):
     def __init__(self, config, num_samples_per_class, num_features_gc, num_features_go, num_mutations, max_seq_len,
-                 num_genes, num_iters, class_prior):
+                 num_genes, class_prior):
         self.save_hyperparameters()
         super().__init__()
 
@@ -23,7 +23,6 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
             max_seq_len=max_seq_len,
             num_genes=num_genes
         )
-        self.num_iters = num_iters
         self.pi = class_prior
         self.val_step_probas = []
 
@@ -31,9 +30,10 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
         return self.model(x, mask)
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        features, masks = batch
-        logits, probas, bin_preds = self(features, masks)
-        return probas
+        features = batch
+        mask = features['pvc']['mask']
+        result = self(features, mask)
+        return result
 
     def _common_step(self, batch, batch_idx, step_type):
         if self.trainer.sanity_checking:
