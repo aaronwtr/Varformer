@@ -26,7 +26,7 @@ def main(mode="training", config=None, checkpoint=None, output=None):
     elif mode == "inference":
         if not checkpoint or not output:
             raise ValueError("For inference mode, both --checkpoint and --output arguments are required.")
-        run_inference_pipeline(config=config, checkpoint=checkpoint, output=output)
+        run_inference_pipeline(checkpoint=checkpoint, output=output)
     else:
         raise ValueError("Invalid mode. Pick from 'training', 'tuning', 'kfold_student', 'kfold_teacher', "
                          "'testing', 'puupl', 'inference', or others.")
