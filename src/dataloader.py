@@ -23,6 +23,8 @@ class ModuleDataProcessor:
         if config is None:
             with open("cluster_config.yml", 'r') as stream:
                 self.config = yaml.safe_load(stream)
+        else:
+            self.config = config
 
     def process(self):
         data = {'gc': None, 'go': None, 'pvc': None}
