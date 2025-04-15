@@ -1768,7 +1768,6 @@ class ModelPreprocessor:
             self.val_genes,
             self.test_labels_per_source,
             self.test_data,
-            self.num_features,
             self.torch_dtype,
             self.config
         )
@@ -1776,7 +1775,7 @@ class ModelPreprocessor:
         return model, train_combined, val_combined, test_combined, hyperparameters, accelerator
 
     def initialise_model(self, train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes, test,
-                         num_features, torch_dtype, config):
+                         torch_dtype, config):
         hyperparams = config['hyperparameters']
         (train_combined, val_combined, test_combined,
          num_samples_per_class) = self.normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_genes,
@@ -1799,8 +1798,7 @@ class ModelPreprocessor:
             max_seq_len=hyperparams['max_seq_len'],
             num_genes=max_genes_pvc,
             num_samples_per_class=num_samples_per_class,
-            class_prior=self.class_prior,
-            num_iters=len(train_combined)
+            class_prior=self.class_prior
         )
 
         accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'
