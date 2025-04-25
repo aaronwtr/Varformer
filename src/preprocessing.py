@@ -935,12 +935,14 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         features_dir = config['paths']['FEATURES_DIR']
         print("Obtaining AlphaMissense pathogenicity embeddings...")
         if not os.path.exists(f'{features_dir}/var_pat_features.pkl'):
-            self.var_pat_features = self.varformer_pathogenicity_input()
+            self.var_pat_features, self.var_gene_map = self.varformer_pathogenicity_input()
             with open(f'{features_dir}/var_pat_features.pkl', 'wb') as file:
                 pkl.dump(self.var_pat_features, file)
         else:
             with open(f'{features_dir}/var_pat_features.pkl', 'rb') as f:
                 self.var_pat_features = pkl.load(f)
+            with open(self.gcp.config['paths']['GENE_VAR_MAP'], 'rb') as f:
+                self.var_gene_map = pkl.load(f)
 
         self.norm = False
 
@@ -948,47 +950,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.target = self.full_gcp_data['target']
         self.labels = {key: 1 if key in self.target.tolist() else 0 for key in self.var_pat_features.keys()}
 
-        # self.pat_ensg_ids = pd.Series(list(self.var_pat_features.keys()))
-        #
-        # # Get test data and remove from train feature matrix
-        # self.pfam_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.pfam_ids.index)]
-        # self.pfam_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_ids}
-        #
-        # self.rcnt_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.rcnt_ids.index)]
-        # self.rcnt_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_ids}
-        #
-        # self.pharos_ids = self.pat_ensg_ids[self.pat_ensg_ids.isin(self.gcp.pharos_ids.index)]
-        # self.pharos_pos_dict = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_ids}
-        #
-        # self.holdout_ids = pd.concat([self.pfam_ids, self.rcnt_ids, self.pharos_ids])
-        #
-        # self.pfam_negs = self.gcp.pfam_negs
-        # self.rcnt_negs = self.gcp.rcnt_negs
-        # self.pharos_negs = self.gcp.pharos_negs
-        #
-        # self.pfam_ids_all = pd.concat([self.pfam_ids, self.pfam_negs])
-        # self.rcnt_ids_all = pd.concat([self.rcnt_ids, self.rcnt_negs])
-        # self.pharos_ids_all = pd.concat([self.pharos_ids, self.pharos_negs])
-        #
-        # self.pfam_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pfam_negs if
-        #                       ensg in self.var_pat_features}
-        # self.rcnt_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.rcnt_negs if
-        #                       ensg in self.var_pat_features}
-        # self.pharos_neg_data = {ensg: self.var_pat_features[ensg] for ensg in self.pharos_negs if
-        #                         ensg in self.var_pat_features}
-        #
-        # self.pfam_data = {**self.pfam_pos_dict, **self.pfam_neg_data}
-        # self.rcnt_data = {**self.rcnt_pos_dict, **self.rcnt_neg_data}
-        # self.pharos_data = {**self.pharos_pos_dict, **self.pharos_neg_data}
-        #
-        # self.ensg_ids = self.pat_ensg_ids
-        # remove all the test genes from the data dictionary
         self.data = {key: value for key, value in self.var_pat_features.items()}
-        # if key not in self.holdout_ids.tolist()}
-        # pharos_pos_ensgs = list(self.pharos_pos_dict.keys())
-        # set the value of the putative positive targets from pharos 1
         self.data = {key: value for key, value in self.var_pat_features.items()}
-        # self.labels = {key: 1 if key in pharos_pos_ensgs else self.labels[key] for key in self.labels.keys()}
         self.data['labels'] = self.labels
 
     def variant_gh_data(self, config):
@@ -1081,10 +1044,16 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             pkl.dump(mutation_map, f)
 
         gene_map = {gene: i for i, gene in enumerate(self.gh_data['Gene'].unique())}
-
+        with open(self.config['paths']['VAR_MAP'], 'rb') as file:
+            variant_map = pkl.load(file)
         var_pat_features = {}
+        gene_var_map = {}
         for index, row in tqdm(self.gh_data.iterrows(), total=self.gh_data.shape[0]):
             gene = row['Gene']
+            variant_id = row['variant_id']
+            rs_id = variant_map.get(variant_id, None)
+            if rs_id is not None:
+                variant_id = rs_id
             ref_aa = row['AA_ref']
             alt_aa = row['AA_alt']
             mut = f"{ref_aa}>{alt_aa}"
@@ -1097,8 +1066,14 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 var_pat_features[gene] = [[pat_value, pos, mutation_map[mut], gene_map[gene]]]
             else:
                 var_pat_features[gene].append([pat_value, pos, mutation_map[mut], gene_map[gene]])
-
-        return {gene: torch.tensor(features) for gene, features in var_pat_features.items()}
+            if gene not in gene_var_map.keys():
+                gene_var_map[gene] = [variant_id]
+            else:
+                gene_var_map[gene].append(variant_id)
+        var_features = {gene: torch.tensor(features) for gene, features in var_pat_features.items()}
+        with open(f'{data_dir}/elgh/gene_var_map.pkl', 'wb') as f:
+            pkl.dump(gene_var_map, f)
+        return var_features, gene_var_map
 
     def variant_structure_input(self):
         af_data = self.alphafold_extractor()
