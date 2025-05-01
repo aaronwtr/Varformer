@@ -66,6 +66,15 @@ def run_inference_pipeline(checkpoint, output):
     with open(config_path, 'r') as stream:
         config = yaml.safe_load(stream)
 
+    am_df = pd.read_csv(config['paths']['AM_PATH'], sep="\t")
+    am_df['variant_ids'] = (am_df['#CHROM'] + '_' + am_df['POS'].astype(str) + '_' + am_df['REF'] + '_' + am_df['ALT'] +
+                           '_' + am_df['protein_variant'].astype(str))
+    gh_df = pd.read_pickle(config['paths']['ALL_GH'])
+    gh_df[['ref_aa', 'alt_aa']] = gh_df['Amino_acids'].str.split('/', expand=True)
+    gh_df['protein_variant'] = gh_df['ref_aa'] + gh_df['Protein_position'].astype(str) + gh_df['alt_aa']
+    gh_df['variant_ids'] = (gh_df['CHROM'] + '_' + gh_df['POS'].astype(str) + '_' +
+                            gh_df['REF'] + '_' + gh_df['ALT'] + '_' + gh_df['protein_variant'])
+
     data = prepare_data(config)
 
     preprocessor = ModelPreprocessor(config, data)
@@ -73,7 +82,7 @@ def run_inference_pipeline(checkpoint, output):
 
     model, data = load_model(checkpoint, data, config)
 
-    with open(config['paths']['GENE_VAR_MAP'], "rb") as f:
+    with open(config['paths']['GENE_VAR_LOC_MAP'], "rb") as f:
         gene_var_map = pkl.load(f)
 
     # TODO: All of the below needs to change. We need to train N models in order to be able to predict all unlabeled
@@ -158,13 +167,27 @@ def run_inference_pipeline(checkpoint, output):
         if pathogenicity_scores is None:
             raise ValueError(f"Gene {gene} not found in any test set PVC data.")
 
-        # Add to the DataFrame assuming order matches variant_ids
-        gene_df['AF Weighted Pathogenicity'] = pd.Series(pathogenicity_scores, index=variant_ids)
+        gene_df['AF Weighted Pathogenicity'] = pathogenicity_scores
+        gene_df.index.name = 'variant_ids'
+
+        variant_ids = gene_df.index.unique()
+        am_filtered = am_df[am_df['variant_ids'].isin(variant_ids)].copy()
+        am_filtered.set_index('variant_ids', inplace=True)
+        gh_filtered = gh_df[gh_df['variant_ids'].isin(variant_ids)].copy()
+        gh_filtered.set_index('variant_ids', inplace=True)
+        gh_filtered = gh_filtered[~gh_filtered.index.duplicated(keep='first')]
+        gene_df = gene_df.join(am_filtered['am_pathogenicity'], how='left')
+        gene_df = gene_df.join(gh_filtered['AF'], how='left')
 
         # Store without gene column — key is the gene name
         per_gene_dfs[gene] = gene_df
+    print('break')
 
 
 # TODO: add pathogenicity score and allele frequency seperately
-#  - load AM data and get the pathogenicity scores and AFs for the rsids
-print('break')
+#  - add back rsid wherever possible
+#  - todo: check if pathogenicity scores make sense (check with alphamissense model original)
+#  - debug: NaN pathogenicity scores
+
+
+
