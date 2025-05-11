@@ -12,6 +12,7 @@ import esm
 import bz2
 
 import pytorch_lightning as pl
+import polars as pol
 import pickle as pkl
 import gzip
 import scipy.sparse as sparse
@@ -71,8 +72,14 @@ class GeneCharacterisationPreprocessor:
 
         self.gh_data["UNIPROT"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
         self.gh_data = self.gh_data.drop(["SWISSPROT", "TREMBL"], axis=1)
-        self.gh_data['variant_id'] = self.gh_data['CHROM'].astype(str) + '_' + self.gh_data['POS'].astype(str) + '_' + \
-                                     self.gh_data['REF'].astype(str) + '_' + self.gh_data['ALT'].astype(str)
+        self.gh_data[['ref_aa', 'alt_aa']] = self.gh_data['Amino_acids'].str.split('/', expand=True)
+        self.gh_data['protein_variant'] = (self.gh_data['ref_aa'] + self.gh_data['Protein_position'].astype(str) +
+                                           self.gh_data['alt_aa'])
+        self.gh_data['variant_id'] = (self.gh_data['CHROM'] + '_' + self.gh_data['POS'].astype(str) + '_' +
+                                      self.gh_data['REF'] + '_' + self.gh_data['ALT'] + '_' +
+                                      self.gh_data['protein_variant'])
+
+        self.gh_data = self.gh_data.drop_duplicates(subset=['variant_id'])
 
         # Load raw G&H missense variant data
         if not os.path.exists(self.config['paths']['RAW_GH']):
@@ -101,7 +108,7 @@ class GeneCharacterisationPreprocessor:
                 print(f"Loading {feature_file}...")
                 with open(f'{features_dir}/{feature_file}', 'rb') as fp:
                     setattr(self, feature_file.split('.')[0], pkl.load(fp))
-        #
+
         # ensg_features = {
         #     "chemical_interaction_count": self.chem_features,
         #     "pli_lof_constraint": self.gnomad_features,
@@ -109,15 +116,10 @@ class GeneCharacterisationPreprocessor:
         #     "ppi_count": self.ppi_features,
         #     "common_essentials": self.gene_essentiality_features,
         # }
-
-        self.ensg_features = {
-            # "ppi_count": self.ppi_features,
-            "common_essentials": self.gene_essentiality_features,
-        }
+        # for feature_name, gene_dict in self.ensg_features.items():
+        #     self.features[feature_name] = self.features['targetId'].map(gene_dict)
 
         self.features = self.load_opentargets_features()
-        for feature_name, gene_dict in self.ensg_features.items():
-            self.features[feature_name] = self.features['targetId'].map(gene_dict)
 
         self.features = self.features[self.features['targetId'].isin(self.gh_data['Gene'])]
         nan_percentages = self.features.isna().mean() * 100
@@ -157,11 +159,8 @@ class GeneCharacterisationPreprocessor:
         self.full_data.set_index('targetId', inplace=True)
         # feature statistics can be checked here!
 
-        # we remove common_essentials as a feature because most of them get filtered out when combining modalities. We
-        # strictly use them here to define negatives for the test set.
         self.ce_data = self.full_data
-        # self.full_data = self.full_data.drop('common_essentials', axis=1)
-        self.num_features = len(self.full_data.columns)
+        self.num_features = len(self.full_data.columns) - 1
 
         self.data = self.full_data
         self.labels = self.labels_dict
@@ -958,6 +957,8 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         print("Preparing GH data for variant-level embeddings...")
         data_dir = config['paths']['DATA_DIR']
         if not os.path.exists(f'{data_dir}/elgh/gh_miva_data.pkl'):
+            gh = pol.read_parquet(config['paths']['AM_PATH'], use_pyarrow=True)
+            self.gh_data = gh.to_pandas()
             self.variant_sharding(config)
 
         else:
@@ -978,7 +979,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.gh_data['Protein_position'] = self.gh_data['Protein_position'].astype(int)
         max_seq_len = config['hyperparameters']['max_seq_len']
         self.gh_data.loc[:, 'Protein_pos_shard'] = self.gh_data['Protein_position'].apply(
-            lambda x: (x - 1) % max_seq_len)
+            lambda x: x % max_seq_len)
         cols = self.gh_data.columns.tolist()
         pp_idx = cols.index('Protein_position')
         cols = cols[:pp_idx] + [cols[-1]] + cols[pp_idx:-1]
@@ -987,16 +988,17 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         self.gh_data.to_pickle(f'{data_dir}/elgh/gh_miva_data.pkl')
 
     def missense_mutation_map(self):
-        # find all the missense mutations identities in the dataset
-        mutation_map = {}
+        mutation_map = {'UNK': 0}
         mut_id = 1
-        for index, row in self.gh_data.iterrows():
-            ref_aa = row['AA_ref']
-            alt_aa = row['AA_alt']
-            mutation = f"{ref_aa}>{alt_aa}"
-            if mutation not in mutation_map:
-                mutation_map[mutation] = mut_id
-                mut_id += 1
+
+        all_aas = list(set(self.gh_data['AA_ref'].unique().tolist() + self.gh_data['AA_alt'].unique().tolist()))
+
+        for ref in all_aas:
+            for alt in all_aas:
+                if ref != alt:
+                    mutation = f"{ref}>{alt}"
+                    mutation_map[mutation] = mut_id
+                    mut_id += 1
         return mutation_map
 
     def varformer_pathogenicity_input(self):
@@ -1005,18 +1007,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         to prepare data for 1) pathogenicity embedding, 2) positional embedding and 3) missense mutation identity
         embedding.
         """
-        print("Combining AM and GH data...")
         self.config = self.gcp.config
-        am = pd.read_csv(self.config['paths']['AM_PATH'], sep='\t')
-        am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
-
-        am = am[['am_pathogenicity', 'variant_id']]
-        print("Combining AlphaMissense data with GH data...")
-        self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
-        data_dir = self.config['paths']['DATA_DIR']
-        # save gh_data
-        with open(f'{data_dir}/alphamissense/gh_am_data_full.pkl', 'wb') as f:
-            pkl.dump(self.gh_data, f)
 
         sym_list = self.gh_data['SYMBOL'].tolist()
         prot_pos = self.gh_data['Protein_position'].tolist()
@@ -1030,15 +1021,16 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         components = self.gh_data['isoform'].str.extract(
             r'(?P<gene_symbol>\w+)_(?P<prot_position>\d+)_(?P<ref_aa>\w+)_(?P<alt_aa>\w+)_(?P<isoform>\d+)')
-        combined = components['gene_symbol'] + '_' + components['prot_position'].astype(str) + '_' + components[
-            'ref_aa'] + '_' + components['alt_aa']
-        self.gh_data['combined'] = combined
+        # combined = components['gene_symbol'] + '_' + components['prot_position'].astype(str) + '_' + components[
+        #     'ref_aa'] + '_' + components['alt_aa']
+        # gh['combined'] = combined
         self.gh_data['AA_ref'] = components['ref_aa']
         self.gh_data['AA_alt'] = components['alt_aa']
-        self.gh_data = self.gh_data.loc[components['isoform'] == '1'].drop_duplicates(subset=['combined'])
-        self.gh_data = self.gh_data.drop(columns=['combined'])
+        # gh = gh.loc[components['isoform'] == '1'].drop_duplicates(subset=['combined'])
+        # gh = gh.drop(columns=['combined'])
 
         mutation_map = self.missense_mutation_map()
+        data_dir = self.config['paths']['DATA_DIR']
         # save the mutation_map to a .pkl file
         with open(f'{data_dir}/elgh/missense_mutation_map.pkl', 'wb') as f:
             pkl.dump(mutation_map, f)
@@ -1048,30 +1040,41 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             variant_map = pkl.load(file)
         var_pat_features = {}
         gene_var_map = {}
+
         for index, row in tqdm(self.gh_data.iterrows(), total=self.gh_data.shape[0]):
             gene = row['Gene']
             variant_id = row['variant_id']
-            rs_id = variant_map.get(variant_id, None)
-            if rs_id is not None:
-                variant_id = rs_id
+            # rs_id = variant_map.get(variant_id, None)
+            # if rs_id is not None:
+            #     variant_id = rs_id
             ref_aa = row['AA_ref']
             alt_aa = row['AA_alt']
-            mut = f"{ref_aa}>{alt_aa}"
+            mutation = f"{ref_aa}>{alt_aa}"
+            mut = mutation_map.get(mutation, mutation_map['UNK'])
             pos = row['Protein_pos_shard']  # 0-indexed
-            # pos = row['Protein_position']
-            pat_value = row['am_pathogenicity'] * row['AF']
+            pat_value = row['am_pathogenicity']
             if np.isnan(pat_value):
                 continue
             if gene not in var_pat_features.keys():
-                var_pat_features[gene] = [[pat_value, pos, mutation_map[mut], gene_map[gene]]]
-            else:
-                var_pat_features[gene].append([pat_value, pos, mutation_map[mut], gene_map[gene]])
-            if gene not in gene_var_map.keys():
+                var_pat_features[gene] = [[pat_value, pos, mut, gene_map[gene]]]
                 gene_var_map[gene] = [variant_id]
             else:
+                var_pat_features[gene].append([pat_value, pos, mut, gene_map[gene]])
                 gene_var_map[gene].append(variant_id)
-        var_features = {gene: torch.tensor(features) for gene, features in var_pat_features.items()}
-        with open(f'{data_dir}/elgh/gene_var_map.pkl', 'wb') as f:
+
+        var_features = {}
+        max_seq_len = self.config['hyperparameters']['max_seq_len']
+
+        for gene, features in var_pat_features.items():
+            zipped = list(zip(features, gene_var_map[gene]))  # [(feature_list, variant_id), ...]
+
+            zipped.sort(key=lambda x: x[0][0], reverse=True)
+            top_zipped = zipped[:max_seq_len]
+            top_features, top_variant_ids = zip(*top_zipped) if top_zipped else ([], [])
+            var_features[gene] = torch.tensor(top_features)
+            gene_var_map[gene] = list(top_variant_ids)
+
+        with open(f'{data_dir}/elgh/gene_loc_var_map.pkl', 'wb') as f:
             pkl.dump(gene_var_map, f)
         return var_features, gene_var_map
 
@@ -1920,7 +1923,7 @@ def extract_pvc_features(gene, pvc_data, max_variants=100):
     """
     # If gene not in pvc_data, return zeros
     if gene not in pvc_data:
-        return np.zeros(12)  # Return zeros for all features
+        return np.zeros(10)  # Return zeros for all features
 
     # Get the tensor for this gene
     tensor = pvc_data[gene]
@@ -1931,7 +1934,7 @@ def extract_pvc_features(gene, pvc_data, max_variants=100):
 
     # Handle empty tensor
     if tensor.shape[0] == 0:
-        return np.zeros(12)
+        return np.zeros(10)
 
     # Extract each feature column
     pathogenicity = tensor[:, 0]
@@ -1939,7 +1942,7 @@ def extract_pvc_features(gene, pvc_data, max_variants=100):
     variant_ids = tensor[:, 2]
     gene_ids = tensor[:, 3]
 
-    # Statistical features (12 total)
+    # Statistical features (10 total)
     features = []
 
     # 1. Basic count statistics
@@ -1957,12 +1960,7 @@ def extract_pvc_features(gene, pvc_data, max_variants=100):
     features.append(np.std(positions) if num_variants > 1 else 0)  # Std dev of positions
     features.append(len(np.unique(positions)) / max(1, num_variants))  # Position diversity ratio
 
-    # 4. Variant distribution
-    unique_variants = np.unique(variant_ids)
-    features.append(len(unique_variants))  # Number of unique variants
-    features.append(len(unique_variants) / max(1, num_variants))  # Variant diversity ratio
-
-    # 5. Position distribution features
+    # 4. Position distribution features
     if num_variants > 1:
         # Calculate distance between consecutive positions
         sorted_positions = np.sort(positions)
