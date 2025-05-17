@@ -18,6 +18,7 @@ from tqdm import tqdm
 from matplotlib.ticker import ScalarFormatter
 from adjustText import adjust_text
 from scipy import stats
+from collections import defaultdict
 
 
 def load_model(checkpoint_path, data, config):
@@ -295,6 +296,116 @@ def plot_attention_corrs(per_gene_dfs):
     plt.savefig(f"attention_vs_am_pathogenicity.pdf", dpi=300)
 
 
+def plot_attention_vs_gwas(gwas_path, per_gene_dfs, variant_map, disease_code="E11"):
+    """
+    Create a Manhattan-style plot: Attention (x) vs. -log10(p-value) (y) for a specific disease.
+    Annotates high-value hits with <gene>_<variant> labels.
+    """
+    BONFERRONI_CUTOFF = -np.log10(5e-8)
+    SUGGESTIVE_CUTOFF = -np.log10(5e-5)
+
+    ICD10_TO_NAME = {
+        "E11": "Type 2 Diabetes",
+        "I10": "Hypertension",
+        "I20": "Angina",
+        "I21": "Myocardial Infarction",
+        "I24": "Acute IHD",
+        "I25": "Chronic IHD",
+        "I50": "Heart Failure",
+        "I61": "Intracerebral Hemorrhage",
+        "I63": "Cerebral Infarction",
+        "I64": "Stroke (Unspecified)",
+        "I65": "Arterial Occlusion",
+        "I67": "Other CVD",
+        "I69": "CVD Sequelae",
+        "C50": "Breast Cancer",
+        "E78": "Lipid Disorders",
+        "E88": "Metabolic Disorders"
+    }
+
+    # Load GWAS data
+    df = pd.read_csv(gwas_path, sep=' ')
+    df = df[(df['ALLELE0'].str.len() == 1) & (df['ALLELE1'].str.len() == 1)]
+
+    # Build variant ID and log_p
+    df['base_variant_id'] = (
+        'chr' + df['CHROM'].astype(str) + '_' + df['GENPOS'].astype(str) + '_' +
+        df['ALLELE0'] + '_' + df['ALLELE1']
+    )
+    df = df[~df['base_variant_id'].duplicated(keep='first')]
+    df['log_p'] = df['LOG10P']
+    df['rsID'] = df['base_variant_id'].map(variant_map)
+
+    # Plot histogram
+    plt.figure(figsize=(10, 6))
+    sns.histplot(df['log_p'], bins=100)
+    plt.yscale('log')
+    plt.axvline(BONFERRONI_CUTOFF, color='red', label='Genome-wide significance (p<5e-8)')
+    plt.axvline(SUGGESTIVE_CUTOFF, color='orange', label='Suggestive significance (p<5e-5)')
+    plt.legend(loc='upper right')
+    disease_name = ICD10_TO_NAME.get(disease_code, disease_code)
+    plt.xlabel("-log10(P)")
+    plt.ylabel("Count")
+    plt.title(f"GWAS p-value distribution for {disease_name}")
+    plt.tight_layout()
+    plt.savefig(f"gwas_pval_hist_{disease_name.replace(' ', '_')}.png", dpi=300)
+    plt.close()
+
+    # Collect attention scores + gene lookup
+    attention_collector = defaultdict(list)
+    base_variant_to_gene = {}
+
+    for gene, gene_df in per_gene_dfs.items():
+        for full_id, row in gene_df.iterrows():
+            base_id = '_'.join(full_id.split('_')[:4])
+            if pd.notna(row['Attention']):
+                attention_collector[base_id].append(row['Attention'])
+                base_variant_to_gene[base_id] = gene  # assumes one gene per base_id
+
+    variant_attention_map = {
+        k: np.mean(v) for k, v in attention_collector.items()
+    }
+
+    df['Attention'] = df['base_variant_id'].map(variant_attention_map)
+    df.dropna(subset=['Attention'], inplace=True)
+
+    # Scatter plot
+    plt.figure(figsize=(10, 6))
+    sns.scatterplot(
+        data=df,
+        x='Attention',
+        y='log_p',
+        alpha=0.6,
+        edgecolor=None
+    )
+    plt.axhline(BONFERRONI_CUTOFF, color='red', linestyle='--', label='Genome-wide significance')
+    plt.axhline(SUGGESTIVE_CUTOFF, color='orange', linestyle='--', label='Suggestive significance')
+    plt.xscale('log')
+    plt.xlabel("Attention Score")
+    plt.ylabel("-log10(P-value)")
+    plt.title(f"Prioritization vs GWAS Significance for {disease_name}")
+    plt.legend(loc='upper right')
+    plt.grid(True)
+
+    # Annotate top hits with gene name + variant
+    texts = []
+    labeled_df = df[df['log_p'] > SUGGESTIVE_CUTOFF]
+    for _, row in labeled_df.iterrows():
+        base_id = row['base_variant_id']
+        gene = base_variant_to_gene.get(base_id, "NA")
+        label = f"{gene}_{base_id}"
+        texts.append(plt.text(row['Attention'], row['log_p'], label, fontsize=8))
+
+    if texts:
+        adjust_text(texts, arrowprops=dict(arrowstyle='->', color='black', lw=0.5))
+
+    plt.tight_layout()
+    plt.savefig(f"attention_vs_pval_{disease_name.replace(' ', '_')}.png", dpi=300)
+    plt.close()
+
+    return df
+
+
 def run_inference_pipeline(checkpoint, output):
     config_path = 'cluster_config.yml'
     with open(config_path, 'r') as stream:
@@ -379,11 +490,7 @@ def run_inference_pipeline(checkpoint, output):
     attn_df_top = attn_df[attn_df['Gene'].isin(pred_df_top['Gene'].values)]
 
     attn_df_top = attn_df_top.set_index('Gene')
-    per_gene_dfs = {}
 
-    # Preprocess and build lookup tables outside the loop
-    # This avoids repeated lookups and calculations
-    gene_to_pathogenicity = {}
     gene_to_pvc_data = {}
 
     # Build pathogenicity lookup table once
@@ -410,10 +517,8 @@ def run_inference_pipeline(checkpoint, output):
 
     # Filter AM and GH dataframes once (outside the loop) to avoid repeated filtering
     am_indexed = am_df.set_index('variant_ids')
-    # Remove duplicates from am_indexed
     am_indexed = am_indexed[~am_indexed.index.duplicated(keep='first')]
     gh_indexed = gh_df.set_index('variant_ids')
-    # Remove duplicates from gh_indexed once
     gh_indexed = gh_indexed[~gh_indexed.index.duplicated(keep='first')]
 
     per_gene_dfs = {}
@@ -461,9 +566,8 @@ def run_inference_pipeline(checkpoint, output):
                     }
 
             per_gene_dfs[gene] = gene_df
+
         except Exception as e:
             print(f"Error processing gene {gene}: {e}")
-
-    create_pharmgkb_plots(pharmgkb_visualisation)
 
     print('break')
