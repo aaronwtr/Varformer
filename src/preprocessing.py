@@ -70,8 +70,10 @@ class GeneCharacterisationPreprocessor:
         # Load Genes & Health South-Asian Population exome data
         self.gh_data = self.load_gh_data()
 
-        self.gh_data["UNIPROT"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
-        self.gh_data = self.gh_data.drop(["SWISSPROT", "TREMBL"], axis=1)
+        # check if the SWISSPROT and TREMBL columns are present, if they are, skip this bit
+        if 'SWISSPROT' in self.gh_data.columns or 'TREMBL' in self.gh_data.columns:
+            self.gh_data["UNIPROT"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
+            self.gh_data = self.gh_data.drop(["SWISSPROT", "TREMBL"], axis=1)
         self.gh_data[['ref_aa', 'alt_aa']] = self.gh_data['Amino_acids'].str.split('/', expand=True)
         self.gh_data['protein_variant'] = (self.gh_data['ref_aa'] + self.gh_data['Protein_position'].astype(str) +
                                            self.gh_data['alt_aa'])
@@ -164,6 +166,14 @@ class GeneCharacterisationPreprocessor:
 
         self.data = self.full_data
         self.labels = self.labels_dict
+        # ensg_to_symb_df = self.gh_data[['Gene', 'SYMBOL']]
+        # ensg_to_symb_dict = ensg_to_symb_df.set_index('Gene')['SYMBOL'].to_dict()
+        # label_df = pd.DataFrame.from_dict(self.labels, orient='index', columns=['label'])
+        # label_df['symbol'] = label_df.index.map(ensg_to_symb_dict)
+        # label_df.index.name = 'ensg_id'
+        # label_df = label_df[['symbol', 'label']]
+        # label_df.to_pickle("../data/labels/processed_labels.pkl")
+        # print('break')
 
     def _get_files(self):
         """
@@ -958,7 +968,13 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         data_dir = config['paths']['DATA_DIR']
         if not os.path.exists(f'{data_dir}/elgh/gh_miva_data.pkl'):
             gh = pol.read_parquet(config['paths']['AM_PATH'], use_pyarrow=True)
-            self.gh_data = gh.to_pandas()
+            self.gh_data_am = gh.to_pandas()
+            if 'AC' not in self.gh_data_am.columns:
+                self.gh_data_am = self.gh_data_am[self.gh_data_am['variant_id'].isin(self.gh_data['variant_id'].unique())]
+                self.gh_data_am['AC'] = self.gh_data_am['variant_id'].map(self.gh_data.set_index('variant_id')['AC'])
+            elif 'AN' not in self.gh_data_am.columns:
+                self.gh_data_am['AN'] = self.gh_data_am['variant_id'].map(self.gh_data.set_index('variant_id')['AN'])
+            self.gh_data = self.gh_data_am
             self.variant_sharding(config)
 
         else:
@@ -1007,6 +1023,13 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         to prepare data for 1) pathogenicity embedding, 2) positional embedding and 3) missense mutation identity
         embedding.
         """
+        other_columns = [col for col in self.gh_data.columns if col not in ['variant_id', 'am_pathogenicity']]
+
+        agg_dict = {col: 'first' for col in other_columns}
+        agg_dict['am_pathogenicity'] = 'mean'
+
+        self.gh_data = self.gh_data.groupby('variant_id', as_index=False).agg(agg_dict)
+
         self.config = self.gcp.config
 
         sym_list = self.gh_data['SYMBOL'].tolist()
@@ -1040,7 +1063,6 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             variant_map = pkl.load(file)
         var_pat_features = {}
         gene_var_map = {}
-
         for index, row in tqdm(self.gh_data.iterrows(), total=self.gh_data.shape[0]):
             gene = row['Gene']
             variant_id = row['variant_id']
@@ -1056,11 +1078,14 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             if np.isnan(pat_value):
                 continue
             if gene not in var_pat_features.keys():
-                var_pat_features[gene] = [[pat_value, pos, mut, gene_map[gene]]]
                 gene_var_map[gene] = [variant_id]
+                var_pat_features[gene] = [[pat_value, pos, mut, gene_map[gene]]]
             else:
-                var_pat_features[gene].append([pat_value, pos, mut, gene_map[gene]])
-                gene_var_map[gene].append(variant_id)
+                if variant_id in gene_var_map[gene]:
+                    continue
+                else:
+                    var_pat_features[gene].append([pat_value, pos, mut, gene_map[gene]])
+                    gene_var_map[gene].append(variant_id)
 
         var_features = {}
         max_seq_len = self.config['hyperparameters']['max_seq_len']
