@@ -484,9 +484,15 @@ def run_inference_pipeline(checkpoint, output):
     attn_df['Attention'] = attn_df['Attention'].apply(lambda x: x.tolist() if torch.is_tensor(x) else x)
     _attn_df = pd.DataFrame(attn_df['Attention'].to_list(), columns=[f'Variant_{i}' for i in range(1024)])
     attn_df = pd.concat([attn_df['Gene'], _attn_df], axis=1)
+    with open("../data/labels/processed_labels.pkl", "rb") as f:
+        processed_labels = pkl.load(f)
 
-    pred_df_top = pred_df.sort_values(by='Prediction', ascending=False)
-    # pred_df_top = pred_df.sort_values(by='Prediction', ascending=False).head(30)
+    excluded_genes = processed_labels[processed_labels['label'] == 1].index
+    attn_df = attn_df[~attn_df['Gene'].isin(excluded_genes)]
+    pred_df = pred_df[~pred_df['Gene'].isin(excluded_genes)]
+
+    # pred_df_top = pred_df.sort_values(by='Prediction', ascending=False)
+    pred_df_top = pred_df.sort_values(by='Prediction', ascending=False).head(5)
     attn_df_top = attn_df[attn_df['Gene'].isin(pred_df_top['Gene'].values)]
 
     attn_df_top = attn_df_top.set_index('Gene')
@@ -538,7 +544,6 @@ def run_inference_pipeline(checkpoint, output):
                 raise ValueError(f"Gene {gene} not found in any test set PVC data.")
 
             variant_set = set(variant_ids)
-
             gene_df['base_variant_id'] = [extract_base_variant_id(v) for v in gene_df.index]
             gene_df['rsID'] = gene_df['base_variant_id'].map(variant_to_rsid)
 
@@ -570,4 +575,17 @@ def run_inference_pipeline(checkpoint, output):
         except Exception as e:
             print(f"Error processing gene {gene}: {e}")
 
+    # all_variants = []
+    #
+    # for gene, df in per_gene_dfs.items():
+    #     variants = df.index.tolist()
+    #     all_variants.extend(variants)
+    #
+    # all_variants = list(set(all_variants))
+    #
+    # output_path = "../data/output/all_variants_eval_set_unlabeled.txt"
+    # with open(output_path, 'w') as f:
+    #     f.write('\n'.join(all_variants))
+    #
+    # print(f"Saved {len(all_variants)} unique variants to {output_path}")
     print('break')
