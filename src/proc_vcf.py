@@ -10,7 +10,7 @@ csq_of_interest = ['splice_acceptor_variant', 'splice_donor_variant', 'start_los
                    'missense_variant', 'inframe_insertion', 'inframe_deletion', 'frameshift_variant', ]
 
 file_names = os.listdir(IN_DIR)
-for file_name in file_names:
+for file_name in tqdm(file_names):
     if len(os.listdir(OUT_DIR)) < len(file_names):
         with open(f'{IN_DIR}/{file_name}', 'r', encoding='Windows-1252') as file:
                 content = file.readlines()
@@ -55,7 +55,7 @@ for file_name in file_names:
 
         filtered_df = result_df[result_df.apply(filter_csq_optimized, axis=1)]
 
-        cols_to_keep_1 = ["CHROM", "POS", "REF", "ALT", "AF", "CSQ"]
+        cols_to_keep_1 = ["CHROM", "POS", "REF", "ALT", "AF", "AC", "AN", "CSQ"]
         cols_to_keep_csq = ["Allele", "Consequence", "IMPACT", "SYMBOL", "Gene", "Feature", "HGVSp", "UNIPARC",
                             "SWISSPROT", "TREMBL", "Protein_position", "Amino_acids", "Existing_variation", "PHENOTYPES", "Conservation",
                             "LoF", "LoF_filter", "LoF_flags", "LoF_info", "CADD_PHRED", "CADD_RAW", "ClinVar_CLNSIG"]
