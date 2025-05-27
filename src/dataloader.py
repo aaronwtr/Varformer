@@ -1,5 +1,6 @@
 import torch
 import yaml
+import random
 
 import torch.nn as nn
 import preprocessing as preprocessing
@@ -10,6 +11,7 @@ import pandas as pd
 from torch.utils.data import Dataset, BatchSampler, Sampler
 from typing import Dict, List, Tuple, Iterator, Union, Iterable
 from tabulate import tabulate
+from math import ceil
 
 
 class ModuleDataProcessor:
@@ -103,8 +105,6 @@ class ModuleDataProcessor:
         go_data = data['go']
         pvc_data = data['pvc']
 
-        test_sources = ['pfam', 'rcnt', 'pharos']
-
         # Get gene sets from each modality
         ensg_pvc = set(pvc_data.data.keys())
         if 'labels' in ensg_pvc:  # Remove 'labels' key if present
@@ -145,6 +145,7 @@ class ModuleDataProcessor:
 
         test_data_result = self.get_test_data(gc_data, go_data, pvc_data)
 
+        # TODO: properly process the result from the test_data function based on if we are in eval or inference mode
         combined_test_data = test_data_result["test_data"]
         combined_test_genes = test_data_result["all_test_ids"]
         test_labels = test_data_result["test_labels"]
@@ -236,147 +237,215 @@ class ModuleDataProcessor:
 
     def get_test_data(self, gc_data, go_data, pvc_data):
         """Extract test data from preprocessors and organize it properly."""
-        # Extract test target IDs for each source
-        pfam_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(gc_data.drgbl_targets_pfam)]
-        rcnt_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(gc_data.rcnt_targets_fda)]
-        pharos_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(gc_data.chem_targets_pharos)]
+        if self.config['hyperparameters']['mode'] == 'eval':
+            # Extract test target IDs for each source
+            pfam_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(gc_data.drgbl_targets_pfam)]
+            rcnt_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(gc_data.rcnt_targets_fda)]
+            pharos_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(gc_data.chem_targets_pharos)]
 
-        # Convert to lists for easier handling
-        pfam_ensg = pfam_ids.tolist()
-        rcnt_ensg = rcnt_ids.tolist()
-        pharos_ensg = pharos_ids.tolist()
+            # Convert to lists for easier handling
+            pfam_ensg = pfam_ids.tolist()
+            rcnt_ensg = rcnt_ids.tolist()
+            pharos_ensg = pharos_ids.tolist()
 
-        # Collect all holdout gene IDs
-        holdout_ensg = pfam_ensg + rcnt_ensg + pharos_ensg
+            # Extract positive test data
+            pfam_pos_data_gc = gc_data.data[gc_data.data.index.isin(pfam_ensg)]
+            pfam_pos_data_go = go_data.data[go_data.data.index.isin(pfam_ensg)]
 
-        # Extract positive test data
-        pfam_pos_data_gc = gc_data.data[gc_data.data.index.isin(pfam_ensg)]
-        pfam_pos_data_go = go_data.data[go_data.data.index.isin(pfam_ensg)]
+            pvc_labels = pvc_data.data['labels']
+            pfam_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pfam_ensg if ensg in list(pvc_labels.keys())}
 
-        pvc_labels = pvc_data.data['labels']
-        pfam_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pfam_ensg if ensg in list(pvc_labels.keys())}
+            rcnt_pos_data_gc = gc_data.data[gc_data.data.index.isin(rcnt_ensg)]
+            rcnt_pos_data_go = go_data.data[go_data.data.index.isin(rcnt_ensg)]
+            rcnt_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in rcnt_ensg if ensg in list(pvc_labels.keys())}
 
-        rcnt_pos_data_gc = gc_data.data[gc_data.data.index.isin(rcnt_ensg)]
-        rcnt_pos_data_go = go_data.data[go_data.data.index.isin(rcnt_ensg)]
-        rcnt_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in rcnt_ensg if ensg in list(pvc_labels.keys())}
+            pharos_pos_data_gc = gc_data.data[gc_data.data.index.isin(pharos_ensg)]
+            pharos_pos_data_go = go_data.data[go_data.data.index.isin(pharos_ensg)]
+            pharos_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pharos_ensg if ensg in list(pvc_labels.keys())}
+            pharos_pos_data_gc.loc[:, 'target'] = 1
+            pharos_pos_data_go['target'] = 1
 
-        pharos_pos_data_gc = gc_data.data[gc_data.data.index.isin(pharos_ensg)]
-        pharos_pos_data_go = go_data.data[go_data.data.index.isin(pharos_ensg)]
-        pharos_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pharos_ensg if ensg in list(pvc_labels.keys())}
-        pharos_pos_data_gc.loc[:, 'target'] = 1
-        pharos_pos_data_go['target'] = 1
+            # Calculate class ratio
+            num_pos = len(gc_data.data[gc_data.data['target'] == 1])
+            num_neg = len(gc_data.data[gc_data.data['target'] == 0])
+            class_prior = num_pos / (num_pos + num_neg)
 
-        # Calculate class ratio
-        num_pos = len(gc_data.data[gc_data.data['target'] == 1])
-        num_neg = len(gc_data.data[gc_data.data['target'] == 0])
-        class_prior = num_pos / (num_pos + num_neg)
+            # Calculate needed negative samples for each test source
+            num_pfam_neg = int(len(pfam_pos_data_gc) / class_prior)
+            num_rcnt_neg = int(len(rcnt_pos_data_gc) / class_prior)
+            num_pharos_neg = int(len(pharos_pos_data_gc) / class_prior)
 
-        # Calculate needed negative samples for each test source
-        num_pfam_neg = int(len(pfam_pos_data_gc) / class_prior)
-        num_rcnt_neg = int(len(rcnt_pos_data_gc) / class_prior)
-        num_pharos_neg = int(len(pharos_pos_data_gc) / class_prior)
+            # Select and distribute negative samples
+            total_negs = num_pfam_neg + num_rcnt_neg + num_pharos_neg
 
-        # Select and distribute negative samples
-        total_negs = num_pfam_neg + num_rcnt_neg + num_pharos_neg
-        # negative_candidates = gc_data.ce_data[gc_data.ce_data['common_essentials'] == 1]
-        negative_candidates = gc_data.data[gc_data.data['target'] == 0]
-        negative_candidates = negative_candidates[negative_candidates['geneticConstraint'] < -0.90]
+            negative_candidates = gc_data.data[gc_data.data['target'] == 0]
+            negative_candidates = negative_candidates[negative_candidates['geneticConstraint'] < -0.90]
 
-        if total_negs >= len(negative_candidates):
-            negative_test_balance = negative_candidates
-        else:
-            negative_test_balance = negative_candidates.sample(n=total_negs,
-                                                               random_state=self.config['hyperparameters']['seed'])
+            if total_negs >= len(negative_candidates):
+                negative_test_balance = negative_candidates
+            else:
+                negative_test_balance = negative_candidates.sample(n=total_negs,
+                                                                   random_state=self.config['hyperparameters']['seed'])
 
-        negative_test_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(negative_test_balance.index)]
+            negative_test_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(negative_test_balance.index)]
 
-        pfam_neg_ratio = float(num_pfam_neg / total_negs)
-        rcnt_neg_ratio = float(num_rcnt_neg / total_negs)
-        pharos_neg_ratio = float(num_pharos_neg / total_negs)
+            pfam_neg_ratio = float(num_pfam_neg / total_negs)
+            rcnt_neg_ratio = float(num_rcnt_neg / total_negs)
+            pharos_neg_ratio = float(num_pharos_neg / total_negs)
 
-        num_pfam_neg = int(len(negative_test_ids) * pfam_neg_ratio)
-        num_rcnt_neg = int(len(negative_test_ids) * rcnt_neg_ratio)
-        num_pharos_neg = int(len(negative_test_ids) * pharos_neg_ratio)
+            num_pfam_neg = int(len(negative_test_ids) * pfam_neg_ratio)
+            num_rcnt_neg = int(len(negative_test_ids) * rcnt_neg_ratio)
+            num_pharos_neg = int(len(negative_test_ids) * pharos_neg_ratio)
 
-        # Sample negative examples
-        negative_test_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(negative_candidates.index)]
-        negative_test_ids = negative_test_ids.to_frame()
-        negative_test_ids.set_index('targetId', inplace=True)
+            # Sample negative examples
+            negative_test_ids = gc_data.ensg_ids[gc_data.ensg_ids.isin(negative_candidates.index)]
+            negative_test_ids = negative_test_ids.to_frame()
+            negative_test_ids.set_index('targetId', inplace=True)
 
-        # Allocate negatives to each test source
-        pfam_negs = negative_test_ids.sample(n=num_pfam_neg, random_state=self.config['hyperparameters']['seed'])
-        negative_test_ids = negative_test_ids.drop(pfam_negs.index)
-        pfam_neg_data_gc = gc_data.data[gc_data.data.index.isin(pfam_negs.index)]
-        pfam_neg_data_go = go_data.data[go_data.data.index.isin(pfam_negs.index)]
-        pfam_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pfam_negs.index if ensg in list(pvc_labels.keys())}
+            # Allocate negatives to each test source
+            pfam_negs = negative_test_ids.sample(n=num_pfam_neg, random_state=self.config['hyperparameters']['seed'])
+            negative_test_ids = negative_test_ids.drop(pfam_negs.index)
+            pfam_neg_data_gc = gc_data.data[gc_data.data.index.isin(pfam_negs.index)]
+            pfam_neg_data_go = go_data.data[go_data.data.index.isin(pfam_negs.index)]
+            pfam_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pfam_negs.index if
+                                 ensg in list(pvc_labels.keys())}
 
-        rcnt_negs = negative_test_ids.sample(n=num_rcnt_neg, random_state=self.config['hyperparameters']['seed'])
-        negative_test_ids = negative_test_ids.drop(rcnt_negs.index)
-        rcnt_neg_data_gc = gc_data.data[gc_data.data.index.isin(rcnt_negs.index)]
-        rcnt_neg_data_go = go_data.data[go_data.data.index.isin(rcnt_negs.index)]
-        rcnt_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in rcnt_negs.index if ensg in list(pvc_labels.keys())}
+            rcnt_negs = negative_test_ids.sample(n=num_rcnt_neg, random_state=self.config['hyperparameters']['seed'])
+            negative_test_ids = negative_test_ids.drop(rcnt_negs.index)
+            rcnt_neg_data_gc = gc_data.data[gc_data.data.index.isin(rcnt_negs.index)]
+            rcnt_neg_data_go = go_data.data[go_data.data.index.isin(rcnt_negs.index)]
+            rcnt_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in rcnt_negs.index if
+                                 ensg in list(pvc_labels.keys())}
 
-        pharos_negs = negative_test_ids.sample(n=num_pharos_neg, random_state=self.config['hyperparameters']['seed'])
-        pharos_neg_data_gc = gc_data.data[gc_data.data.index.isin(pharos_negs.index)]
-        pharos_neg_data_go = go_data.data[go_data.data.index.isin(pharos_negs.index)]
-        pharos_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pharos_negs.index if ensg in list(pvc_labels.keys())}
-        pharos_neg_data_gc.loc[:, 'target'] = 0
-        pharos_neg_data_go.loc[:, 'target'] = 0
+            pharos_negs = negative_test_ids.sample(n=num_pharos_neg,
+                                                   random_state=self.config['hyperparameters']['seed'])
+            pharos_neg_data_gc = gc_data.data[gc_data.data.index.isin(pharos_negs.index)]
+            pharos_neg_data_go = go_data.data[go_data.data.index.isin(pharos_negs.index)]
+            pharos_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pharos_negs.index if
+                                   ensg in list(pvc_labels.keys())}
+            pharos_neg_data_gc.loc[:, 'target'] = 0
+            pharos_neg_data_go.loc[:, 'target'] = 0
 
-        # Combine positive and negative data for each source
-        pfam_data_gc = pd.concat([pfam_pos_data_gc, pfam_neg_data_gc])
-        pfam_data_go = pd.concat([pfam_pos_data_go, pfam_neg_data_go])
-        pfam_data_pvc = {**pfam_pos_data_pvc, **pfam_neg_data_pvc}
+            # Combine positive and negative data for each source
+            pfam_data_gc = pd.concat([pfam_pos_data_gc, pfam_neg_data_gc])
+            pfam_data_go = pd.concat([pfam_pos_data_go, pfam_neg_data_go])
+            pfam_data_pvc = {**pfam_pos_data_pvc, **pfam_neg_data_pvc}
 
-        rcnt_data_gc = pd.concat([rcnt_pos_data_gc, rcnt_neg_data_gc])
-        rcnt_data_go = pd.concat([rcnt_pos_data_go, rcnt_neg_data_go])
-        rcnt_data_pvc = {**rcnt_pos_data_pvc, **rcnt_neg_data_pvc}
+            rcnt_data_gc = pd.concat([rcnt_pos_data_gc, rcnt_neg_data_gc])
+            rcnt_data_go = pd.concat([rcnt_pos_data_go, rcnt_neg_data_go])
+            rcnt_data_pvc = {**rcnt_pos_data_pvc, **rcnt_neg_data_pvc}
 
-        pharos_data_gc = pd.concat([pharos_pos_data_gc, pharos_neg_data_gc])
-        pharos_data_go = pd.concat([pharos_pos_data_go, pharos_neg_data_go])
-        pharos_data_pvc = {**pharos_pos_data_pvc, **pharos_neg_data_pvc}
+            pharos_data_gc = pd.concat([pharos_pos_data_gc, pharos_neg_data_gc])
+            pharos_data_go = pd.concat([pharos_pos_data_go, pharos_neg_data_go])
+            pharos_data_pvc = {**pharos_pos_data_pvc, **pharos_neg_data_pvc}
 
-        test_labels = {}
+            test_labels = {}
 
-        all_pos_genes = set(pfam_ensg + rcnt_ensg + pharos_ensg)
-        for gene in all_pos_genes:
-            test_labels[gene] = 1
+            all_pos_genes = set(pfam_ensg + rcnt_ensg + pharos_ensg)
+            for gene in all_pos_genes:
+                test_labels[gene] = 1
 
-        all_neg_genes = set(list(pfam_negs.index) + list(rcnt_negs.index) + list(pharos_negs.index))
-        for gene in all_neg_genes:
-            test_labels[gene] = 0
+            all_neg_genes = set(list(pfam_negs.index) + list(rcnt_negs.index) + list(pharos_negs.index))
+            for gene in all_neg_genes:
+                test_labels[gene] = 0
 
-        # Set up test data structure
-        test_data = {
-            "pfam": {
-                "gc": pfam_data_gc,
-                "go": pfam_data_go,
-                "pvc": pfam_data_pvc
-            },
-            "rcnt": {
-                "gc": rcnt_data_gc,
-                "go": rcnt_data_go,
-                "pvc": rcnt_data_pvc
-            },
-            "pharos": {
-                "gc": pharos_data_gc,
-                "go": pharos_data_go,
-                "pvc": pharos_data_pvc
+            # Set up test data structure
+            test_data = {
+                "pfam": {
+                    "gc": pfam_data_gc,
+                    "go": pfam_data_go,
+                    "pvc": pfam_data_pvc
+                },
+                "rcnt": {
+                    "gc": rcnt_data_gc,
+                    "go": rcnt_data_go,
+                    "pvc": rcnt_data_pvc
+                },
+                "pharos": {
+                    "gc": pharos_data_gc,
+                    "go": pharos_data_go,
+                    "pvc": pharos_data_pvc
+                }
             }
-        }
 
-        pfam_ids_all = pfam_data_gc.index.tolist()
-        rcnt_ids_all = rcnt_data_gc.index.tolist()
-        pharos_ids_all = pharos_data_gc.index.tolist()
-        all_test_ids = pfam_ids_all + rcnt_ids_all + pharos_ids_all
+            pfam_ids_all = pfam_data_gc.index.tolist()
+            rcnt_ids_all = rcnt_data_gc.index.tolist()
+            pharos_ids_all = pharos_data_gc.index.tolist()
+            all_test_ids = pfam_ids_all + rcnt_ids_all + pharos_ids_all
 
-        return {
-            "test_data": test_data,
-            "test_genes": {"pfam": pfam_ids_all, "rcnt": rcnt_ids_all, "pharos": pharos_ids_all},
-            "all_test_ids": all_test_ids,
-            "test_labels": test_labels,
-            "class_prior": class_prior
-        }
+            return {
+                "test_data": test_data,
+                "test_genes": {"pfam": pfam_ids_all, "rcnt": rcnt_ids_all, "pharos": pharos_ids_all},
+                "all_test_ids": all_test_ids,
+                "test_labels": test_labels,
+                "class_prior": class_prior
+            }
+
+
+        elif self.config['hyperparameters']['mode'] == 'inference':
+            seed = self.config['hyperparameters']['seed']
+
+            # Get all gene IDs per modality
+            gc_genes = set(gc_data.data.index.tolist())
+            go_genes = set(go_data.data.index.tolist())
+            pvc_genes = set(pvc_data.data['labels'].keys())
+
+            # Intersection of all genes across the three modalities
+            common_genes = gc_genes & go_genes & pvc_genes
+
+            # Within this common set, identify unlabeled genes
+            gc_unlabeled = set(gc_data.data.loc[list(common_genes)][gc_data.data['target'] == 0].index.tolist())
+            go_unlabeled = set(
+                go_data.data[
+                    go_data.data.index.isin(common_genes) &
+                    go_data.data.index.map(gc_data.labels) == 0
+                    ].index.tolist()
+            )
+            pvc_unlabeled = set([ensg for ensg in common_genes if pvc_data.data['labels'][ensg] == 0])
+
+            # Final set of unlabeled genes that are in all three modalities
+            unlabeled_common = list(gc_unlabeled & go_unlabeled & pvc_unlabeled)
+
+            random.seed(seed)
+            random.shuffle(unlabeled_common)
+            split_idx = int(len(unlabeled_common) * 0.8)
+            train_ids = unlabeled_common[:split_idx]
+            test_ids = unlabeled_common[split_idx:]
+
+            # Extract train/test data aligned on common gene set
+            gc_train = gc_data.data.loc[train_ids]
+            gc_test = gc_data.data.loc[test_ids]
+            go_train = go_data.data.loc[train_ids]
+            go_test = go_data.data.loc[test_ids]
+            pvc_train = {ensg: pvc_data.data[ensg] for ensg in train_ids}
+            pvc_test = {ensg: pvc_data.data[ensg] for ensg in test_ids}
+
+            test_labels = {gene: gc_data.labels[gene] for gene in common_genes}
+            num_pos = sum(1 for gene in common_genes if gc_data.labels[gene] == 1)
+            num_neg = sum(1 for gene in common_genes if gc_data.labels[gene] == 0)
+            class_prior = num_pos / (num_pos + num_neg) if (num_pos + num_neg) > 0 else 0
+
+            return {
+                "test_data": {
+                    "gc": gc_test,
+                    "go": go_test,
+                    "pvc": pvc_test
+                },
+                "train_data": {
+                    "gc": gc_train,
+                    "go": go_train,
+                    "pvc": pvc_train
+                },
+                "all_test_ids": test_ids,
+                "test_labels": test_labels,
+                "class_prior": class_prior
+
+            }
+        else:
+            raise ValueError(
+                f"Invalid mode '{self.config['hyperparameters']['mode']}'. "
+                "Expected 'eval' or 'inference'."
+            )
 
 
 class DrugTargetData(Dataset):
