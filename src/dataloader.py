@@ -145,95 +145,116 @@ class ModuleDataProcessor:
 
         test_data_result = self.get_test_data(gc_data, go_data, pvc_data)
 
-        # TODO: properly process the result from the test_data function based on if we are in eval or inference mode
-        combined_test_data = test_data_result["test_data"]
-        combined_test_genes = test_data_result["all_test_ids"]
-        test_labels = test_data_result["test_labels"]
-        test_labels_per_source = test_data_result["test_genes"]
-        class_prior = test_data_result["class_prior"]
+        if self.config['hyperparameters']['mode'] == 'inference':
+            combined_test_data = test_data_result["test_data"]  # Single 80/20 split
+            combined_test_genes = test_data_result["all_test_ids"]
+            combined_train = test_data_result["train_data"]
+            labels = test_data_result["labels"]
+            test_labels = test_data_result["test_labels"]
+            class_prior = test_data_result["class_prior"]
 
-        feature_data = None
-        config = None
-        combined_train = {}
-        combined_features = 0
-        for module, preprocessor in data.items():
-            feature_data = preprocessor.data
-            combined_features += preprocessor.num_features
+            return {
+                "train": combined_train,
+                "labels": labels,
+                "config": self.config,
+                "test_data": combined_test_data,
+                "test_labels": test_labels,
+                "test_genes": combined_test_genes,
+                "class_prior": float(class_prior)
+            }
+
+        elif self.config['hyperparameters']['mode'] == 'eval':
+            combined_test_data = test_data_result["test_data"]
+            combined_test_genes = test_data_result["all_test_ids"]
+            test_labels = test_data_result["test_labels"]
+            test_labels_per_source = test_data_result["test_genes"]
+            class_prior = test_data_result["class_prior"]
+
+            feature_data = None
+            config = None
+            combined_train = {}
+            combined_features = 0
+            for module, preprocessor in data.items():
+                feature_data = preprocessor.data
+                combined_features += preprocessor.num_features
+                if isinstance(feature_data, pd.DataFrame):
+                    feature_data = feature_data[~feature_data.index.isin(combined_test_genes)]
+                    config = preprocessor.config
+                elif isinstance(feature_data, dict):
+                    feature_data = {gene: feature_data[gene] for gene in feature_data if
+                                    gene not in combined_test_genes}
+                    feature_data.pop('labels')
+                else:
+                    raise ValueError("Unsupported data type for feature_data. Should be DataFrame for GC and GO. Should"
+                                     "be dict for PVC.")
+
+                combined_train[module] = feature_data
+
+            assert config is not None, "Config should be set!"
+            assert class_prior is not None, "Class prior should be set!"
+
             if isinstance(feature_data, pd.DataFrame):
-                feature_data = feature_data[~feature_data.index.isin(combined_test_genes)]
-                config = preprocessor.config
+                combined_genes = set(feature_data.index.tolist())
             elif isinstance(feature_data, dict):
-                feature_data = {gene: feature_data[gene] for gene in feature_data if gene not in combined_test_genes}
-                feature_data.pop('labels')
+                combined_genes = set(feature_data.keys())
             else:
                 raise ValueError("Unsupported data type for feature_data. Should be DataFrame for GC and GO. Should"
                                  "be dict for PVC.")
 
-            combined_train[module] = feature_data
+            labels = dict(zip(combined_train['gc'].index, combined_train['gc']['target'])) if 'target' in \
+                                                                                              combined_train[
+                                                                                                  'gc'].columns else None
+            assert labels is not None, "Labels should be present in the GC data at this point!"
 
-        assert config is not None, "Config should be set!"
-        assert class_prior is not None, "Class prior should be set!"
+            if 'target' in combined_train['gc'].columns:
+                combined_train['gc'].drop(columns=['target'], inplace=True)
+            if 'target' in combined_train['go'].columns:
+                combined_train['go'].drop(columns=['target'], inplace=True)
 
-        if isinstance(feature_data, pd.DataFrame):
-            combined_genes = set(feature_data.index.tolist())
-        elif isinstance(feature_data, dict):
-            combined_genes = set(feature_data.keys())
+            num_train_positives = sum(list(labels.values()))
+            num_train_negatives = len(labels) - num_train_positives
+
+            num_pfam_pos = sum(combined_test_data['pfam']['gc']['target'])
+            num_pfam_neg = len(combined_test_data['pfam']['gc']) - num_pfam_pos
+
+            num_rcnt_pos = sum(combined_test_data['rcnt']['gc']['target'])
+            num_rcnt_neg = len(combined_test_data['rcnt']['gc']) - num_rcnt_pos
+
+            num_pharos_pos = sum(combined_test_data['pharos']['gc']['target'])
+            num_pharos_neg = len(combined_test_data['pharos']['gc']) - num_pharos_pos
+
+            data = [
+                ["Training Data", num_train_positives, num_train_negatives, "-"],
+                ["Pfam Test Data", num_pfam_pos, "-", num_pfam_neg],
+                ["Recent Test Data", num_rcnt_pos, "-", num_rcnt_neg],
+                ["Pharos Test Data", num_pharos_pos, "-", num_pharos_neg]
+            ]
+
+            # remove the column target from gc and go test data
+            combined_test_data = self._clean_test_data(combined_test_data)
+
+            headers = ["Data Source", "Approved Drug Targets", "Unlabelled Targets", "Putative Rejected Drug Targets"]
+
+            print(tabulate(data, headers=headers, tablefmt="pretty"))
+
+            return {
+                "train": combined_train,
+                "labels": labels,
+                "genes": list(combined_genes),
+                "num_features": combined_features,
+                "config": config,
+                "test_data": combined_test_data,
+                "test_labels": test_labels,
+                "test_labels_per_source": test_labels_per_source,
+                "test_genes": combined_test_genes,
+                "class_prior": float(class_prior)
+            }
+
         else:
-            raise ValueError("Unsupported data type for feature_data. Should be DataFrame for GC and GO. Should"
-                             "be dict for PVC.")
-
-        labels = dict(zip(combined_train['gc'].index, combined_train['gc']['target'])) if 'target' in combined_train[
-            'gc'].columns else None
-        assert labels is not None, "Labels should be present in the GC data at this point!"
-
-        if 'target' in combined_train['gc'].columns:
-            combined_train['gc'].drop(columns=['target'], inplace=True)
-        if 'target' in combined_train['go'].columns:
-            combined_train['go'].drop(columns=['target'], inplace=True)
-
-        num_train_positives = sum(list(labels.values()))
-        num_train_negatives = len(labels) - num_train_positives
-
-        num_pfam_pos = sum(combined_test_data['pfam']['gc']['target'])
-        num_pfam_neg = len(combined_test_data['pfam']['gc']) - num_pfam_pos
-
-        num_rcnt_pos = sum(combined_test_data['rcnt']['gc']['target'])
-        num_rcnt_neg = len(combined_test_data['rcnt']['gc']) - num_rcnt_pos
-
-        num_pharos_pos = sum(combined_test_data['pharos']['gc']['target'])
-        num_pharos_neg = len(combined_test_data['pharos']['gc']) - num_pharos_pos
-
-        data = [
-            ["Training Data", num_train_positives, num_train_negatives, "-"],
-            ["Pfam Test Data", num_pfam_pos, "-", num_pfam_neg],
-            ["Recent Test Data", num_rcnt_pos, "-", num_rcnt_neg],
-            ["Pharos Test Data", num_pharos_pos, "-", num_pharos_neg]
-        ]
-
-        # import pickle
-        # # save the test_data to a pickle file
-        # with open("../data/test_data/full_test_labels.pkl", 'wb') as f:
-        #     pickle.dump(test_labels, f)
-
-        # remove the column target from gc and go test data
-        combined_test_data = self._clean_test_data(combined_test_data)
-
-        headers = ["Data Source", "Approved Drug Targets", "Unlabelled Targets", "Putative Rejected Drug Targets"]
-
-        print(tabulate(data, headers=headers, tablefmt="pretty"))
-
-        return {
-            "train": combined_train,
-            "labels": labels,
-            "genes": list(combined_genes),
-            "num_features": combined_features,
-            "config": config,
-            "test_data": combined_test_data,
-            "test_labels": test_labels,
-            "test_labels_per_source": test_labels_per_source,
-            "test_genes": combined_test_genes,
-            "class_prior": float(class_prior)
-        }
+            raise ValueError(
+                f"Invalid mode '{self.config['hyperparameters']['mode']}'. "
+                "Expected 'eval' or 'inference'."
+            )
 
     def get_test_data(self, gc_data, go_data, pvc_data):
         """Extract test data from preprocessors and organize it properly."""
@@ -381,7 +402,6 @@ class ModuleDataProcessor:
                 "class_prior": class_prior
             }
 
-
         elif self.config['hyperparameters']['mode'] == 'inference':
             seed = self.config['hyperparameters']['seed']
 
@@ -425,6 +445,8 @@ class ModuleDataProcessor:
             num_neg = sum(1 for gene in common_genes if gc_data.labels[gene] == 0)
             class_prior = num_pos / (num_pos + num_neg) if (num_pos + num_neg) > 0 else 0
 
+            labels = dict(zip(gc_train.index, gc_train['target'])) if 'target' in gc_train.columns else None
+
             return {
                 "test_data": {
                     "gc": gc_test,
@@ -437,6 +459,7 @@ class ModuleDataProcessor:
                     "pvc": pvc_train
                 },
                 "all_test_ids": test_ids,
+                "labels": labels,
                 "test_labels": test_labels,
                 "class_prior": class_prior
 
