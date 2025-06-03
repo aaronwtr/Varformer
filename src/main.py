@@ -1,10 +1,17 @@
 import training
 import testing
 import argparse
+
 from inference import run_inference_pipeline
+from utils import utils
 
 
 def main(mode="training", config=None, checkpoint=None, output=None):
+    if config:
+        config = utils.load_config(config)
+    else:
+        print("No config file provided, using default config!")
+        config = utils.load_default_config()
     if mode == "training":
         training.setup_training(pvc=True, go=True, gc=True, config=config)
     elif mode == "tuning":
