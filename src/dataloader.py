@@ -146,22 +146,7 @@ class ModuleDataProcessor:
         test_data_result = self.get_test_data(gc_data, go_data, pvc_data)
 
         if self.config['hyperparameters']['mode'] == 'inference':
-            combined_test_data = test_data_result["test_data"]  # Single 80/20 split
-            combined_test_genes = test_data_result["all_test_ids"]
-            combined_train = test_data_result["train_data"]
-            labels = test_data_result["labels"]
-            test_labels = test_data_result["test_labels"]
-            class_prior = test_data_result["class_prior"]
-
-            return {
-                "train": combined_train,
-                "labels": labels,
-                "config": self.config,
-                "test_data": combined_test_data,
-                "test_labels": test_labels,
-                "test_genes": combined_test_genes,
-                "class_prior": float(class_prior)
-            }
+            return test_data_result
 
         elif self.config['hyperparameters']['mode'] == 'eval':
             combined_test_data = test_data_result["test_data"]
@@ -403,7 +388,10 @@ class ModuleDataProcessor:
             }
 
         elif self.config['hyperparameters']['mode'] == 'inference':
+            # TODO: One final tweak -- make sure that the test data only contains unlabeled genes. Train should also contain labeled.
             seed = self.config['hyperparameters']['seed']
+            random.seed(seed)
+            enforced_split_size = 822  # Split size equivalent to eval mode
 
             # Get all gene IDs per modality
             gc_genes = set(gc_data.data.index.tolist())
@@ -411,59 +399,96 @@ class ModuleDataProcessor:
             pvc_genes = set(pvc_data.data['labels'].keys())
 
             # Intersection of all genes across the three modalities
-            common_genes = gc_genes & go_genes & pvc_genes
+            common_genes = list(gc_genes & go_genes & pvc_genes)
 
-            # Within this common set, identify unlabeled genes
-            gc_unlabeled = set(gc_data.data.loc[list(common_genes)][gc_data.data['target'] == 0].index.tolist())
-            go_unlabeled = set(
-                go_data.data[
-                    go_data.data.index.isin(common_genes) &
-                    go_data.data.index.map(gc_data.labels) == 0
-                    ].index.tolist()
-            )
-            pvc_unlabeled = set([ensg for ensg in common_genes if pvc_data.data['labels'][ensg] == 0])
+            # Get labeled and unlabeled genes
+            labeled_genes = []
+            unlabeled_genes = []
 
-            # Final set of unlabeled genes that are in all three modalities
-            unlabeled_common = list(gc_unlabeled & go_unlabeled & pvc_unlabeled)
+            for gene in common_genes:
+                if gc_data.labels[gene] == 1:
+                    labeled_genes.append(gene)
+                else:
+                    unlabeled_genes.append(gene)
 
-            random.seed(seed)
-            random.shuffle(unlabeled_common)
-            split_idx = int(len(unlabeled_common) * 0.8)
-            train_ids = unlabeled_common[:split_idx]
-            test_ids = unlabeled_common[split_idx:]
+            # Shuffle unlabeled genes for random distribution across splits
+            random.shuffle(unlabeled_genes)
 
-            # Extract train/test data aligned on common gene set
-            gc_train = gc_data.data.loc[train_ids]
-            gc_test = gc_data.data.loc[test_ids]
-            go_train = go_data.data.loc[train_ids]
-            go_test = go_data.data.loc[test_ids]
-            pvc_train = {ensg: pvc_data.data[ensg] for ensg in train_ids}
-            pvc_test = {ensg: pvc_data.data[ensg] for ensg in test_ids}
+            # Calculate number of splits based on enforced split size for unlabeled genes
+            num_splits = len(unlabeled_genes) // enforced_split_size
+            if len(unlabeled_genes) % enforced_split_size != 0:
+                num_splits += 1
 
-            test_labels = {gene: gc_data.labels[gene] for gene in common_genes}
-            num_pos = sum(1 for gene in common_genes if gc_data.labels[gene] == 1)
-            num_neg = sum(1 for gene in common_genes if gc_data.labels[gene] == 0)
-            class_prior = num_pos / (num_pos + num_neg) if (num_pos + num_neg) > 0 else 0
+            splits = []
 
-            labels = dict(zip(gc_train.index, gc_train['target'])) if 'target' in gc_train.columns else None
+            # Generate multiple non-overlapping splits for unlabeled genes
+            for i in range(num_splits):
+                start_idx = i * enforced_split_size
+                end_idx = min((i + 1) * enforced_split_size, len(unlabeled_genes))
 
-            return {
-                "test_data": {
-                    "gc": gc_test,
-                    "go": go_test,
-                    "pvc": pvc_test
-                },
-                "train_data": {
-                    "gc": gc_train,
-                    "go": go_train,
-                    "pvc": pvc_train
-                },
-                "all_test_ids": test_ids,
-                "labels": labels,
-                "test_labels": test_labels,
-                "class_prior": class_prior
+                # Get current split's unlabeled test genes
+                current_unlabeled_test = unlabeled_genes[start_idx:end_idx]
 
-            }
+                # Include all labeled genes and remaining unlabeled genes in training
+                all_genes = common_genes.copy()
+
+                # Test set: Current slice of unlabeled genes + random sample of labeled genes
+                # Sample a proportional number of labeled genes for testing
+                labeled_sample_size = min(len(labeled_genes), int(len(current_unlabeled_test) * len(labeled_genes) / len(unlabeled_genes)))
+                test_labeled_genes = random.sample(labeled_genes, labeled_sample_size)
+                test_genes = current_unlabeled_test + test_labeled_genes
+
+                # Training set: All genes except current unlabeled test genes
+                train_genes = [gene for gene in all_genes if gene not in current_unlabeled_test]
+
+                # Extract data for current split
+                gc_train = gc_data.data.loc[train_genes]
+                gc_test = gc_data.data.loc[test_genes]
+                go_train = go_data.data.loc[train_genes]
+                go_test = go_data.data.loc[test_genes]
+
+                pvc_train = {ensg: pvc_data.data[ensg] for ensg in train_genes}
+                pvc_test = {ensg: pvc_data.data[ensg] for ensg in test_genes}
+
+                # Labels for this split
+                train_labels = {gene: gc_data.labels[gene] for gene in train_genes}
+                test_labels = {gene: gc_data.labels[gene] for gene in test_genes}
+
+                # Calculate class prior
+                num_pos = sum(1 for gene in common_genes if gc_data.labels[gene] == 1)
+                num_neg = sum(1 for gene in common_genes if gc_data.labels[gene] == 0)
+                class_prior = num_pos / (num_pos + num_neg) if (num_pos + num_neg) > 0 else 0
+
+                # Create a dictionary of all genes and their labels
+                all_labels = {gene: gc_data.labels[gene] for gene in common_genes}
+
+                # Add labels to PVC data
+                pvc_train_with_labels = pvc_train.copy()
+                pvc_train_with_labels['labels'] = {gene: train_labels[gene] for gene in train_genes}
+                pvc_test_with_labels = pvc_test.copy()
+                pvc_test_with_labels['labels'] = {gene: test_labels[gene] for gene in test_genes}
+
+                # Append this split to the list
+                splits.append({
+                    "test_data": {
+                        "gc": gc_test,
+                        "go": go_test,
+                        "pvc": pvc_test_with_labels
+                    },
+                    "train": {
+                        "gc": gc_train,
+                        "go": go_train,
+                        "pvc": pvc_train_with_labels
+                    },
+                    "test_labels": test_labels,
+                    "test_genes": test_genes,
+                    "train_genes": train_genes,
+                    "labels": all_labels,
+                    "class_prior": class_prior,
+                    "config": gc_data.config
+                })
+
+            return splits
         else:
             raise ValueError(
                 f"Invalid mode '{self.config['hyperparameters']['mode']}'. "
