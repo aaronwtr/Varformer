@@ -11,7 +11,7 @@ import seaborn as sns
 from collections import defaultdict
 from datetime import datetime
 from models.lightning import MultiModalLightningTargetIdentifier
-from preprocessing import ModelPreprocessor
+from preprocessing import ModelPreprocessorEval, ModelPreprocessorInference
 from dataloader import ModuleDataProcessor
 from pytorch_lightning import Trainer
 from tqdm import tqdm
@@ -407,6 +407,7 @@ def plot_attention_vs_gwas(gwas_path, per_gene_dfs, variant_map, disease_code="E
 
 
 def run_inference_pipeline(checkpoint, output):
+    # run with --mode "inference" --checkpoint "/Users/aaronw/Desktop/PhD/Research/QMUL/Research/genetic-drug-targeting-and-classification/src/checkpoints/06-05-2025/seed7-epoch=34-val_spearman=0.53.ckpt" --output "../data/output/"
     config_path = 'cluster_config.yml'
     with open(config_path, 'r') as stream:
         config = yaml.safe_load(stream)
@@ -427,7 +428,7 @@ def run_inference_pipeline(checkpoint, output):
 
     data = prepare_data(config)
 
-    preprocessor = ModelPreprocessor(config, data)
+    preprocessor = ModelPreprocessorInference(config, data)
     _, _, _, test_combined, _, _ = preprocessor.model_init()
 
     model, data = load_model(checkpoint, data, config)
