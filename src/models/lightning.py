@@ -32,10 +32,9 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         features = batch
         mask = features['pvc']['mask']
-        result = self(features, mask)
-        return result
+        return self._common_step(features, batch_idx, 'predict', split_idx=dataloader_idx)
 
-    def _common_step(self, batch, batch_idx, step_type):
+    def _common_step(self, batch, batch_idx, step_type, split_idx=None):
         if self.trainer.sanity_checking:
             return None
         else:
@@ -51,7 +50,7 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
 
             # Forward pass through the model (using the pvc mask for transformer inputs)
             if self.config['return_attn']:
-                logits, probas, bin_preds, attn_weigths = self.model(
+                logits, probas, bin_preds, attn_weights = self.model(
                     {
                         'gc': batch['gc'],
                         'go': batch['go'],
@@ -122,11 +121,18 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
                 loss = F.binary_cross_entropy_with_logits(logits, labels.float())
                 self._log(labels, step_type, loss, bin_preds, probas)
                 self.val_step_probas.append(probas.detach().cpu())
-            else:
+            elif step_type == 'test':
                 if 'best_threshold' in self.model.config:
                     bin_preds = (probas > self.model.config['best_threshold']).float()
                 loss = None
                 self._log(labels, step_type, loss, bin_preds, probas, test_source=test_source)
+                return loss
+            elif step_type == 'predict':
+                if self.config['return_attn']:
+                    return probas, attn_weights, split_idx if split_idx is not None else 0
+                else:
+                    return probas, split_idx if split_idx is not None else 0
+
             return loss
 
     def on_validation_epoch_end(self):
