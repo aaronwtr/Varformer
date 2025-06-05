@@ -2,6 +2,7 @@ import os
 import subprocess
 import re
 import csv
+import yaml
 
 import requests
 import random
@@ -32,6 +33,23 @@ class random_seed_context:
 
     def __exit__(self, exc_type, exc_value, traceback):
         random.setstate(self.state)
+
+
+def load_config(config: str) -> dict:
+    if not os.path.exists(config):
+        raise FileNotFoundError(f"Config file {config} does not exist.")
+    with open(config, 'r') as file:
+        config_dict = yaml.safe_load(file)
+    return config_dict
+
+
+def load_default_config() -> dict:
+    default_config_path = "../config/default_config.yaml"
+    if not os.path.exists(default_config_path):
+        raise FileNotFoundError(f"Default config file {default_config_path} does not exist.")
+    with open(default_config_path, 'r') as file:
+        config_dict = yaml.safe_load(file)
+    return config_dict
 
 
 def correct_aa_position(target_id):
