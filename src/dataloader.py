@@ -388,7 +388,6 @@ class ModuleDataProcessor:
             }
 
         elif self.config['hyperparameters']['mode'] == 'inference':
-            # TODO: One final tweak -- make sure that the test data only contains unlabeled genes. Train should also contain labeled.
             seed = self.config['hyperparameters']['seed']
             random.seed(seed)
             enforced_split_size = 822  # Split size equivalent to eval mode
@@ -431,12 +430,7 @@ class ModuleDataProcessor:
 
                 # Include all labeled genes and remaining unlabeled genes in training
                 all_genes = common_genes.copy()
-
-                # Test set: Current slice of unlabeled genes + random sample of labeled genes
-                # Sample a proportional number of labeled genes for testing
-                labeled_sample_size = min(len(labeled_genes), int(len(current_unlabeled_test) * len(labeled_genes) / len(unlabeled_genes)))
-                test_labeled_genes = random.sample(labeled_genes, labeled_sample_size)
-                test_genes = current_unlabeled_test + test_labeled_genes
+                test_genes = current_unlabeled_test
 
                 # Training set: All genes except current unlabeled test genes
                 train_genes = [gene for gene in all_genes if gene not in current_unlabeled_test]
