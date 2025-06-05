@@ -32,7 +32,7 @@ from dataloader import DrugTargetData, ModuleDataProcessor, VarformerDataset, Mu
 from models.target_identifier import MultiModalTargetIdentifier
 from models.lightning import (MLPLightningTargetIdentifier, ShardedVarformerLightningTargetIdentifier,
                               MultiModalLightningTargetIdentifier)
-from preprocessing import ModelPreprocessor, LogisticRegressionPreprocessor
+from preprocessing import ModelPreprocessorEval, ModelPreprocessorInference, LogisticRegressionPreprocessor
 from utils.custom_callbacks import BestThresholdCallback
 
 
@@ -245,13 +245,23 @@ def train_model(data):
         threshold=config['hyperparameters']['threshold']
     )
 
-    run = wandb.init(
-        project="drug-target-prediction",
-        config=hyperparameters,
-        group="multimodal-training-run-2"
-    )
+    if config['hyperparameters']['mode'] == 'eval':
+        run = wandb.init(
+            project="drug-target-prediction",
+            config=hyperparameters,
+            group="multimodal-training-run-2"
+        )
+        preprocessor = ModelPreprocessorEval(config, data)
+    elif config['hyperparameters']['mode'] == 'inference':
+        run = wandb.init(
+            project="drug-target-prediction",
+            config=hyperparameters,
+            group="inference-run-1"
+        )
+        preprocessor = ModelPreprocessorInference(config, data)
+    else:
+        raise ValueError("Invalid mode in config. Please set 'mode' to either 'eval' or 'inference'.")
 
-    preprocessor = ModelPreprocessor(config, data)
     model, train_combined, val_combined, test_combined, hyperparameters, accelerator = preprocessor.model_init()
 
     # Log model parameters
@@ -310,6 +320,7 @@ def train_model(data):
                 callbacks=[lr_monitor, checkpoint_callback, best_threshold_callback],
                 gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
                 accumulate_grad_batches=config['hyperparameters']['grad_accum'],
+                limit_train_batches=0.1,  # Limit to 10% of training data for debugging purposes
                 deterministic=True
             )
         else:
@@ -327,15 +338,34 @@ def train_model(data):
 
     trainer.fit(model, train_combined, val_combined)
 
-    # Test on different datasets
-    trainer.test(dataloaders=test_combined["pfam"], ckpt_path='best')
-    trainer.test(dataloaders=test_combined["rcnt"], ckpt_path='best')
-    trainer.test(dataloaders=test_combined["pharos"], ckpt_path='best')
+    print("Starting testing...")
+    if config['hyperparameters']['mode'] == 'eval':
+        trainer.test(dataloaders=test_combined["pfam"], ckpt_path='best')
+        trainer.test(dataloaders=test_combined["rcnt"], ckpt_path='best')
+        trainer.test(dataloaders=test_combined["pharos"], ckpt_path='best')
+    elif config['hyperparameters']['mode'] == 'inference':
+        prediction_results = trainer.predict(model=model, dataloaders=test_combined, ckpt_path='best')
 
+        # Process and save the predictions
+        predictions = {}
+        for batch in prediction_results:
+            # For attention-enabled models: probas, attn_weights, split_idx = batch
+            # For models without attention: probas, split_idx = batch
+            if len(batch) == 3:  # With attention weights
+                probas, attn_weights, split_idx = batch
+                predictions[f"split_{split_idx}"] = (probas, attn_weights)
+            else:  # Without attention weights
+                probas, split_idx = batch
+                predictions[f"split_{split_idx}"] = (probas, None)
+
+        # Save predictions
+        output_path = f"{config['paths']['VARFORMER_PREDICT_OUTPUT']}predictions_split_{split_idx}.pkl"
+        torch.save(predictions, output_path)
+        print(f"Predictions saved to {output_path}")
     run.finish()
 
 
-def kfold_teacher(**modules):
+def setup_training(**modules):
     torch.set_float32_matmul_precision('medium')
 
     print("Training teacher model...\n")
@@ -346,11 +376,20 @@ def kfold_teacher(**modules):
     psc = modules.get('psc', False)
     config = modules.get('config', None)
 
-    if config is not None:
-        pl.seed_everything(config['hyperparameters']['seed'])
     data = ModuleDataProcessor(gc, go, pvc, psc, config=config).process()
 
-    train_model(data)
+    if config is not None:
+        pl.seed_everything(config['hyperparameters']['seed'])
+        if config['hyperparameters']['mode'] == 'eval':
+            train_model(data)
+        elif config['hyperparameters']['mode'] == 'inference':
+            for data_split in data:
+                train_model(data_split)
+        else:
+            raise ValueError("Invalid mode in config. Please set 'mode' to either 'eval' or 'inference'.")
+    else:
+        raise ValueError("Config is None. Please provide a valid configuration dictionary by setting the --config "
+                         "parameter.")
 
 
 def logistic_regression(**modules):
