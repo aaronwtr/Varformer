@@ -329,9 +329,9 @@ class MultiModalTargetIdentifier(torch.nn.Module):
         probabilities = torch.sigmoid(logits)
         binary_predictions = (probabilities > float(self.hyperparams['threshold'])).float()
         if self.hyperparams['return_attn']:
-            return logits, probabilities, binary_predictions, variant_attn_weights
+            return logits, probabilities, binary_predictions, z_var, variant_attn_weights
         else:
-            return logits, probabilities, binary_predictions
+            return logits, probabilities, binary_predictions, z_var
 
 
 class GeneVariantAttention(nn.Module):
