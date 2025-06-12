@@ -32,9 +32,11 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         features = batch
         mask = features['pvc']['mask']
-        return self._common_step(features, batch_idx, 'predict', split_idx=dataloader_idx)
+        return self._common_step(features, batch_idx, 'predict')
 
-    def _common_step(self, batch, batch_idx, step_type, split_idx=None):
+    def _common_step(self, batch, batch_idx, step_type):
+        gene_names = None
+        pvc_labels = None
         if self.trainer.sanity_checking:
             return None
         else:
@@ -43,14 +45,11 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
                 if key == "pvc":
                     pvc_labels = batch[key]['labels']
                     test_source = batch[key]['test_source'][0]
-                elif key == "go":
-                    go_labels = batch[key][1]
-                else:
-                    gc_labels = batch[key][1]
+                    gene_names = batch[key]['gene_name']
 
             # Forward pass through the model (using the pvc mask for transformer inputs)
             if self.config['return_attn']:
-                logits, probas, bin_preds, attn_weights = self.model(
+                logits, probas, bin_preds, z_var, attn_weights = self.model(
                     {
                         'gc': batch['gc'],
                         'go': batch['go'],
@@ -59,7 +58,7 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
                     batch["pvc"]["mask"]
                 )
             else:
-                logits, probas, bin_preds = self.model(
+                logits, probas, bin_preds, z_var = self.model(
                     {
                         'gc': batch['gc'],
                         'go': batch['go'],
@@ -128,11 +127,23 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
                 self._log(labels, step_type, loss, bin_preds, probas, test_source=test_source)
                 return loss
             elif step_type == 'predict':
+                output = {}
                 if self.config['return_attn']:
-                    return probas, attn_weights, split_idx if split_idx is not None else 0
+                    for i, gene_name in enumerate(gene_names):
+                        output[gene_name] = {
+                            'prediction': probas[i].detach().cpu().item(),
+                            'classification': bin_preds[i].detach().cpu().item(),
+                            'z_var': z_var[i].detach().cpu().to(torch.float32).numpy(),
+                            'attn_weights': attn_weights[i].detach().cpu().to(torch.float32).numpy()
+                        }
                 else:
-                    return probas, split_idx if split_idx is not None else 0
-
+                    for i, gene_name in enumerate(gene_names):
+                        output[gene_name] = {
+                            'prediction': probas[i].detach().cpu().item(),
+                            'classification': bin_preds[i].detach().cpu().item(),
+                            'z_var': z_var[i].detach().cpu().to(torch.float32).numpy()
+                        }
+                return output
             return loss
 
     def on_validation_epoch_end(self):
