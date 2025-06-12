@@ -221,7 +221,7 @@ def objective(trial: optuna.trial.Trial) -> float:
         return 0.0
 
 
-def train_model(data):
+def train_model(data, split_idx=None):
     torch.set_float32_matmul_precision('medium')
     config = data['config']
     # Initialize wandb run
@@ -258,7 +258,7 @@ def train_model(data):
             config=hyperparameters,
             group="inference-run-1"
         )
-        preprocessor = ModelPreprocessorInference(config, data)
+        preprocessor = ModelPreprocessorInference(config, data, split_idx)
     else:
         raise ValueError("Invalid mode in config. Please set 'mode' to either 'eval' or 'inference'.")
 
@@ -345,23 +345,9 @@ def train_model(data):
         trainer.test(dataloaders=test_combined["pharos"], ckpt_path='best')
     elif config['hyperparameters']['mode'] == 'inference':
         prediction_results = trainer.predict(model=model, dataloaders=test_combined, ckpt_path='best')
-
-        # Process and save the predictions
-        predictions = {}
-        for batch in prediction_results:
-            # For attention-enabled models: probas, attn_weights, split_idx = batch
-            # For models without attention: probas, split_idx = batch
-            if len(batch) == 3:  # With attention weights
-                probas, attn_weights, split_idx = batch
-                predictions[f"split_{split_idx}"] = (probas, attn_weights)
-            else:  # Without attention weights
-                probas, split_idx = batch
-                predictions[f"split_{split_idx}"] = (probas, None)
-
-        # Save predictions
         output_path = f"{config['paths']['VARFORMER_PREDICT_OUTPUT']}predictions_split_{split_idx}.pkl"
-        torch.save(predictions, output_path)
-        print(f"Predictions saved to {output_path}")
+        torch.save(prediction_results, output_path)
+        print(f"Predictions for split {split_idx} saved to {output_path}")
     run.finish()
 
 
@@ -383,8 +369,11 @@ def setup_training(**modules):
         if config['hyperparameters']['mode'] == 'eval':
             train_model(data)
         elif config['hyperparameters']['mode'] == 'inference':
-            for data_split in data:
-                train_model(data_split)
+            for i, data_split in enumerate(data):
+                if not os.path.exists(f"{config['paths']['VARFORMER_PREDICT_OUTPUT']}predictions_split_{i}.pkl"):
+                    train_model(data_split, i)
+                else:
+                    print(f"Predictions for split {data['split_idx']} already exist. Skipping inference...")
         else:
             raise ValueError("Invalid mode in config. Please set 'mode' to either 'eval' or 'inference'.")
     else:
