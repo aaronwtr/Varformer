@@ -19,9 +19,9 @@ def main(mode="training", config=None, checkpoint=None, output=None):
     elif mode == "testing":
         testing.run_test(pvc=True, go=True, gc=True)
     elif mode == "inference":
-        if not checkpoint or not output:
-            raise ValueError("For inference mode, both --checkpoint and --output arguments are required.")
-        run_inference_pipeline(checkpoint=checkpoint, output=output)
+        if not output:
+            raise ValueError("For inference mode --output arguments is required.")
+        run_inference_pipeline(output=output)
     elif mode == "logistic_regression":
         training.logistic_regression(pvc=True, go=True, gc=True, config=config)
     elif mode == "random":
@@ -37,7 +37,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Varformer.")
     parser.add_argument("--mode", type=str, default="kfold_teacher", help="Mode to run the script in.")
     parser.add_argument("--config", type=str, help="Path to the configuration file.")
-    parser.add_argument("--checkpoint", type=str, help="Path to the model checkpoint (required for inference).")
     parser.add_argument("--output", type=str, help="Path to save the predictions (required for inference).")
     args = parser.parse_args()
-    main(mode=args.mode, config=args.config, checkpoint=args.checkpoint, output=args.output)
+    main(mode=args.mode, config=args.config, output=args.output)
