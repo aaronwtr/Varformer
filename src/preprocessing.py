@@ -1100,6 +1100,9 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             var_features[gene] = torch.tensor(top_features)
             gene_var_map[gene] = list(top_variant_ids)
 
+            if len(gene_var_map[gene]) > max_seq_len:
+                print(f"ERROR: Gene {gene} has {len(gene_var_map[gene])} variants, max_seq_len is {max_seq_len}")
+
         with open(f'{data_dir}/elgh/gene_loc_var_map.pkl', 'wb') as f:
             pkl.dump(gene_var_map, f)
         return var_features, gene_var_map
@@ -1933,9 +1936,10 @@ class ModelPreprocessorEval:
 
 
 class ModelPreprocessorInference:
-    def __init__(self, config, data_split):
+    def __init__(self, config, data_split, split_idx):
         self.config = config  # This is data_split['config'], the main config
         self.data_split = data_split
+        self.split_idx = split_idx
 
         # Training data for the current split
         self.gc_data_train = data_split['train']['gc']
@@ -1997,8 +2001,8 @@ class ModelPreprocessorInference:
         # self.genes_for_prediction is the list of gene IDs for this prediction set
         # self.labels_for_prediction is the dict of labels for this prediction set
 
-        test_data_dict_for_model = {'predict_split': self.data_for_prediction}
-        test_genes_dict_for_model = {'predict_split': self.genes_for_prediction}
+        test_data_dict_for_model = {f'predict_split_{self.split_idx}': self.data_for_prediction}
+        test_genes_dict_for_model = {f'predict_split_{self.split_idx}': self.genes_for_prediction}
 
         model, train_combined, val_combined, test_combined, hyperparameters, accelerator = self.initialise_model(
             train_raw_for_split,
