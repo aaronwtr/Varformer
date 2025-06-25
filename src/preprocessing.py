@@ -29,7 +29,9 @@ from Bio import SeqIO
 from torch.utils.data import DataLoader
 from shutil import copyfileobj
 
-from utils.utils import load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx
+from utils.utils import (load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx,
+                         map_gene_names)
+from utils.merge_am_data import merge_am_data
 from utils.preprocessing import featurise
 from models.target_identifier import MultiModalTargetIdentifier
 from models.lightning import MultiModalLightningTargetIdentifier
@@ -64,32 +66,37 @@ class GeneCharacterisationPreprocessor:
         self.rcnt_targets_fda = None
         self.chem_targets_pharos = None
 
+        self.population = self.config['hyperparameters']['population']
+
         # Get all holdout_genes
         self.get_holdout_genes()
 
-        # Load Genes & Health South-Asian Population exome data
-        self.gh_data = self.load_gh_data()
+        # Load population exome data
+        self.pop_data = self.load_pop_data()
+        if isinstance(self.pop_data, pol.DataFrame):
+            self.pop_data = self.pop_data.to_pandas()
 
         # check if the SWISSPROT and TREMBL columns are present, if they are, skip this bit
-        if 'SWISSPROT' in self.gh_data.columns or 'TREMBL' in self.gh_data.columns:
-            self.gh_data["UNIPROT"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
-            self.gh_data = self.gh_data.drop(["SWISSPROT", "TREMBL"], axis=1)
-        self.gh_data[['ref_aa', 'alt_aa']] = self.gh_data['Amino_acids'].str.split('/', expand=True)
-        self.gh_data['protein_variant'] = (self.gh_data['ref_aa'] + self.gh_data['Protein_position'].astype(str) +
-                                           self.gh_data['alt_aa'])
-        self.gh_data['variant_id'] = (self.gh_data['CHROM'] + '_' + self.gh_data['POS'].astype(str) + '_' +
-                                      self.gh_data['REF'] + '_' + self.gh_data['ALT'] + '_' +
-                                      self.gh_data['protein_variant'])
+        if 'SWISSPROT' in self.pop_data.columns or 'TREMBL' in self.pop_data.columns:
+            self.pop_data["UNIPROT"] = self.pop_data["SWISSPROT"].fillna(self.pop_data["TREMBL"])
+            self.pop_data = self.pop_data.drop(["SWISSPROT", "TREMBL"], axis=1)
+        self.pop_data[['ref_aa', 'alt_aa']] = self.pop_data['Amino_acids'].str.split('/', expand=True)
+        self.pop_data['protein_variant'] = (self.pop_data['ref_aa'] + self.pop_data['Protein_position'].astype(str) +
+                                            self.pop_data['alt_aa'])
+        self.pop_data['variant_id'] = (self.pop_data['CHROM'] + '_' + self.pop_data['POS'].astype(str) + '_' +
+                                       self.pop_data['REF'] + '_' + self.pop_data['ALT'] + '_' +
+                                       self.pop_data['protein_variant'])
 
-        self.gh_data = self.gh_data.drop_duplicates(subset=['variant_id'])
+        self.pop_data = self.pop_data.drop_duplicates(subset=['variant_id'])
 
         # Load raw G&H missense variant data
-        if not os.path.exists(self.config['paths']['RAW_GH']):
-            miva_feature_matrix = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
-            miva_feature_matrix = miva_feature_matrix[["Gene", "UNIPROT", "variant_id"]]
-            miva_feature_matrix = miva_feature_matrix.rename(columns={"Gene": "ENSG"})
-            miva_feature_matrix = miva_feature_matrix.drop_duplicates(subset="ENSG")
-            miva_feature_matrix.to_pickle(self.config['paths']['RAW_GH'])
+        if self.population == 'elgh':
+            if not os.path.exists(self.config['paths']['RAW_GH']):
+                miva_feature_matrix = self.pop_data[self.pop_data['Consequence'] == 'missense_variant']
+                miva_feature_matrix = miva_feature_matrix[["Gene", "UNIPROT", "variant_id"]]
+                miva_feature_matrix = miva_feature_matrix.rename(columns={"Gene": "ENSG"})
+                miva_feature_matrix = miva_feature_matrix.drop_duplicates(subset="ENSG")
+                miva_feature_matrix.to_pickle(self.config['paths']['RAW_GH'])
 
         feature_extractors = {
             #   'chem_features.pkl': self.chem_feature_extractor,
@@ -99,31 +106,9 @@ class GeneCharacterisationPreprocessor:
             'ppi_features.pkl': self.ppi_feature_extractor,
         }
 
-        features_dir = self.config['paths']['FEATURES_DIR']
-        for feature_file, feature_extractor in feature_extractors.items():
-            if not os.path.isfile(f'{features_dir}/{feature_file}'):
-                print(f"Extracting {feature_file}...")
-                feature_extractor()
-                with open(f'{features_dir}/{feature_file}', 'wb') as fp:
-                    pkl.dump(getattr(self, feature_file.split('.')[0]), fp)
-            else:
-                print(f"Loading {feature_file}...")
-                with open(f'{features_dir}/{feature_file}', 'rb') as fp:
-                    setattr(self, feature_file.split('.')[0], pkl.load(fp))
-
-        # ensg_features = {
-        #     "chemical_interaction_count": self.chem_features,
-        #     "pli_lof_constraint": self.gnomad_features,
-        #     "mouse_ko_effect": self.mouse_ko_features,
-        #     "ppi_count": self.ppi_features,
-        #     "common_essentials": self.gene_essentiality_features,
-        # }
-        # for feature_name, gene_dict in self.ensg_features.items():
-        #     self.features[feature_name] = self.features['targetId'].map(gene_dict)
-
         self.features = self.load_opentargets_features()
 
-        self.features = self.features[self.features['targetId'].isin(self.gh_data['Gene'])]
+        self.features = self.features[self.features['targetId'].isin(self.pop_data['Gene'])]
         nan_percentages = self.features.isna().mean() * 100
         high_nan_features = nan_percentages[nan_percentages > 99].index.tolist()
         if high_nan_features:
@@ -131,12 +116,6 @@ class GeneCharacterisationPreprocessor:
             self.features = self.features.drop(columns=high_nan_features)
 
         # check feature statistics in the features attribute here
-
-        if 'mouse_ko_effect' in self.features.columns:
-            self.features['mouse_ko_effect'] = self.features['mouse_ko_effect'].fillna(-0.5)
-
-        if 'chemical_interaction_count' in self.features.columns:
-            self.features['chemical_interaction_count'] = self.features['chemical_interaction_count'].fillna(0.5)
 
         tissue_columns = [col for col in self.features.columns if 'tissueDistribution' in col]
         for col in tissue_columns:
@@ -166,7 +145,7 @@ class GeneCharacterisationPreprocessor:
 
         self.data = self.full_data
         self.labels = self.labels_dict
-        # ensg_to_symb_df = self.gh_data[['Gene', 'SYMBOL']]
+        # ensg_to_symb_df = self.pop_data[['Gene', 'SYMBOL']]
         # ensg_to_symb_dict = ensg_to_symb_df.set_index('Gene')['SYMBOL'].to_dict()
         # label_df = pd.DataFrame.from_dict(self.labels, orient='index', columns=['label'])
         # label_df['symbol'] = label_df.index.map(ensg_to_symb_dict)
@@ -180,7 +159,7 @@ class GeneCharacterisationPreprocessor:
         Get the files from the data directory.
         """
         files = []
-        exclude = ['.DS_Store', 'elgh', 'clinvar', 'VariPred', 'string_data_counts.pkl']
+        exclude = ['.DS_Store', 'elgh', 'clinvar', 'VariPred', 'string_data_counts.pkl', 'gnomad_data']
 
         data_dir = self.config['paths']['DATA_DIR']
         for file in self.files_and_dirs:
@@ -238,18 +217,17 @@ class GeneCharacterisationPreprocessor:
                 pkl.dump(datasets, fp)
             return datasets
 
-    def load_gh_data(self):
+    def load_pop_data(self):
         """
-        Load the Genes & Health variant data.
+        Load population-exome data. Assumed the data is stored as <pop_id>_exomes_filtered.pkl.
+        pop_ids that are supported are: 'elgh', 'amr', and 'nfe'.
         """
-        # read in pickle file as dataframe
-        # check the file type of the data path
-        if 'pkl' in self.config['paths']['ALL_GH']:
-            variant_data = pd.read_pickle(self.config['paths']['ALL_GH'])
+        assert self.population in ['elgh', 'amr', 'nfe'], "Population must be one of: 'elgh', 'amr', or 'nfe'."
+        if self.config['paths']['POP_DATA'].endswith('.parquet'):
+            pop_data = pol.read_parquet(self.config['paths']['POP_DATA'] + f'{self.population}_exomes_filtered.parquet')
+            return pop_data.to_pandas()
         else:
-            variant_data = pd.read_csv(self.config['paths']['ALL_GH'], sep="\t", low_memory=False)
-        variant_data = variant_data.loc[:, ~variant_data.columns.str.contains('^Unnamed')]
-        return variant_data
+            return pd.read_pickle(self.config['paths']['POP_DATA'] + f'{self.population}_exomes_filtered.pkl')
 
     def load_ground_truth(self):
         """
@@ -320,7 +298,7 @@ class GeneCharacterisationPreprocessor:
         })
 
         gene_names = list(chem_features["symbol"])
-        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
+        mapped_names = map_gene_names(gene_names, 'symb', 'ensg')
         chem_features['symbol'] = chem_features['symbol'].map(mapped_names)
         chem_features = chem_features[chem_features['symbol'] != 'N/A']
 
@@ -346,7 +324,7 @@ class GeneCharacterisationPreprocessor:
         gnom_data_raw["pLI"] = gnom_data_raw["pLI"].fillna(0.0)
         gnom_data = gnom_data_raw
         gene_names = list(gnom_data["gene"])
-        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
+        mapped_names = map_gene_names(gene_names, 'symb', 'ensg')
         gnom_data['gene'] = gnom_data['gene'].map(mapped_names)
         gnom_data = gnom_data[gnom_data['gene'] != 'N/A']
         gnom_data = gnom_data.set_index("gene")["pLI"].to_dict()
@@ -358,7 +336,8 @@ class GeneCharacterisationPreprocessor:
         Featurise PPI data, i.e. count and normalize the PPIs for each PPI that is experimentally validated.
         """
         protein_info = []  # To store the parsed data
-        with open("../data/9606.protein.links.full.v12.0.txt", "r") as file:
+        ppi_data = self.config["paths"]["PPI_FEATURES"]
+        with open(ppi_data, "r") as file:
             for line in file:
                 fields = line.strip().split('\t')
                 protein_info.append(fields)
@@ -380,7 +359,7 @@ class GeneCharacterisationPreprocessor:
         string_data_raw['protein2'] = protein_names_2
         protein_names = list(set(protein_names_1))
 
-        mapped_names = utils.map_gene_names(protein_names, 'ensp', 'ensg')
+        mapped_names = map_gene_names(protein_names, 'ensp', 'ensg')
 
         string_data_raw['protein1'] = string_data_raw['protein1'].map(mapped_names)
         string_data_raw['protein2'] = string_data_raw['protein2'].map(mapped_names)
@@ -422,7 +401,7 @@ class GeneCharacterisationPreprocessor:
                 target_counts[target.upper()] = 1
 
         gene_names = list(target_counts.keys())
-        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
+        mapped_names = map_gene_names(gene_names, 'symb', 'ensg')
         for gene_name in gene_names:
             if gene_name in mapped_names:
                 target_counts[mapped_names[gene_name]] = target_counts.pop(gene_name)
@@ -442,7 +421,7 @@ class GeneCharacterisationPreprocessor:
         raw_data = raw_data.rename(columns={raw_data.columns[0]: 'gene_name'})
         raw_data['gene_name'] = raw_data['gene_name'].str.split(' ').str[0]
         gene_names = list(raw_data['gene_name'])
-        mapped_names = utils.map_gene_names(gene_names, 'symb', 'ensg')
+        mapped_names = map_gene_names(gene_names, 'symb', 'ensg')
         gene_list = list(mapped_names.values())
         gene_essentiality = {gene: 1 for gene in gene_list}
 
@@ -522,7 +501,7 @@ class GeneCharacterisationPreprocessor:
         DEPRECATED: This function is deprecated. Function was used to query the AlphaFold API to get the pLDDT scores
         for each protein in our dataset.
         """
-        uniprot_data = self.gh_data[["SWISSPROT", "TREMBL", "varipred_id"]]
+        uniprot_data = self.pop_data[["SWISSPROT", "TREMBL", "varipred_id"]]
         uniprot_data["uniprot_id"] = uniprot_data["SWISSPROT"].fillna(uniprot_data["TREMBL"])
         uniprot_data = uniprot_data.drop(["SWISSPROT", "TREMBL"], axis=1).rename(columns={"uniprot_id": "UNIPROT"})
         uniprot_ids = uniprot_data["UNIPROT"].unique().tolist()
@@ -594,13 +573,15 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
             self.gcp_pfam_neg = self.pfam_neg_data
             self.gcp_rcnt_neg = self.rcnt_neg_data
             self.gcp_pharos_neg = self.pharos_neg_data
+            self.gcp_population = self.population
             # self.gcp_acmg = gcp.acmg_data
         else:
             self.gcp = gcp
-            self.gh_data = gcp.gh_data
+            self.pop_data = gcp.pop_data
             self.target = gcp.target
             self.gcp_data = gcp.data
             self.full_gcp_data = gcp.full_data
+            self.population = gcp.population
             # self.gcp_pfam_pos = gcp.pfam_pos_data
             # self.gcp_rcnt_pos = gcp.rcnt_pos_data
             # self.gcp_pharos_pos = gcp.pharos_pos_data
@@ -637,7 +618,12 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
 
         print("Combining gene ontology features...")
         self.gene_ontology_features = None
-        self.combine_go_features()
+        features_dir = f"{self.config['paths']['FEATURES_DIR']}/{self.population}"
+        if os.path.exists(f'{features_dir}/gene_ontology_features.pkl'):
+            with open(f'{features_dir}/gene_ontology_features.pkl', 'rb') as f:
+                self.gene_ontology_features = pkl.load(f)
+        else:
+            self.combine_go_features()
 
         self.data = self.gene_ontology_features
         self.data = self.data.set_index('ENSG')
@@ -646,7 +632,7 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         self.num_features = len(self.data.columns) - 1  # subtract 1 for the target column
 
     def protein_atlas_feature_extractor(self):
-        features_dir = self.config['paths']['FEATURES_DIR']
+        features_dir = f"{self.config['paths']['FEATURES_DIR']}/{self.population}"
         if os.path.exists(f'{features_dir}/protein_atlas_features.pkl'):
             with open(f'{features_dir}/protein_atlas_features.pkl', 'rb') as f:
                 self.protein_atlas_features = pkl.load(f)
@@ -731,7 +717,7 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
 
     def hpa_tissue_expression_feature_extractor(self):
         # check if the tissue expression data has already been processed
-        features_dir = self.config['paths']['FEATURES_DIR']
+        features_dir = f"{self.config['paths']['FEATURES_DIR']}/{self.population}"
         if os.path.exists(f'{features_dir}/hpa_tissue_specificity_features.pkl'):
             with open(f'{features_dir}/hpa_tissue_specificity_features.pkl', 'rb') as f:
                 self.hpa_tissue_specificity_features = pkl.load(f)
@@ -754,7 +740,7 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
                 pkl.dump(gene_tissue_dict, f)
 
     def gtex_tissue_expression_feature_extractor(self):
-        features_dir = self.config['paths']['FEATURES_DIR']
+        features_dir = f"{self.config['paths']['FEATURES_DIR']}/{self.population}"
         if os.path.exists(f'{features_dir}/gtex_tissue_specificity_features.pkl'):
             with open(f'{features_dir}/gtex_tissue_specificity_features.pkl', 'rb') as f:
                 self.gtex_tissue_specificity_features = pkl.load(f)
@@ -808,14 +794,11 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
             "subcellular_locations": self.protein_atlas_features['subcellular_locations']
         }
 
-        with open(self.config['paths']['RAW_GH'], 'rb') as f:
-            feature_matrix = pkl.load(f)
+        feature_matrix = pd.DataFrame({"ENSG": self.pop_data["Gene"]})
+        feature_matrix = feature_matrix.drop_duplicates(subset=["ENSG"]).reset_index(drop=True)
 
         for feature, values in ensg_features.items():
             feature_matrix[feature] = feature_matrix["ENSG"].map(values)
-
-        feature_matrix = feature_matrix.drop(["UNIPROT"], axis=1)
-        feature_matrix = feature_matrix.drop(["variant_id"], axis=1)
 
         sub_df = feature_matrix.copy()
         sub_df = sub_df.iloc[:, -3:]
@@ -824,7 +807,7 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         mol_func_list = []
         sub_loc_list = []
 
-        for index, row in sub_df.iterrows():
+        for index, row in tqdm(sub_df.iterrows(), total=sub_df.shape[0]):
             bio_proc = row['biological_processes']
             mol_func = row['molecular_functions']
             sub_loc = row['subcellular_locations']
@@ -895,6 +878,10 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
         # Fill any remaining NaN values with 0
         self.gene_ontology_features = feature_matrix.fillna(0)
 
+        features_dir = self.config['paths']['FEATURES_DIR']
+        with open(f'{features_dir}/{self.population}/gene_ontology_features.pkl', 'wb') as f:
+            pkl.dump(self.gene_ontology_features, f)
+
 
 class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
     """
@@ -915,13 +902,15 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             self.gcp_rcnt_neg = self.rcnt_neg_data
             self.gcp_pharos_neg = self.pharos_neg_data
             self.gcp_ce_data = self.ce_data
+            self.gcp_population = self.population
             # self.gcp_acmg = gcp.acmg_data
         else:
             self.gcp = gcp
-            self.gh_data = gcp.gh_data
+            self.pop_data = gcp.pop_data
             self.target = gcp.target
             self.gcp_data = gcp.data
             self.full_gcp_data = gcp.full_data
+            self.population = gcp.population
             # self.gcp_pfam_pos = gcp.pfam_pos_data
             # self.gcp_rcnt_pos = gcp.rcnt_pos_data
             # self.gcp_pharos_pos = gcp.pharos_pos_data
@@ -941,7 +930,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         self.num_features = config['hyperparameters']['max_seq_len']
 
-        features_dir = config['paths']['FEATURES_DIR']
+        features_dir = f"{config['paths']['FEATURES_DIR']}/{self.population}"
         print("Obtaining AlphaMissense pathogenicity embeddings...")
         if not os.path.exists(f'{features_dir}/var_pat_features.pkl'):
             self.var_pat_features, self.var_gene_map = self.varformer_pathogenicity_input()
@@ -965,50 +954,55 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
     def variant_gh_data(self, config):
         print("Preparing GH data for variant-level embeddings...")
-        data_dir = config['paths']['DATA_DIR']
-        if not os.path.exists(f'{data_dir}/elgh/gh_miva_data.pkl'):
-            gh = pol.read_parquet(config['paths']['AM_PATH'], use_pyarrow=True)
-            self.gh_data_am = gh.to_pandas()
-            if 'AC' not in self.gh_data_am.columns:
-                self.gh_data_am = self.gh_data_am[
-                    self.gh_data_am['variant_id'].isin(self.gh_data['variant_id'].unique())]
-                self.gh_data_am['AC'] = self.gh_data_am['variant_id'].map(self.gh_data.set_index('variant_id')['AC'])
-            elif 'AN' not in self.gh_data_am.columns:
-                self.gh_data_am['AN'] = self.gh_data_am['variant_id'].map(self.gh_data.set_index('variant_id')['AN'])
-            self.gh_data = self.gh_data_am
+        data_dir = config['paths']['FEATURES_DIR']
+        if not os.path.exists(f'{data_dir}/{self.population}/am_pop_merge.pkl'):
+            am = merge_am_data(self.pop_data, self.population)
+            if hasattr(am, 'to_pandas') and not isinstance(am, pd.DataFrame):
+                self.pop_data = am.to_pandas()
+            elif isinstance(am, pd.DataFrame):
+                self.pop_data = am
+            else:
+                # Handle case where am doesn't have to_pandas() method
+                raise ValueError(f"Cannot convert {type(am)} to pandas DataFrame")
+            # if 'AC' not in self.gh_data_am.columns:
+            #     self.pop_am_merge = self.pop_am_merge[
+            #         self.pop_am_merge['variant_id'].isin(self.pop_data['variant_id'].unique())]
+            #     self.pop_am_merge['AC'] = self.pop_am_merge['variant_id'].map(self.pop_data.set_index('variant_id')['AC'])
+            # elif 'AN' not in self.gh_data_am.columns:
+            #     self.pop_am_merge['AN'] = self.pop_am_merge['variant_id'].map(self.pop_data.set_index('variant_id')['AN'])
+            # self.pop_data = self.pop_am_merge
             self.variant_sharding(config)
-
         else:
-            self.gh_data = pd.read_pickle(f'{data_dir}/elgh/gh_miva_data.pkl')
-            max_pos = self.gh_data['Protein_pos_shard'].max()
+            self.pop_data = pd.read_pickle(f'{data_dir}/{self.population}/am_pop_merge.pkl')
+            max_pos = self.pop_data['Protein_pos_shard'].max()
             if max_pos + 1 != config['hyperparameters']['max_seq_len']:
                 print("Max sequence len dimension has been changed, reprocessing GH data...")
                 self.variant_sharding(config)
-                if os.path.exists(f'{data_dir}/features/var_pat_features.pkl'):
-                    os.remove(f'{data_dir}/features/var_pat_features.pkl')
+                if os.path.exists(f'{data_dir}/{self.population}/var_pat_features.pkl'):
+                    os.remove(f'{data_dir}/{self.population}/var_pat_features.pkl')
 
     def variant_sharding(self, config):
-        self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
-        self.gh_data = self.gh_data.explode('ALT')
-        self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
-        self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
+        self.pop_data['ALT'] = self.pop_data['ALT'].str.split(',')
+        self.pop_data = self.pop_data.explode('ALT')
+        self.pop_data = self.pop_data[(self.pop_data['ALT'].str.len() == 1) & (self.pop_data['REF'].str.len() == 1)]
+        self.pop_data = self.pop_data[self.pop_data['Consequence'] == 'missense_variant']
 
-        self.gh_data['Protein_position'] = self.gh_data['Protein_position'].astype(int)
+        self.pop_data['Protein_position'] = self.pop_data['Protein_position'].astype(int)
         max_seq_len = config['hyperparameters']['max_seq_len']
-        self.gh_data.loc[:, 'Protein_pos_shard'] = self.gh_data['Protein_position'].apply(
+        self.pop_data.loc[:, 'Protein_pos_shard'] = self.pop_data['Protein_position'].apply(
             lambda x: x % max_seq_len)
-        cols = self.gh_data.columns.tolist()
+        cols = self.pop_data.columns.tolist()
         pp_idx = cols.index('Protein_position')
         cols = cols[:pp_idx] + [cols[-1]] + cols[pp_idx:-1]
-        self.gh_data = self.gh_data[cols]
-        data_dir = config['paths']['DATA_DIR']
-        self.gh_data.to_pickle(f'{data_dir}/elgh/gh_miva_data.pkl')
+        self.pop_data = self.pop_data[cols]
+        data_dir = config['paths']['FEATURES_DIR']
+        self.pop_data.to_pickle(f'{data_dir}/{self.population}/am_pop_merge.pkl')
 
     def missense_mutation_map(self):
         mutation_map = {'UNK': 0}
         mut_id = 1
 
-        all_aas = list(set(self.gh_data['AA_ref'].unique().tolist() + self.gh_data['AA_alt'].unique().tolist()))
+        all_aas = list(set(self.pop_data['AA_ref'].unique().tolist() + self.pop_data['AA_alt'].unique().tolist()))
 
         for ref in all_aas:
             for alt in all_aas:
@@ -1020,51 +1014,52 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
     def varformer_pathogenicity_input(self):
         """
-        Extract variant-level AlphaMissense pathogenicity score and prepare for input into the VarFormer model. We need
+        Extract variant-level AlphaMissense pathogenicity score and prepare for input into the Varformer model. We need
         to prepare data for 1) pathogenicity embedding, 2) positional embedding and 3) missense mutation identity
         embedding.
         """
-        other_columns = [col for col in self.gh_data.columns if col not in ['variant_id', 'am_pathogenicity']]
+        other_columns = [col for col in self.pop_data.columns if col not in ['variant_id', 'am_pathogenicity']]
 
         agg_dict = {col: 'first' for col in other_columns}
         agg_dict['am_pathogenicity'] = 'mean'
 
-        self.gh_data = self.gh_data.groupby('variant_id', as_index=False).agg(agg_dict)
+        self.pop_data = self.pop_data.groupby('variant_id', as_index=False).agg(agg_dict)
 
         self.config = self.gcp.config
 
-        sym_list = self.gh_data['SYMBOL'].tolist()
-        prot_pos = self.gh_data['Protein_position'].tolist()
-        aas = self.gh_data['Amino_acids'].tolist()
-        hgvsp = self.gh_data['HGVSp'].tolist()
+        sym_list = self.pop_data['SYMBOL'].tolist()
+        prot_pos = self.pop_data['Protein_position'].tolist()
+        aas = self.pop_data['Amino_acids'].tolist()
+        hgvsp = self.pop_data['HGVSp'].tolist()
         prot_pos = [str(pos) for pos in prot_pos]
         hgvsp = [str(hgvsp.split('.')[1].split(':')[0]) for hgvsp in hgvsp]
         isoform_id_list = [f"{sym}_{prot_pos}_{aas.split('/')[0]}_{aas.split('/')[1]}_{hgvsp}" for
                            sym, prot_pos, aas, hgvsp in zip(sym_list, prot_pos, aas, hgvsp)]
-        self.gh_data['isoform'] = isoform_id_list
+        self.pop_data['isoform'] = isoform_id_list
 
-        components = self.gh_data['isoform'].str.extract(
+        components = self.pop_data['isoform'].str.extract(
             r'(?P<gene_symbol>\w+)_(?P<prot_position>\d+)_(?P<ref_aa>\w+)_(?P<alt_aa>\w+)_(?P<isoform>\d+)')
         # combined = components['gene_symbol'] + '_' + components['prot_position'].astype(str) + '_' + components[
         #     'ref_aa'] + '_' + components['alt_aa']
         # gh['combined'] = combined
-        self.gh_data['AA_ref'] = components['ref_aa']
-        self.gh_data['AA_alt'] = components['alt_aa']
+        self.pop_data['AA_ref'] = components['ref_aa']
+        self.pop_data['AA_alt'] = components['alt_aa']
         # gh = gh.loc[components['isoform'] == '1'].drop_duplicates(subset=['combined'])
         # gh = gh.drop(columns=['combined'])
 
         mutation_map = self.missense_mutation_map()
         data_dir = self.config['paths']['DATA_DIR']
-        # save the mutation_map to a .pkl file
-        with open(f'{data_dir}/elgh/missense_mutation_map.pkl', 'wb') as f:
-            pkl.dump(mutation_map, f)
 
-        gene_map = {gene: i for i, gene in enumerate(self.gh_data['Gene'].unique())}
+        # save the mutation_map to a .pkl file
+        # with open(f'{data_dir}/elgh/missense_mutation_map.pkl', 'wb') as f:
+        #     pkl.dump(mutation_map, f)
+
+        gene_map = {gene: i for i, gene in enumerate(self.pop_data['Gene'].unique())}
         with open(self.config['paths']['VAR_MAP'], 'rb') as file:
             variant_map = pkl.load(file)
         var_pat_features = {}
         gene_var_map = {}
-        for index, row in tqdm(self.gh_data.iterrows(), total=self.gh_data.shape[0]):
+        for index, row in tqdm(self.pop_data.iterrows(), total=self.pop_data.shape[0]):
             gene = row['Gene']
             variant_id = row['variant_id']
             # rs_id = variant_map.get(variant_id, None)
@@ -1103,7 +1098,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             if len(gene_var_map[gene]) > max_seq_len:
                 print(f"ERROR: Gene {gene} has {len(gene_var_map[gene])} variants, max_seq_len is {max_seq_len}")
 
-        with open(f'{data_dir}/elgh/gene_loc_var_map.pkl', 'wb') as f:
+        with open(f'{data_dir}/features/{self.population}/gene_loc_var_map.pkl', 'wb') as f:
             pkl.dump(gene_var_map, f)
         return var_features, gene_var_map
 
@@ -1154,7 +1149,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
                 var_seq_features = {}
                 var_seq_features_ckpt = {}
 
-            var_seq_data = self.gh_data.drop_duplicates(subset=['Feature'])
+            var_seq_data = self.pop_data.drop_duplicates(subset=['Feature'])
 
             # var_seq_data_split = np.array_split(var_seq_data, 8)
             # var_seq_data = var_seq_data_split[0]
@@ -1453,12 +1448,12 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         Extract AlphaFold features from the AlphaFold API. Specifically, we get the average pLDDT score for the proteins
         in our dataset
         """
-        uniprot_ids = self.gh_data["UNIPROT"].unique().tolist()
+        uniprot_ids = self.pop_data["UNIPROT"].unique().tolist()
         uniprot_ids = [uni for uni in uniprot_ids if str(uni) != 'nan']
         uniprot_ids = [uni.split('.')[0] for uni in uniprot_ids]
         if not os.path.exists('data/cache/uniprot_ids.pkl'):
             uni_to_gene = {}
-            for index, row in self.gh_data.iterrows():
+            for index, row in self.pop_data.iterrows():
                 gene = row['Gene']
                 uni = row['UNIPROT']
                 if type(uni) == float:
@@ -1574,7 +1569,7 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
             return extracted_values
 
     def download_af_cifs(self):
-        uniprot_ids = self.gh_data["UNIPROT"].unique().tolist()
+        uniprot_ids = self.pop_data["UNIPROT"].unique().tolist()
         uniprot_ids = [uni for uni in uniprot_ids if str(uni) != 'nan']
         uniprot_ids = [uni.split('.')[0] for uni in uniprot_ids]
 
@@ -1610,33 +1605,33 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
             am = am[['am_pathogenicity', 'variant_id']]
             print("Combining AlphaMissense data with GH data...")
-            self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
+            self.pop_data = self.pop_data.merge(am, on='variant_id', how='left')
             # save gh_data
             with open("data/alphamissense/gh_am_data_full.pkl", 'wb') as f:
-                pkl.dump(self.gh_data, f)
+                pkl.dump(self.pop_data, f)
 
-            sym_list = self.gh_data['SYMBOL'].tolist()
-            prot_pos = self.gh_data['Protein_pos_shard'].tolist()
-            aas = self.gh_data['Amino_acids'].tolist()
-            hgvsp = self.gh_data['HGVSp'].tolist()
+            sym_list = self.pop_data['SYMBOL'].tolist()
+            prot_pos = self.pop_data['Protein_pos_shard'].tolist()
+            aas = self.pop_data['Amino_acids'].tolist()
+            hgvsp = self.pop_data['HGVSp'].tolist()
             prot_pos = [str(pos) for pos in prot_pos]
             hgvsp = [str(hgvsp.split('.')[1].split(':')[0]) for hgvsp in hgvsp]
             isoform_id_list = [f"{sym}_{prot_pos}_{aas.split('/')[0]}_{aas.split('/')[1]}_{hgvsp}" for
                                sym, prot_pos, aas, hgvsp in zip(sym_list, prot_pos, aas, hgvsp)]
-            self.gh_data['isoform'] = isoform_id_list
+            self.pop_data['isoform'] = isoform_id_list
 
-            components = self.gh_data['isoform'].str.extract(
+            components = self.pop_data['isoform'].str.extract(
                 r'(?P<gene_symbol>\w+)_(?P<prot_position>\d+)_(?P<ref_aa>\w+)_(?P<alt_aa>\w+)_(?P<isoform>\d+)')
             combined = components['gene_symbol'] + '_' + components['prot_position'].astype(str) + '_' + components[
                 'ref_aa'] + '_' + components['alt_aa']
-            self.gh_data['combined'] = combined
-            self.gh_data['AA_ref'] = components['ref_aa']
-            self.gh_data['AA_alt'] = components['alt_aa']
-            self.gh_data = self.gh_data.loc[components['isoform'] == '1'].drop_duplicates(subset=['combined'])
-            self.gh_data = self.gh_data.drop(columns=['combined'])
+            self.pop_data['combined'] = combined
+            self.pop_data['AA_ref'] = components['ref_aa']
+            self.pop_data['AA_alt'] = components['alt_aa']
+            self.pop_data = self.pop_data.loc[components['isoform'] == '1'].drop_duplicates(subset=['combined'])
+            self.pop_data = self.pop_data.drop(columns=['combined'])
 
             var_pat_features = {}
-            for index, row in tqdm(self.gh_data.iterrows(), total=self.gh_data.shape[0]):
+            for index, row in tqdm(self.pop_data.iterrows(), total=self.pop_data.shape[0]):
                 gene = row['Gene']
                 ref_aa = row['AA_ref']
                 alt_aa = row['AA_alt']
@@ -1678,34 +1673,34 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
         Extract variant-level AlphaMissense pathogenicity score and average to gene-level using population
         statistics.
         """
-        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
-        self.gh_data["uniprot_id"] = self.gh_data["SWISSPROT"].fillna(self.gh_data["TREMBL"])
+        self.pop_data["uniprot_id"] = self.pop_data["SWISSPROT"].fillna(self.pop_data["TREMBL"])
+        self.pop_data["uniprot_id"] = self.pop_data["SWISSPROT"].fillna(self.pop_data["TREMBL"])
 
         am = pd.read_csv("data/alphamissense/AlphaMissense_hg38.tsv", sep='\t')
 
         am['variant_id'] = am['#CHROM'] + '_' + am['POS'].astype(str) + '_' + am['REF'] + '_' + am['ALT']
-        self.gh_data['ALT'] = self.gh_data['ALT'].str.split(',')
-        self.gh_data = self.gh_data.explode('ALT')
-        self.gh_data = self.gh_data[(self.gh_data['ALT'].str.len() == 1) & (self.gh_data['REF'].str.len() == 1)]
-        self.gh_data = self.gh_data[self.gh_data['Consequence'] == 'missense_variant']
-        pos_list = self.gh_data['POS'].tolist()
-        chrom_list = self.gh_data['#CHROM'].tolist()
-        ref_list = self.gh_data['REF'].tolist()
-        alt_list = self.gh_data['ALT'].tolist()
+        self.pop_data['ALT'] = self.pop_data['ALT'].str.split(',')
+        self.pop_data = self.pop_data.explode('ALT')
+        self.pop_data = self.pop_data[(self.pop_data['ALT'].str.len() == 1) & (self.pop_data['REF'].str.len() == 1)]
+        self.pop_data = self.pop_data[self.pop_data['Consequence'] == 'missense_variant']
+        pos_list = self.pop_data['POS'].tolist()
+        chrom_list = self.pop_data['#CHROM'].tolist()
+        ref_list = self.pop_data['REF'].tolist()
+        alt_list = self.pop_data['ALT'].tolist()
 
         pos_list = [str(pos) for pos in pos_list]
         variant_id_list = [chrom + '_' + pos + '_' + ref + '_' + alt for chrom, pos, ref, alt in
                            zip(chrom_list, pos_list, ref_list, alt_list)]
-        self.gh_data['variant_id'] = variant_id_list
+        self.pop_data['variant_id'] = variant_id_list
         am = am[['am_pathogenicity', 'variant_id']]
 
-        self.gh_data = self.gh_data.merge(am, on='variant_id', how='left')
+        self.pop_data = self.pop_data.merge(am, on='variant_id', how='left')
 
         if not os.path.exists("../data/alphamissense/gh_am_data.pkl"):
-            self.gh_data.to_pickle('../data/alphamissense/gh_am_data.pkl')
+            self.pop_data.to_pickle('../data/alphamissense/gh_am_data.pkl')
 
         variant_am_features = {}
-        for index, row in tqdm(self.gh_data.iterrows()):
+        for index, row in tqdm(self.pop_data.iterrows()):
             gene = row['Gene']
             gh_af = row['AF_ELGH']
             am_score = row['am_pathogenicity']
