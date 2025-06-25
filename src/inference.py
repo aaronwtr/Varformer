@@ -150,9 +150,76 @@ def create_pharmgkb_plots(pharmgkb_visualisation):
         # Return the outlier points
         return df[outlier_indices]
 
-    # Function to create both plots with non-overlapping labels for outliers only
+    # Set seaborn style with clean white background but keep grid lines
+    sns.set_style("whitegrid")  # Clean white background with subtle grid lines
+
+    # Set color palette to something more professional
+    # Options: "deep", "muted", "bright", "pastel", "dark", "colorblind"
+    sns.set_palette("colorblind")  # Good for accessibility
+    # Or custom palette: sns.set_palette(["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"])
+
+    # Configure matplotlib for publication quality
+    plt.rcParams.update({
+        # Figure settings
+        'figure.figsize': (8, 6),  # Default figure size
+        'figure.dpi': 300,  # High resolution for publications
+        'savefig.dpi': 300,  # High resolution when saving
+        'savefig.bbox': 'tight',  # Remove extra whitespace
+        'savefig.pad_inches': 0.1,  # Small padding
+
+        # Font settings
+        'font.family': 'serif',  # Professional serif font
+        'font.serif': ['Times New Roman', 'Times', 'DejaVu Serif'],
+        'font.size': 12,  # Base font size
+        'axes.titlesize': 14,  # Title font size
+        'axes.labelsize': 12,  # Axis label font size
+        'xtick.labelsize': 10,  # X-tick label size
+        'ytick.labelsize': 10,  # Y-tick label size
+        'legend.fontsize': 10,  # Legend font size
+
+        # Axes and layout
+        'axes.linewidth': 1.2,  # Thicker axis lines
+        'axes.spines.top': False,  # Remove top spine
+        'axes.spines.right': False,  # Remove right spine
+        'axes.grid': True,  # Enable grid lines
+        'grid.color': 'lightgray',  # Light gray grid color
+        'grid.linewidth': 0.8,  # Thin grid lines
+        'grid.alpha': 0.7,  # Semi-transparent grid
+        'axes.axisbelow': True,  # Grid below data if used
+        'axes.edgecolor': 'black',  # Black axis edges
+        'axes.labelcolor': 'black',  # Black labels
+
+        # Ticks
+        'xtick.direction': 'out',  # Ticks point outward
+        'ytick.direction': 'out',
+        'xtick.major.size': 6,  # Tick length
+        'ytick.major.size': 6,
+        'xtick.minor.size': 3,  # Minor tick length
+        'ytick.minor.size': 3,
+        'xtick.color': 'black',  # Black ticks
+        'ytick.color': 'black',
+
+        # Lines and markers
+        'lines.linewidth': 2,  # Thicker lines
+        'lines.markersize': 6,  # Marker size
+        'patch.linewidth': 1,  # Patch edge width
+
+        # Legend
+        'legend.frameon': True,  # Legend frame
+        'legend.framealpha': 0.9,  # Semi-transparent frame
+        'legend.fancybox': False,  # Square legend box
+        'legend.edgecolor': 'black',  # Black legend border
+        'legend.facecolor': 'white',  # White legend background
+
+        # Colors
+        'text.color': 'black',  # Black text
+        'axes.labelcolor': 'black',  # Black axis labels
+        'xtick.color': 'black',  # Black tick labels
+        'ytick.color': 'black',
+    })
+
     def create_plot(x_data, y_data, xlabel, title, filename, logscale=False):
-        plt.figure(figsize=(14, 10))  # Larger figure size
+        plt.figure(figsize=(14, 10))  # Larger figure size for your specific plots
 
         # First plot "No Evidence" points in the background with lower alpha
         if not no_evidence_df.empty:
@@ -182,22 +249,31 @@ def create_pharmgkb_plots(pharmgkb_visualisation):
                     zorder=2  # Ensure they're in the foreground
                 )
 
+        # Calculate and add horizontal mean line
+        # Calculate mean of all Attention scores (including both evidence and no evidence)
+        all_attention_scores = df['Attention'].dropna()
+        mean_attention = all_attention_scores.mean()
+
+        # Add horizontal mean line
+        plt.axhline(y=mean_attention, color='red', linestyle='--', linewidth=2,
+                    label=f'Mean Attention', alpha=0.8, zorder=3)
+
         # Find outliers only among points with evidence (not "No Evidence" points)
         outliers = get_outliers(evidence_df, x_data, 'Attention', threshold=1.8)
 
         # Add labels only for outlier points
-        texts = []
-        for i, row in outliers.iterrows():
-            txt = plt.text(
-                row[x_data],
-                row['Attention'],
-                row['rsID'],
-                fontsize=9,
-                alpha=0.9,
-                fontweight='bold',
-                zorder=3  # Ensure labels are on top
-            )
-            texts.append(txt)
+        # texts = []
+        # for i, row in outliers.iterrows():
+        #     txt = plt.text(
+        #         row[x_data] + 0.005,
+        #         row['Attention'],
+        #         row['rsID'],
+        #         fontsize=9,
+        #         alpha=0.9,
+        #         fontweight='bold',
+        #         zorder=4  # Ensure labels are on top
+        #     )
+        #     texts.append(txt)
 
         if logscale:
             plt.xscale('log')
@@ -205,7 +281,6 @@ def create_pharmgkb_plots(pharmgkb_visualisation):
 
         plt.xlabel(xlabel, fontsize=12)
         plt.ylabel('Attention Score', fontsize=12)
-        plt.title(title, fontsize=14)
 
         # Adjust legend based on number of categories
         if len(all_evidence_types) <= 6:
@@ -216,13 +291,16 @@ def create_pharmgkb_plots(pharmgkb_visualisation):
         plt.grid(alpha=0.3)
 
         # Use adjustText to prevent label overlap if there are any labels
-        if texts:
-            adjust_text(
-                texts,
-                arrowprops=dict(arrowstyle='->', color='black', lw=0.8),
-                expand_points=(1.8, 1.8),
-                force_points=(0.8, 0.8)
-            )
+        # if texts:
+        #     adjust_text(
+        #         texts,
+        #         arrowprops=None,
+        #         expand_points=(1.8, 1.8),
+        #         force_points=(0.8, 0.8)
+        #     )
+
+        # Remove top and right spines for cleaner look
+        sns.despine()
 
         plt.tight_layout()
         plt.savefig(filename, dpi=300, bbox_inches='tight')
@@ -276,7 +354,7 @@ def plot_attention_corrs(per_gene_dfs):
     pathogenicity_values = []
 
     for gene, data in per_gene_dfs.items():
-        attention_values.extend(data['Attention'])
+        attention_values.extend(data['attn_weight'])
         pathogenicity_values.extend(data['am_pathogenicity'])
 
     # Create a DataFrame for the extracted values
@@ -406,8 +484,7 @@ def plot_attention_vs_gwas(gwas_path, per_gene_dfs, variant_map, disease_code="E
     return df
 
 
-def run_inference_pipeline(checkpoint, output):
-    # run with --mode "inference" --checkpoint "/Users/aaronw/Desktop/PhD/Research/QMUL/Research/genetic-drug-targeting-and-classification/src/checkpoints/06-05-2025/seed7-epoch=34-val_spearman=0.53.ckpt" --output "../data/output/"
+def run_inference_pipeline(output):
     config_path = 'cluster_config.yml'
     with open(config_path, 'r') as stream:
         config = yaml.safe_load(stream)
@@ -426,90 +503,54 @@ def run_inference_pipeline(checkpoint, output):
     gh_df['variant_ids'] = (gh_df['CHROM'] + '_' + gh_df['POS'].astype(str) + '_' +
                             gh_df['REF'] + '_' + gh_df['ALT'] + '_' + gh_df['protein_variant'])
 
-    data = prepare_data(config)
+    # Load pre-computed predictions from VARFORMER_PREDICT_OUTPUT directory
+    batches = []
+    prediction_dir = config['paths']['VARFORMER_PREDICT_OUTPUT']
 
-    preprocessor = ModelPreprocessorInference(config, data)
-    _, _, _, test_combined, _, _ = preprocessor.model_init()
+    for file in os.listdir(prediction_dir):
+        with open(os.path.join(prediction_dir, file), 'rb') as f:
+            prediction_output = torch.load(f)
+            batches.extend(prediction_output)
 
-    model, data = load_model(checkpoint, data, config)
+    varformer_output = {}
+    for batch in batches:
+        for key, value in batch.items():
+            varformer_output[key] = value
 
     with open(config['paths']['GENE_VAR_LOC_MAP'], "rb") as f:
-        gene_var_map = pkl.load(f)
+        gene_var_loc_map = pkl.load(f)
 
-    # TODO: All of the below needs to change. We need to train N models in order to be able to predict all unlabeled
-    #  genes
-    check = True
-    if check:
-        with open('../data/output/predictions_20250507_161111.pkl', 'rb') as f:
-            batches = torch.load(f)
-    else:
-        batches = run_inference(model, test_combined)
-        # Save predictions
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output = f"{output}/predictions_{timestamp}.pkl"
-        torch.save(batches, output)
-        print(f"Predictions saved to {output}")
-
-    predictions = {}
-    for i, batch in enumerate(batches):
-        predictions[f"testset_{i}"] = (batch[0][1], batch[0][3])
-
-    gene_names_per_modality = {}
-    for key, test_loader in test_combined.items():
-        gene_names = list(test_loader.datasets['gc'].data.keys())
-        gene_names_per_modality[key] = gene_names
-
-    sums = defaultdict(float)
-    counts = defaultdict(int)
-
-    for gene_name_list, preds in zip(gene_names_per_modality.values(), predictions.values()):
-        pred_tensor = preds[0]
-        for i, gene_name in enumerate(gene_name_list):
-            sums[gene_name] += pred_tensor[i].item()
-            counts[gene_name] += 1
-
-    preds_by_gene = {gene: sums[gene] / counts[gene] for gene in sums}
-    pred_df = pd.DataFrame(preds_by_gene.items(), columns=['Gene', 'Prediction'])
-
-    sums = defaultdict(lambda: torch.zeros(1024))
-    counts = defaultdict(int)
-
-    for gene_name_list, preds in zip(gene_names_per_modality.values(), predictions.values()):
-        attn = preds[1]
-        for gene, vec in zip(gene_name_list, attn):
-            sums[gene] += vec
-            counts[gene] += 1
-
-    attn_by_gene = {g: sums[g] / counts[g] for g in sums}
-    attn_df = pd.DataFrame(attn_by_gene.items(), columns=['Gene', 'Attention'])
-    attn_df['Attention'] = attn_df['Attention'].apply(lambda x: x.tolist() if torch.is_tensor(x) else x)
-    _attn_df = pd.DataFrame(attn_df['Attention'].to_list(), columns=[f'Variant_{i}' for i in range(1024)])
-    attn_df = pd.concat([attn_df['Gene'], _attn_df], axis=1)
-    with open("../data/labels/processed_labels.pkl", "rb") as f:
-        processed_labels = pkl.load(f)
-
-    excluded_genes = processed_labels[processed_labels['label'] == 1].index
-    attn_df = attn_df[~attn_df['Gene'].isin(excluded_genes)]
-    pred_df = pred_df[~pred_df['Gene'].isin(excluded_genes)]
-
-    # pred_df_top = pred_df.sort_values(by='Prediction', ascending=False)
-    pred_df_top = pred_df.sort_values(by='Prediction', ascending=False).head(5)
-    attn_df_top = attn_df[attn_df['Gene'].isin(pred_df_top['Gene'].values)]
-
-    attn_df_top = attn_df_top.set_index('Gene')
-
-    gene_to_pvc_data = {}
-
-    # Build pathogenicity lookup table once
-    for test_set_data in preprocessor.test_data.values():
-        pvc_dict = test_set_data['pvc']
-        for gene, pvc_tensor in pvc_dict.items():
-            if gene not in gene_to_pvc_data:
-                gene_to_pvc_data[gene] = {
-                    'pathogenicity': pvc_tensor[:, 0].tolist(),
-                    'aa_pos': pvc_tensor[:, 1].tolist(),
-                    'mut_id': pvc_tensor[:, 2].tolist()
+    pred_dict = {}
+    for gene, variant_ids in gene_var_loc_map.items():
+        if gene in varformer_output:
+            gene_data = varformer_output[gene]
+            attn_weights = gene_data['attn_weights']
+            prediction = gene_data['prediction']
+            for idx, variant_id in enumerate(variant_ids):
+                pred_dict[variant_id] = {
+                    'gene': gene,
+                    'attn_weight': attn_weights[idx],
+                    'prediction': prediction
                 }
+
+    am_df = am_df.drop_duplicates(subset='variant_ids')
+    attn_weights_map = {variant_id: data['attn_weight'] for variant_id, data in pred_dict.items()}
+    predictions_map = {variant_id: data['prediction'] for variant_id, data in pred_dict.items()}
+    am_df['attn_weight'] = am_df['variant_ids'].map(attn_weights_map)
+    am_df['prediction'] = am_df['variant_ids'].map(predictions_map)
+
+    # drop everywhere where predictions is NaN
+    am_df = am_df.dropna(subset=['prediction'])
+
+    # get a version of am_df with only a single row per gene and the variant column is dropped
+    am_df_gene = am_df.drop_duplicates(subset='Gene', keep='first')
+    # drop variant_ids
+    am_df_gene = am_df_gene.drop(columns=['variant_ids'])
+    am_df_gene = am_df_gene.drop(columns=['attn_weight'])
+
+    # sort the dataframe by prediction in descending order
+    am_df = am_df.sort_values(by='prediction', ascending=False)
+    am_df = am_df[am_df['prediction'] >= 0.9]
 
     # Create variant ID to rsID mapping dictionary once
     variant_to_rsid = dict(zip(variant_map.keys(), variant_map.values()))
@@ -530,26 +571,12 @@ def run_inference_pipeline(checkpoint, output):
 
     per_gene_dfs = {}
     pharmgkb_visualisation = {}
-    for gene in tqdm(attn_df_top.index):
+    for gene in tqdm(am_indexed['Gene'].unique()):
         try:
-            variant_ids = gene_var_map[gene]
-            variant_colnames = [f'Variant_{i}' for i in range(len(variant_ids))]
+            gene_df = am_indexed[am_indexed['Gene'] == gene]
 
-            raw_attention_values = attn_df_top.loc[gene, variant_colnames]
-            gene_df = pd.DataFrame({
-                'Attention': raw_attention_values.values,
-                'variant_ids': variant_ids
-            }).set_index('variant_ids')
-
-            if gene not in gene_to_pvc_data:
-                raise ValueError(f"Gene {gene} not found in any test set PVC data.")
-
-            variant_set = set(variant_ids)
             gene_df['base_variant_id'] = [extract_base_variant_id(v) for v in gene_df.index]
             gene_df['rsID'] = gene_df['base_variant_id'].map(variant_to_rsid)
-
-            gene_df = gene_df.join(am_indexed.loc[am_indexed.index.isin(variant_set), ['am_pathogenicity']], how='left')
-            gene_df = gene_df.join(gh_indexed.loc[gh_indexed.index.isin(variant_set), ['AF']], how='left')
 
             gene_df['Therapeutic Evidence'] = 'No Evidence'
             rsids_in_df = set(gene_df['rsID'].dropna())
@@ -558,14 +585,14 @@ def run_inference_pipeline(checkpoint, output):
                     print(f"Found rsID {rsid} in evidence mapping!")
                     gene_df.loc[gene_df['rsID'] == rsid, 'Therapeutic Evidence'] = rsid_to_evidence[rsid]
                     pharmgkb_visualisation[f"{gene}_{rsid}"] = {
-                        'Attention': gene_df.loc[gene_df['rsID'] == rsid, 'Attention'].values[0],
+                        'Attention': gene_df.loc[gene_df['rsID'] == rsid, 'attn_weight'].values[0],
                         'am_pathogenicity': gene_df.loc[gene_df['rsID'] == rsid, 'am_pathogenicity'].values[0],
                         'AF': gene_df.loc[gene_df['rsID'] == rsid, 'AF'].values[0],
                         'Therapeutic Evidence': rsid_to_evidence[rsid]
                     }
                 else:
                     pharmgkb_visualisation[f"{gene}_{rsid}"] = {
-                        'Attention': gene_df.loc[gene_df['rsID'] == rsid, 'Attention'].values[0],
+                        'Attention': gene_df.loc[gene_df['rsID'] == rsid, 'attn_weight'].values[0],
                         'am_pathogenicity': gene_df.loc[gene_df['rsID'] == rsid, 'am_pathogenicity'].values[0],
                         'AF': gene_df.loc[gene_df['rsID'] == rsid, 'AF'].values[0],
                         'Therapeutic Evidence': "No Evidence"
@@ -576,17 +603,24 @@ def run_inference_pipeline(checkpoint, output):
         except Exception as e:
             print(f"Error processing gene {gene}: {e}")
 
-    # all_variants = []
+    # Generate pharmgkb plots
+    # pharmgkb_df = create_pharmgkb_plots(pharmgkb_visualisation)
     #
-    # for gene, df in per_gene_dfs.items():
-    #     variants = df.index.tolist()
-    #     all_variants.extend(variants)
+    # # Generate attention correlation plots
+    # # plot_attention_corrs(per_gene_dfs)
     #
-    # all_variants = list(set(all_variants))
-    #
-    # output_path = "../data/output/all_variants_eval_set_unlabeled.txt"
-    # with open(output_path, 'w') as f:
-    #     f.write('\n'.join(all_variants))
-    #
-    # print(f"Saved {len(all_variants)} unique variants to {output_path}")
-    print('break')
+    # print('Completed generating pharmgkb plots')
+
+    all_variants = []
+
+    for gene, df in per_gene_dfs.items():
+        variants = df.index.tolist()
+        all_variants.extend(variants)
+
+    all_variants = list(set(all_variants))
+
+    output_path = "../data/output/all_variants_eval_set_unlabeled.txt"
+    with open(output_path, 'w') as f:
+        f.write('\n'.join(all_variants))
+
+    print(f"Saved {len(all_variants)} unique variants to {output_path}")
