@@ -249,7 +249,7 @@ def train_model(data, split_idx=None):
         run = wandb.init(
             project="drug-target-prediction",
             config=hyperparameters,
-            group="multimodal-training-run-2"
+            group=f"varformer-{config['hyperparameters']['population']}"
         )
         preprocessor = ModelPreprocessorEval(config, data)
     elif config['hyperparameters']['mode'] == 'inference':
