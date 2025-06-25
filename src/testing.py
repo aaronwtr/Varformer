@@ -6,7 +6,7 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.model_summary import ModelSummary
 from torch.utils.data import DataLoader
 
-from preprocessing import GeneCharacterisationPreprocessor, ModelPreprocessor
+from preprocessing import GeneCharacterisationPreprocessor, ModelPreprocessorEval
 from models.lightning import MultiModalLightningTargetIdentifier
 from dataloader import ModuleDataProcessor, MultiModalDataLoader
 
@@ -17,13 +17,13 @@ def load_test_data(go, gc, pvc, psc, config):
 
 
 def preprocess_test_data(data, config):
-    preprocessor = ModelPreprocessor(config, data)
+    preprocessor = ModelPreprocessorEval(config, data)
     _, _, _, test_combined, _, _ = preprocessor.model_init()
     return test_combined
 
 
 def load_model(config, data):
-    preprocessor = ModelPreprocessor(config, data)
+    preprocessor = ModelPreprocessorEval(config, data)
     model, train_combined, val_combined, test_combined, hyperparameters, accelerator = preprocessor.model_init()
     return model
 
