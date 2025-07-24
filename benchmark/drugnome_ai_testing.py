@@ -30,18 +30,17 @@ def map_gene_names(list_of_genes: list, source_type: str, target_type: str) -> d
 
 
 # open the data
-data_path = "output/processed-feature-tables/processed-feature-tables/"
-test_labels = "../../data/drugnomeai/test_genes.txt" # \n separated
+population = "nfe" # elgh, nfe, amr
+data_path = "output/processed-feature-tables/"
+test_labels = f"data/drugnomeai/test_genes_{population}.txt" # \n separated
 model_path = "output/supervised-learning/models/"
-testing_data_per_source = "../../../data/test_data/full_test_labels_per_source.pkl"
-testing_data_labels = "../../../data/test_data/full_test_labels.pkl"
-precomputed_scores = "../../../data/test_data/precomputed_probas.csv"
+testing_data_per_source = "../data/test_data/full_test_labels_per_source.pkl"
+testing_data_labels = "../data/test_data/full_test_labels.pkl"
 
 data = pd.read_csv(data_path + "processed_feature_table.tsv", sep='\t')
 test_labels = pd.read_csv(test_labels, sep='\t', header=None)
 testing_data_per_source = pd.read_pickle(testing_data_per_source)
 testing_data_labels = pd.read_pickle(testing_data_labels)
-precomputed_scores = pd.read_csv(precomputed_scores, sep=",")
 
 test_labels.columns = ['Gene_Name']
 test_labels_list = test_labels['Gene_Name'].tolist()
