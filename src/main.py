@@ -6,24 +6,38 @@ from inference import run_inference_pipeline
 from utils import utils
 
 
-def main(mode="training", config=None, checkpoint=None, output=None):
+def main(mode="training", config=None, output=None):
     if config:
         config = utils.load_config(config)
     else:
         print("No config file provided, using default config!")
         config = utils.load_default_config()
     if mode == "training":
-        training.setup_training(pvc=True, go=True, gc=True, config=config)
+        if config['hyperparameters']['multiseed']:
+            seeds = [7, 32, 42, 85, 482]
+            for seed in seeds:
+                print(f"Training model with seed: {seed}")
+                config["hyperparameters"]["seed"] = seed
+                training.setup_training(pvc=True, go=True, gc=True, config=config)
+        else:
+            training.setup_training(pvc=True, go=True, gc=True, config=config)
     elif mode == "tuning":
         training.tune()
     elif mode == "testing":
-        testing.run_test(pvc=True, go=True, gc=True)
+        testing.run_test(pvc=True, go=True, gc=True, config=config, extract_genes_only=True)
     elif mode == "inference":
         if not output:
             raise ValueError("For inference mode --output arguments is required.")
         run_inference_pipeline(output=output)
     elif mode == "logistic_regression":
-        training.logistic_regression(pvc=True, go=True, gc=True, config=config)
+        if config['hyperparameters']['multiseed']:
+            seeds = [7, 32, 42, 85, 482]
+            for seed in seeds:
+                print(f"Training logistic regression model with seed: {seed}")
+                config["hyperparameters"]["seed"] = seed
+                training.logistic_regression(pvc=True, go=True, gc=True, config=config)
+        else:
+            training.logistic_regression(pvc=True, go=True, gc=True, config=config)
     elif mode == "random":
         training.random(pvc=True, go=True, gc=True, config=config)
     elif mode == "drugnome_ai":
@@ -40,3 +54,4 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, help="Path to save the predictions (required for inference).")
     args = parser.parse_args()
     main(mode=args.mode, config=args.config, output=args.output)
+
