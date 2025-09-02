@@ -46,6 +46,7 @@ class GeneCharacterisationPreprocessor:
     def __init__(self, config):
         print("Gene Characterisation Preprocessor is booting up...")
         self.config = config
+        self.population = self.config['hyperparameters']['population']
         self.files_and_dirs = os.listdir(self.config['paths']['DATA_DIR'])
         self.data_name_mapping = {
             "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
@@ -66,10 +67,12 @@ class GeneCharacterisationPreprocessor:
         self.rcnt_targets_fda = None
         self.chem_targets_pharos = None
 
-        self.population = self.config['hyperparameters']['population']
-
         # Get all holdout_genes
         self.get_holdout_genes()
+
+        # check if features dir exists if not create it
+        if not os.path.exists(f"{self.config['paths']['FEATURES_DIR']}/{self.population}/"):
+            os.makedirs(f"{self.config['paths']['FEATURES_DIR']}/{self.population}/")
 
         # Load population exome data
         self.pop_data = self.load_pop_data()
@@ -159,17 +162,100 @@ class GeneCharacterisationPreprocessor:
         Get the files from the data directory.
         """
         files = []
-        exclude = ['.DS_Store', 'elgh', 'clinvar', 'VariPred', 'string_data_counts.pkl', 'gnomad_data']
-
+        populations = ['elgh', 'amr', 'nfe']
+        populations = [pop for pop in populations if pop != self.population]
+        exclude = ['.DS_Store', 'elgh', 'clinvar', 'VariPred', 'string_data_counts.pkl', 'gnomad_data'] + populations
         data_dir = self.config['paths']['DATA_DIR']
+
         for file in self.files_and_dirs:
             if "." in file and file not in exclude:
-                files.append(f"{data_dir}/{file}")
+                file_path = f"{data_dir}/{file}"
+                # Check if path contains population1/population2 pattern
+                if not self._contains_population_pattern(file_path, populations):
+                    files.append(file_path)
             elif file not in exclude:
                 file_path = f"{data_dir}/{file}"
-                _file = self._dir_parser(file_path)
-                files.append(_file)
+                # Check if the directory path itself contains population pattern before parsing
+                if not self._contains_population_pattern(file_path, populations):
+                    _file = self._safe_dir_parser(file_path)
+                    # Only process if dir_parser returned a valid file path
+                    if _file is not None:
+                        # Check if parsed file path contains population1/population2 pattern
+                        if not self._contains_population_pattern(_file, populations):
+                            files.append(_file)
+
         return files
+
+    def _contains_population_pattern(self, file_path, populations):
+        """
+        Check if file path contains any population1/population2 pattern.
+
+        Args:
+            file_path (str): The file path to check
+            populations (list): List of population codes to check against
+
+        Returns:
+            bool: True if path contains population1/population2 pattern, False otherwise
+        """
+        # Handle None file_path
+        if file_path is None:
+            return False
+
+        # Get all population codes including the current one
+        all_populations = ['elgh', 'amr', 'nfe']
+
+        # Check for any combination of population1/population2 in the path
+        for pop1 in all_populations:
+            for pop2 in all_populations:
+                if pop1 != pop2:  # Don't check pop1/pop1 patterns
+                    pattern = f"{pop1}/{pop2}"
+                    if pattern in file_path:
+                        return True
+
+        return False
+
+    def _safe_dir_parser(self, path):
+        """
+        Modified directory parser that avoids paths with population1/population2 patterns.
+
+        Args:
+            path (str): Directory path to parse
+
+        Returns:
+            str or None: File path if valid, None otherwise
+        """
+        import os
+
+        # Check if current path contains population pattern
+        if self._contains_population_pattern(path, []):
+            return None
+
+        if not os.path.exists(path):
+            return None
+
+        if os.path.isfile(path):
+            return path
+
+        try:
+            subfiles = os.listdir(path)
+            for subfile in subfiles:
+                subpath = os.path.join(path, subfile)
+
+                # Skip if subpath would create a population pattern
+                if self._contains_population_pattern(subpath, []):
+                    continue
+
+                if os.path.isfile(subpath):
+                    return subpath
+                elif os.path.isdir(subpath):
+                    result = self._safe_dir_parser(subpath)
+                    if result is not None:
+                        return result
+        except (OSError, PermissionError):
+            # Handle cases where directory cannot be accessed
+            pass
+
+        return None
 
     def _dir_parser(self, path):
         """
@@ -220,14 +306,90 @@ class GeneCharacterisationPreprocessor:
     def load_pop_data(self):
         """
         Load population-exome data. Assumed the data is stored as <pop_id>_exomes_filtered.pkl.
-        pop_ids that are supported are: 'elgh', 'amr', and 'nfe'.
+        pop_ids that are supported are: 'elgh', 'amr', 'afr' and 'nfe'.
         """
-        assert self.population in ['elgh', 'amr', 'nfe'], "Population must be one of: 'elgh', 'amr', or 'nfe'."
-        if self.config['paths']['POP_DATA'].endswith('.parquet'):
-            pop_data = pol.read_parquet(self.config['paths']['POP_DATA'] + f'{self.population}_exomes_filtered.parquet')
-            return pop_data.to_pandas()
+        assert self.population in ['elgh', 'amr', 'afr', 'nfe'], ("Population must be one of: 'elgh', 'amr', 'afr', or "
+                                                                  "'nfe'.")
+        pop_path = self.config['paths']['POP_DATA'] + f'{self.population}_exomes_filtered.pkl'
+        if not os.path.exists(pop_path):
+            pop_data = self.filter_raw_exomes()
+            return pop_data
         else:
-            return pd.read_pickle(self.config['paths']['POP_DATA'] + f'{self.population}_exomes_filtered.pkl')
+            with open(pop_path, "rb") as f:
+                pop_data = pkl.load(f)
+            return pop_data
+
+    def filter_raw_exomes(self):
+        """
+        Filters raw exome variant data for a specific population and saves the processed data.
+
+        This function reads raw exome variant data from a specified Parquet file, processes
+        the data by renaming columns, selecting relevant columns based on specific criteria,
+        removing unnecessary prefixes, and filtering based on population-specific allele
+        frequency. The processed data is then saved as a serialized Pickle file.
+
+        :raises KeyError: If required configuration keys are missing in the `config` attribute.
+
+        :param self: An instance of the class containing this method. The following attributes
+            of the instance are used:
+
+            - `config`: A dictionary containing configuration settings, including file paths
+              under the "paths" key.
+            - `population`: A string representing the population name to filter the data for.
+            - `gh_data`: A DataFrame containing data against which the columns of the variant
+              data are matched.
+
+        :rtype: pandas.DataFrame
+        :return: A Pandas DataFrame containing the filtered variant data.
+        """
+        # path = f"{self.config['paths']['GNOMAD_DATA']}gnomad_{self.population}_variants/gnomad_exomes_{self.population}.parquet"
+        path = f"{self.config['paths']['GNOMAD_DATA']}gnomad_exomes_{self.population}.parquet"
+        gh_data = pd.read_pickle(self.config['paths']['GH_CSQ'])
+
+        variants = pol.read_parquet(path)
+
+        rename_mapping = {
+            'chrom': 'CHROM',
+            'pos': 'POS',
+            'ref': 'REF',
+            'alt': 'ALT'
+        }
+
+        # Get columns that actually exist and need renaming
+        existing_renames = {k: v for k, v in rename_mapping.items() if k in variants.columns}
+
+        if existing_renames:
+            variants = variants.rename(existing_renames)
+
+        gh_columns = set(gh_data.columns.tolist())
+        columns = variants.columns
+
+        # Find all columns that either match exactly or have partial overlap
+        selected_columns = []
+        for col in columns:
+            # Exact match or partial match
+            if ('AF' or 'AC' or 'AN') in col:
+                continue  # Skip AF-related columns except 'AF_<population>'
+            elif (col in gh_columns or
+                  any(gh_col in col or col in gh_col for gh_col in gh_columns)):
+                selected_columns.append(col)
+            else:
+                continue
+
+        if f'AF_{self.population}' not in selected_columns:
+            selected_columns.append(f'AF_{self.population}')
+
+        variants = variants.select(selected_columns)
+
+        variants = variants.rename(
+            {col: col.replace('vep_', '') for col in variants.columns if col.startswith('vep_')})
+        variants.head()
+
+        variants = variants.to_pandas()
+        with open(f"{self.config['paths']['POP_DATA']}{self.population}_exomes_filtered.pkl", "wb") as f:
+            pkl.dump(variants, f)
+
+        return variants
 
     def load_ground_truth(self):
         """
@@ -925,14 +1087,13 @@ class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        print("Preparing variant features...")
-        self.variant_gh_data(config)
-
         self.num_features = config['hyperparameters']['max_seq_len']
 
         features_dir = f"{config['paths']['FEATURES_DIR']}/{self.population}"
         print("Obtaining AlphaMissense pathogenicity embeddings...")
         if not os.path.exists(f'{features_dir}/var_pat_features.pkl'):
+            print("Preparing variant features...")
+            self.variant_gh_data(config)
             self.var_pat_features, self.var_gene_map = self.varformer_pathogenicity_input()
             with open(f'{features_dir}/var_pat_features.pkl', 'wb') as file:
                 pkl.dump(self.var_pat_features, file)
