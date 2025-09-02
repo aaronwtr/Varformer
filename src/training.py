@@ -360,11 +360,11 @@ def setup_training(**modules):
     go = modules.get('go', False)
     pvc = modules.get('pvc', False)
     psc = modules.get('psc', False)
-    config = modules.get('config', None)
+    config = modules.get('config', False)
 
     data = ModuleDataProcessor(gc, go, pvc, psc, config=config).process()
 
-    if config is not None:
+    if config:
         pl.seed_everything(config['hyperparameters']['seed'])
         if config['hyperparameters']['mode'] == 'eval':
             train_model(data)
@@ -400,11 +400,12 @@ def logistic_regression(**modules):
 
     config = data['config']
     hyperparameters = config['hyperparameters']
+    population = hyperparameters['population']
 
     run = wandb.init(
         project="drug-target-prediction",
         config=config["hyperparameters"],
-        group="logistic-regression-1"
+        group=f"logistic-regression-{population}"
     )
 
     # Process features using the custom preprocessor
@@ -596,7 +597,7 @@ def drugnome_ai(**modules):
 
         gene_to_hgnc = utils.utils.map_gene_names(test_data, 'ensg', 'symb')
         test_data_hgnc = [gene_to_hgnc[gene] for gene in test_data if gene in gene_to_hgnc]
-        with open("../benchmark/data/drugnomeai/test_genes.txt", 'w') as f:
+        with open("../benchmark/data/drugnomeai/test_genes_elgh.txt", 'w') as f:
             for gene in test_data_hgnc:
                 f.write(str(gene) + '\n')
 
