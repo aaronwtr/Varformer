@@ -1884,7 +1884,9 @@ class ModelPreprocessorEval:
         self.data = data
         self.gc_data = data['train']['gc']
         self.go_data = data['train']['go']
-        self.pvc_data = data['train']['pvc'].copy()
+        self.pvc_data = data['train'].get('pvc', None)
+        if self.pvc_data is not None:
+            self.pvc_data = self.pvc_data.copy()
         self.labels = data["labels"]
         self.test_labels = data["test_labels"]
         self.test_labels_per_source = data["test_labels_per_source"]
@@ -1895,7 +1897,7 @@ class ModelPreprocessorEval:
         self.train_genes, self.val_genes = train_test_split(self.genes, test_size=0.2,
                                                             random_state=config['hyperparameters']['seed'])
         self.class_prior = data['class_prior']
-        self.torch_dtype = torch.bfloat16 if config['hyperparameters']['precision'] == 'bf16' else torch.float32
+        self.torch_dtype = torch.bfloat16 if config['hyperparameters']['precision'] == 'bf16-mixed' else torch.float32
         torch.set_default_dtype(self.torch_dtype)
 
     def model_init(self):
@@ -1905,20 +1907,21 @@ class ModelPreprocessorEval:
         go_train_raw = self.go_data.loc[self.train_genes, :]
         go_val_raw = self.go_data.loc[self.val_genes, :]
 
-        pvc_train_raw = {k: v for k, v in self.pvc_data.items() if k in self.train_genes}
-        pvc_val_raw = {k: v for k, v in self.pvc_data.items() if k in self.val_genes}
-
         train_raw = {
             'gc': gc_train_raw,
             'go': go_train_raw,
-            'pvc': pvc_train_raw
         }
 
         val_raw = {
             'gc': gc_val_raw,
             'go': go_val_raw,
-            'pvc': pvc_val_raw
         }
+
+        if self.pvc_data is not None:
+            pvc_train_raw = {k: v for k, v in self.pvc_data.items() if k in self.train_genes}
+            pvc_val_raw = {k: v for k, v in self.pvc_data.items() if k in self.val_genes}
+            train_raw['pvc'] = pvc_train_raw
+            val_raw['pvc'] = pvc_val_raw
 
         model, train_combined, val_combined, test_combined, hyperparameters, accelerator = self.initialise_model(
             train_raw,
@@ -1942,11 +1945,16 @@ class ModelPreprocessorEval:
          num_samples_per_class) = self.normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_genes,
                                                       test_genes, test, torch_dtype, config)
 
-        max_genes_pvc = max([train_raw['pvc'][gene].shape[0] for gene in train_raw['pvc'].keys()])
+        use_pvc = 'pvc' in train_raw
 
-        with open(config['paths']['MISSENSE_MAP'], "rb") as f:
-            missense_map = pkl.load(f)
-        num_mutations = len(missense_map)
+        if use_pvc:
+            max_genes_pvc = max([train_raw['pvc'][gene].shape[0] for gene in train_raw['pvc'].keys()])
+            with open(config['paths']['MISSENSE_MAP'], "rb") as f:
+                missense_map = pkl.load(f)
+            num_mutations = len(missense_map)
+        else:
+            max_genes_pvc = 0
+            num_mutations = 0
 
         gc_features_dim = train_raw['gc'].shape[1]
         go_features_dim = train_raw['go'].shape[1]
@@ -1959,7 +1967,8 @@ class ModelPreprocessorEval:
             max_seq_len=hyperparams['max_seq_len'],
             num_genes=max_genes_pvc,
             num_samples_per_class=num_samples_per_class,
-            class_prior=self.class_prior
+            class_prior=self.class_prior,
+            use_pvc=use_pvc
         )
 
         accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'
@@ -2080,11 +2089,18 @@ class ModelPreprocessorEval:
 
         test_loaders = {}
         for key in test_raw.keys():
-            test_loaders[key] = dl.MultiModalDataLoader(
-                datasets=test_datasets[key],
-                batch_size=len(next(iter(test_datasets[key].values()))),
-                shuffle=False
-            )
+            if len(next(iter(test_datasets[key].values()))) <= 1000:
+                test_loaders[key] = dl.MultiModalDataLoader(
+                    datasets=test_datasets[key],
+                    batch_size=len(next(iter(test_datasets[key].values()))),
+                    shuffle=False
+                )
+            else:
+                test_loaders[key] = dl.MultiModalDataLoader(
+                    datasets=test_datasets[key],
+                    batch_size=hparams['batch_size'],
+                    shuffle=False
+                )
 
         num_maj_samples, num_min_samples = next(iter(train_datasets.values())).samples_per_class()
 
@@ -2092,94 +2108,50 @@ class ModelPreprocessorEval:
 
 
 class ModelPreprocessorInference:
-    def __init__(self, config, data_split, split_idx):
-        self.config = config  # This is data_split['config'], the main config
-        self.data_split = data_split
-        self.split_idx = split_idx
-
-        # Training data for the current split
-        self.gc_data_train = data_split['train']['gc']
-        self.go_data_train = data_split['train']['go']
-        self.pvc_data_train_full = data_split['train']['pvc'].copy()
-
-        # Labels for all genes relevant to this split
-        self.all_labels_for_split = data_split['labels']
-        self.train_genes_list_for_split = data_split['train_genes']
-
-        # Data to perform inference/prediction on for this split
-        # data_split['test_data'] is {"gc": gc_test, "go": go_test, "pvc": pvc_test_with_labels}
-        self.data_for_prediction = data_split['test_data']
-        self.genes_for_prediction = data_split['test_genes']
-        self.labels_for_prediction = data_split['test_labels']  # True labels for the prediction set
-
-        # Create train/validation split from the current split's training data
-        self.train_genes_for_model, self.val_genes_for_model = train_test_split(
-            self.train_genes_list_for_split, test_size=0.2,
-            random_state=config['hyperparameters']['seed']
-        )
-
-        self.class_prior = data_split['class_prior']
-        self.torch_dtype = torch.bfloat16 if config['hyperparameters']['precision'] == 'bf16' else torch.float32
+    def __init__(self, config, consolidated_data, pvc_data, gene_names):
+        self.config = config
+        self.data_raw = consolidated_data
+        self.pvc_data = pvc_data
+        self.gene_names = gene_names
+        self.torch_dtype = torch.bfloat16 if config['hyperparameters']['precision'] == 'bf16-mixed' else torch.float32
         torch.set_default_dtype(self.torch_dtype)
 
     def model_init(self):
-        # Prepare training data for the model (gc, go)
-        gc_train_raw = self.gc_data_train.loc[self.train_genes_for_model, :]
-        gc_val_raw = self.gc_data_train.loc[self.val_genes_for_model, :]
-
-        go_train_raw = self.go_data_train.loc[self.train_genes_for_model, :]
-        go_val_raw = self.go_data_train.loc[self.val_genes_for_model, :]
-
-        pvc_train_raw_data = {
-            k: v for k, v in self.pvc_data_train_full.items() if k in self.train_genes_for_model
-        }
-
-        pvc_val_raw_data = {
-            k: v for k, v in self.pvc_data_train_full.items() if k in self.val_genes_for_model
-        }
-
-        train_raw_for_split = {
-            'gc': gc_train_raw,
-            'go': go_train_raw,
-            'pvc': pvc_train_raw_data
-        }
-
-        val_raw_for_split = {
-            'gc': gc_val_raw,
-            'go': go_val_raw,
-            'pvc': pvc_val_raw_data
-        }
-
-        # The "test" data for initialise_model will be the data we want to predict on
-        # It needs to be in a dictionary format similar to how test_data is structured in eval mode
-        # e.g., {'predict_split': self.data_for_prediction}
-        # self.data_for_prediction is {"gc": gc_test, "go": go_test, "pvc": pvc_test_with_labels}
-        # self.genes_for_prediction is the list of gene IDs for this prediction set
-        # self.labels_for_prediction is the dict of labels for this prediction set
-
-        test_data_dict_for_model = {f'predict_split_{self.split_idx}': self.data_for_prediction}
-        test_genes_dict_for_model = {f'predict_split_{self.split_idx}': self.genes_for_prediction}
-
-        model, train_combined, val_combined, test_combined, hyperparameters, accelerator = self.initialise_model(
-            train_raw_for_split,
-            val_raw_for_split,
-            self.all_labels_for_split,  # All available labels for genes in this split's universe
-            self.labels_for_prediction,  # Labels for the specific set we are predicting on
-            self.train_genes_for_model,
-            self.val_genes_for_model,
-            test_genes_dict_for_model,  # Genes for the prediction set, structured like test_labels_per_source
-            test_data_dict_for_model,  # Data for the prediction set, structured like test_data
+        # Create the unlabeled loader
+        unlabeled_loader, num_samples = self.create_unlabeled_loader(
+            self.data_raw,
+            self.pvc_data,
+            self.gene_names,
             self.torch_dtype,
             self.config
         )
-        # test_combined will be a dict like {'predict_split': DataLoader_for_prediction_set}
-        return model, train_combined, val_combined, test_combined, hyperparameters, accelerator
+
+        # Initialize model dimensions
+        gc_features_dim = self.data_raw['gc'].shape[1] - 1 if 'target' in self.data_raw['gc'].columns else self.data_raw['gc'].shape[1]
+        go_features_dim = self.data_raw['go'].shape[1] - 1 if 'target' in self.data_raw['go'].columns else self.data_raw['go'].shape[1]
+
+        with open(self.config['paths']['MISSENSE_MAP'], 'rb') as f:
+            missense_map = pkl.load(f)
+        num_mutations = len(missense_map)
+
+        model = MultiModalLightningTargetIdentifier(
+            config=self.config,
+            num_features_gc=gc_features_dim,
+            num_features_go=go_features_dim,
+            num_mutations=num_mutations,
+            max_seq_len=self.config['hyperparameters']['max_seq_len'],
+            num_genes=len(self.gene_names),
+            num_samples_per_class=(len(self.gene_names), 0),  # all unlabeled = class 0
+            class_prior={0: 1.0, 1: 0.0}
+        )
+
+        accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'
+        return model, unlabeled_loader, self.config['hyperparameters'], accelerator
 
     def initialise_model(self, train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes_dict,
                          test_data_dict, torch_dtype, config):
         hyperparams = config['hyperparameters']
-        (train_combined, val_combined, test_combined_loaders,
-         num_samples_per_class) = ModelPreprocessorInference.normalise_data(
+        unlabeled_loader, num_samples_per_class = ModelPreprocessorInference.create_unlabeled_loader(
             train_raw, val_raw, labels, test_labels, train_genes, val_genes,
             test_genes_dict, test_data_dict, torch_dtype, config
         )
@@ -2231,142 +2203,48 @@ class ModelPreprocessorInference:
             weight_decay=hyperparams['weight_decay']
         )
 
-        return model, train_combined, val_combined, test_combined_loaders, hyperparameters_log, accelerator
+        return model, unlabeled_loader, hyperparameters_log, accelerator
 
     @staticmethod
-    def normalise_data(train_raw, val_raw, labels, test_labels_for_prediction_set, train_genes, val_genes,
-                       test_genes_dict, test_data_dict, torch_dtype, config):
+    def create_unlabeled_loader(consolidated_data, pvc_data, gene_names, torch_dtype, config):
         hparams = config['hyperparameters']
 
-        train_datasets = {}
-        val_datasets = {}
-        # test_data_dict is e.g. {'predict_split': actual_data_for_prediction}
-        # actual_data_for_prediction is {'gc': df, 'go': df, 'pvc': {'data':..., 'labels':...}}
-        test_datasets = {key: {} for key in test_data_dict.keys()}  # Will be {'predict_split': {}}
+        unlabeled_datasets = {}
 
-        # Scalers are usually fitted on training data.
-        # For inference, we'd typically load pre-fitted scalers or not scale test data if model wasn't trained with scaling.
-        # The current ModelPreprocessorEval doesn't save/use scalers in a way that's easily reusable for inference splits.
-        # For simplicity and equivalence, we'll replicate the behavior of not using previously fitted scalers here.
-        # If scaling was critical, it should be handled more robustly (e.g., fit on combined training data, save/load scalers).
+        # gc and go modalities
+        for modality in ['gc', 'go']:
+            data_dict = {
+                gene: consolidated_data[modality].loc[gene].drop(labels=['target'], errors='ignore').values.flatten()
+                for gene in gene_names
+            }
 
-        for module_str, train_data_df_or_dict in train_raw.items():
-            if module_str != "pvc":
-                # Ensure 'target' column is handled if it exists from raw data before this stage
-                train_values = train_data_df_or_dict.drop(columns=['target'], errors='ignore').values
-                val_values = val_raw[module_str].drop(columns=['target'], errors='ignore').values
+            unlabeled_datasets[modality] = dl.MultiModalData(
+                data=data_dict,
+                labels={gene: 0 for gene in gene_names},
+                gene_names=gene_names,
+                dtype=torch_dtype
+            )
 
-                # No scaler fitting/transformation to mirror ModelPreprocessorEval's direct use
-                # If scaling were applied:
-                # scaler = MinMaxScaler()
-                # train_norm_values = scaler.fit_transform(train_values)
-                # val_norm_values = scaler.transform(val_values)
-                train_norm_values = train_values
-                val_norm_values = val_values
-
-                train_norm_dict = {gene: train_norm_values[i] for i, gene in enumerate(train_genes)}
-                val_norm_dict = {gene: val_norm_values[i] for i, gene in enumerate(val_genes)}
-
-                train_datasets[module_str] = dl.MultiModalData(
-                    data=train_norm_dict,
-                    labels=labels,  # these are all_labels_for_split
-                    gene_names=train_genes,
-                    dtype=torch_dtype
-                )
-
-                val_datasets[module_str] = dl.MultiModalData(
-                    data=val_norm_dict,
-                    labels=labels,  # these are all_labels_for_split
-                    gene_names=val_genes,
-                    dtype=torch_dtype
-                )
-
-                # Process the "test" data (data for prediction in this inference split)
-                for key_predict_split, modalities_for_predict in test_data_dict.items():  # key_predict_split is 'predict_split'
-                    # modalities_for_predict is {'gc': df, 'go': df, 'pvc': ...}
-                    current_modality_data_for_predict = modalities_for_predict[module_str]  # e.g. gc_test_df
-
-                    # Ensure 'target' column is handled if it exists
-                    predict_values = current_modality_data_for_predict.drop(columns=['target'], errors='ignore').values
-                    # predict_norm_values = scaler.transform(predict_values) # If scaling
-                    predict_norm_values = predict_values
-
-                    # test_genes_dict[key_predict_split] is self.genes_for_prediction (list of gene IDs)
-                    predict_data_dict = {
-                        gene: predict_norm_values[i] for i, gene in enumerate(test_genes_dict[key_predict_split])
-                    }
-                    test_datasets[key_predict_split][module_str] = dl.MultiModalData(
-                        data=predict_data_dict,
-                        labels=test_labels_for_prediction_set,  # these are self.labels_for_prediction
-                        gene_names=test_genes_dict[key_predict_split],
-                        dtype=torch_dtype,
-                        test_source=key_predict_split  # 'predict_split'
-                    )
-            else:  # module_str == "pvc"
-                # train_data_df_or_dict is train_raw['pvc'], which is {gene: tensor}
-                train_datasets[module_str] = dl.MultiModalData(
-                    data=None,  # Not DataFrame based
-                    labels=None,  # Will use variant_data['labels']
-                    gene_names=train_genes,
-                    dtype=torch_dtype,
-                    variant_data={'data': train_data_df_or_dict, 'labels': labels},  # labels are all_labels_for_split
-                    max_variants=hparams['max_seq_len']
-                )
-
-                val_datasets[module_str] = dl.MultiModalData(
-                    data=None,
-                    labels=None,
-                    gene_names=val_genes,
-                    dtype=torch_dtype,
-                    variant_data={'data': val_raw[module_str], 'labels': labels},  # labels are all_labels_for_split
-                    max_variants=hparams['max_seq_len']
-                )
-
-                for key_predict_split, modalities_for_predict in test_data_dict.items():
-                    # modalities_for_predict['pvc'] is {'data': {gene:tensor}, 'labels': {gene:label}}
-                    pvc_data_for_predict = modalities_for_predict[module_str]
-                    pvc_data_for_predict.pop('labels', None)  # Remove 'labels' key if it exists
-
-                    test_datasets[key_predict_split][module_str] = dl.MultiModalData(
-                        data=None,
-                        labels=None,  # Will use variant_data['labels']
-                        gene_names=test_genes_dict[key_predict_split],  # self.genes_for_prediction
-                        dtype=torch_dtype,
-                        variant_data={
-                            'data': pvc_data_for_predict,
-                            'labels': test_labels_for_prediction_set,  # self.labels_for_prediction
-                            'test_source': key_predict_split
-                        },
-                        max_variants=hparams['max_seq_len'],
-                        test_source=key_predict_split
-                    )
-
-        train_loader = dl.MultiModalDataLoader(
-            datasets=train_datasets,
-            batch_size=hparams['batch_size'],
-            shuffle=True
+        # pvc modality
+        unlabeled_datasets['pvc'] = dl.MultiModalData(
+            data=None,
+            labels=None,
+            gene_names=gene_names,
+            dtype=torch_dtype,
+            variant_data={'data': {gene: pvc_data[gene] for gene in gene_names},
+                          'labels': {gene: 0 for gene in gene_names}},
+            max_variants=hparams['max_seq_len']
         )
 
-        val_loader = dl.MultiModalDataLoader(
-            datasets=val_datasets,
-            batch_size=hparams['batch_size'],
+        dataset_size = len(gene_names)
+
+        unlabeled_loader = dl.MultiModalDataLoader(
+            datasets=unlabeled_datasets,
+            batch_size=config['hyperparameters']['batch_size'],  # all at once
             shuffle=False
         )
 
-        # test_loaders will be {'predict_split': DataLoader_for_prediction_set}
-        test_loaders = {}
-        for key_predict_split in test_data_dict.keys():
-            test_loaders[key_predict_split] = dl.MultiModalDataLoader(
-                datasets=test_datasets[key_predict_split],
-                # Batch size for prediction can be larger, or full set if memory allows
-                batch_size=len(next(iter(test_datasets[key_predict_split].values()))),  # Process all in one batch
-                shuffle=False
-            )
-
-        num_maj_samples, num_min_samples = next(iter(train_datasets.values())).samples_per_class()
-
-        return train_loader, val_loader, test_loaders, (num_maj_samples, num_min_samples)
-
+        return unlabeled_loader, dataset_size
 
 def extract_pvc_features(gene, pvc_data, max_variants=100):
     """
@@ -2446,7 +2324,9 @@ class LogisticRegressionPreprocessor:
         self.data = data
         self.gc_data = data['train']['gc']
         self.go_data = data['train']['go']
-        self.pvc_data = data['train']['pvc'].copy()
+        self.pvc_data = data['train'].get('pvc', None)
+        if self.pvc_data is not None:
+            self.pvc_data = self.pvc_data.copy()
         self.labels = self.data["labels"]
         self.test_labels = data["test_labels"]
         self.genes = data['genes']
@@ -2477,21 +2357,21 @@ class LogisticRegressionPreprocessor:
         go_train_raw = self.go_data.loc[self.train_genes, :]
         go_val_raw = self.go_data.loc[self.val_genes, :]
 
-        pvc_train_raw = {k: v for k, v in self.pvc_data.items() if k in self.train_genes}
-        pvc_val_raw = {k: v for k, v in self.pvc_data.items() if k in self.val_genes}
-
-        # Organize raw data
         train_raw = {
             'gc': gc_train_raw,
             'go': go_train_raw,
-            'pvc': pvc_train_raw
         }
 
         val_raw = {
             'gc': gc_val_raw,
             'go': go_val_raw,
-            'pvc': pvc_val_raw
         }
+
+        if self.pvc_data is not None:
+            pvc_train_raw = {k: v for k, v in self.pvc_data.items() if k in self.train_genes}
+            pvc_val_raw = {k: v for k, v in self.pvc_data.items() if k in self.val_genes}
+            train_raw['pvc'] = pvc_train_raw
+            val_raw['pvc'] = pvc_val_raw
 
         # Process and combine the features
         processed_data = self.process_and_combine_features(
