@@ -14,24 +14,18 @@ import pandas as pd
 import numpy as np
 import pickle as pkl
 
+from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor, EarlyStopping
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.utilities.model_summary import ModelSummary
-from torch.utils.data import DataLoader
-from sklearn.model_selection import train_test_split, KFold
-from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score, accuracy_score, precision_recall_curve, auc
 from scipy.stats import spearmanr
-from typing import Dict, Union, Optional
-from tqdm import tqdm
-from optuna.samplers import GridSampler, TPESampler
+from optuna.samplers import TPESampler
 from optuna.integration import PyTorchLightningPruningCallback
 
-from dataloader import DrugTargetData, ModuleDataProcessor, VarformerDataset, MultiModalData, MultiModalDataLoader
-from models.target_identifier import MultiModalTargetIdentifier
-from models.lightning import (MLPLightningTargetIdentifier, ShardedVarformerLightningTargetIdentifier,
-                              MultiModalLightningTargetIdentifier)
+from dataloader import ModuleDataProcessor
+from models.lightning import MultiModalLightningTargetIdentifier
 from preprocessing import ModelPreprocessorEval, ModelPreprocessorInference, LogisticRegressionPreprocessor
 from utils.custom_callbacks import BestThresholdCallback
 
@@ -139,7 +133,7 @@ def objective(trial: optuna.trial.Trial) -> float:
 
     data = ModuleDataProcessor(True, True, True, False).process()
 
-    preprocessor = ModelPreprocessor(config, data)
+    preprocessor = ModelPreprocessorEval(config, data)
     model, train_combined, val_combined, test_combined, hyperparameters, accelerator = preprocessor.model_init()
 
     # Log model parameters
@@ -221,9 +215,11 @@ def objective(trial: optuna.trial.Trial) -> float:
         return 0.0
 
 
-def train_model(data, split_idx=None):
+def train_model(data):
+    """Train the model in evaluation mode"""
     torch.set_float32_matmul_precision('medium')
     config = data['config']
+
     # Initialize wandb run
     hyperparameters = dict(
         lr_start=config['hyperparameters']['lr_start'],
@@ -245,23 +241,13 @@ def train_model(data, split_idx=None):
         threshold=config['hyperparameters']['threshold']
     )
 
-    if config['hyperparameters']['mode'] == 'eval':
-        run = wandb.init(
-            project="drug-target-prediction",
-            config=hyperparameters,
-            group=f"varformer-{config['hyperparameters']['population']}"
-        )
-        preprocessor = ModelPreprocessorEval(config, data)
-    elif config['hyperparameters']['mode'] == 'inference':
-        run = wandb.init(
-            project="drug-target-prediction",
-            config=hyperparameters,
-            group="inference-run-1"
-        )
-        preprocessor = ModelPreprocessorInference(config, data, split_idx)
-    else:
-        raise ValueError("Invalid mode in config. Please set 'mode' to either 'eval' or 'inference'.")
+    run = wandb.init(
+        project="drug-target-prediction",
+        config=hyperparameters,
+        group=f"varformer-{config['hyperparameters']['population']}"
+    )
 
+    preprocessor = ModelPreprocessorEval(config, data)
     model, train_combined, val_combined, test_combined, hyperparameters, accelerator = preprocessor.model_init()
 
     # Log model parameters
@@ -291,6 +277,7 @@ def train_model(data, split_idx=None):
     )
 
     utils.utils.set_seed(config['hyperparameters']['seed'])
+
     # Configure trainer based on available GPUs
     if torch.cuda.device_count() > 1:
         trainer = pl.Trainer(
@@ -307,8 +294,6 @@ def train_model(data, split_idx=None):
             deterministic=True
         )
     else:
-        # eff_batch_size = int(config['hyperparameters']['grad_accum']) * int(config['hyperparameters']['batch_size'])
-        # print(f"\nTraining with effective batch size {eff_batch_size}\n")
         if config['hyperparameters']['grad_accum'] is not None:
             trainer = pl.Trainer(
                 max_epochs=int(config['hyperparameters']['epochs']),
@@ -320,7 +305,7 @@ def train_model(data, split_idx=None):
                 callbacks=[lr_monitor, checkpoint_callback, best_threshold_callback],
                 gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
                 accumulate_grad_batches=config['hyperparameters']['grad_accum'],
-                limit_train_batches=0.1,  # Limit to 10% of training data for debugging purposes
+                # limit_train_batches=0.1,  # Limit to 10% of training data for debugging purposes
                 deterministic=True
             )
         else:
@@ -339,16 +324,123 @@ def train_model(data, split_idx=None):
     trainer.fit(model, train_combined, val_combined)
 
     print("Starting testing...")
-    if config['hyperparameters']['mode'] == 'eval':
-        trainer.test(dataloaders=test_combined["pfam"], ckpt_path='best')
-        trainer.test(dataloaders=test_combined["rcnt"], ckpt_path='best')
-        trainer.test(dataloaders=test_combined["pharos"], ckpt_path='best')
-    elif config['hyperparameters']['mode'] == 'inference':
-        prediction_results = trainer.predict(model=model, dataloaders=test_combined, ckpt_path='best')
-        output_path = f"{config['paths']['VARFORMER_PREDICT_OUTPUT']}predictions_split_{split_idx}.pkl"
-        torch.save(prediction_results, output_path)
-        print(f"Predictions for split {split_idx} saved to {output_path}")
+    trainer.test(dataloaders=test_combined["pfam"], ckpt_path='best')
+    trainer.test(dataloaders=test_combined["rcnt"], ckpt_path='best')
+    trainer.test(dataloaders=test_combined["pharos"], ckpt_path='best')
     run.finish()
+
+
+def run_inference(data):
+    """Run inference using pre-trained checkpoint on all data splits"""
+    torch.set_float32_matmul_precision('medium')
+
+    config = data[0]['config']
+    print(f"Consolidating data from {len(data)} splits for unified inference...")
+
+    # --- Consolidate all splits into one dataset ---
+    consolidated_data = {modality: [] for modality in ["gc", "go"]}
+    consolidated_pvc = {}
+    consolidated_labels = {}
+    all_genes = []
+
+    for i, split_data in enumerate(data):
+        print(f"Consolidating split {i + 1}/{len(data)}...")
+
+        # Add gc/go DataFrames from both train + test
+        for modality in ["gc", "go"]:
+            consolidated_data[modality].append(split_data["test_data"][modality])
+
+        # Merge pvc dicts
+        consolidated_pvc.update(split_data["test_data"]["pvc"])
+
+        # Merge labels
+        consolidated_labels.update(split_data["test_labels"])
+
+        # Collect all genes
+        all_genes.extend(split_data["test_genes"])
+
+    # Concatenate DataFrames
+    for modality in ["gc", "go"]:
+        consolidated_data[modality] = pd.concat(
+            consolidated_data[modality], ignore_index=False
+        )
+
+    print(f"Total samples before filtering: {len(all_genes)}")
+
+    # --- Create one loader with all unlabeled samples ---
+    unlabeled_loader, num_samples = ModelPreprocessorInference.create_unlabeled_loader(
+        config=config,
+        consolidated_data=consolidated_data,
+        pvc_data=consolidated_pvc,
+        gene_names=list(consolidated_labels.keys()),
+        torch_dtype=config['hyperparameters']['precision'],
+    )
+
+    if unlabeled_loader is None:
+        print("No unlabeled data found. Exiting inference.")
+        return
+
+    # Get gene names and count
+    gene_names = next(iter(unlabeled_loader.datasets.values())).gene_names
+    print(f"Created unified dataloader with {len(gene_names)} unlabeled genes")
+
+    # Load missense map and calculate dimensions using first split
+    with open(config['paths']['MISSENSE_MAP'], "rb") as f:
+        missense_map = pkl.load(f)
+
+    num_mutations = len(missense_map)
+
+    # Calculate total genes across all splits
+    total_train_genes = sum(len(split_data['train_genes']) for split_data in data)
+    total_test_genes = sum(len(split_data['test_genes']) for split_data in data)
+    num_genes = total_train_genes + total_test_genes
+
+    # Use first split to get feature dimensions
+    first_split = data[0]
+    num_features_gc = first_split['train']['gc'].shape[1] - 1 if 'target' in first_split['train']['gc'].columns else \
+    first_split['train']['gc'].shape[1]
+    num_features_go = first_split['train']['go'].shape[1]
+
+
+    # Load checkpoint
+    ckpt_folder = f"{config['paths']['CKPT_PATH']}{config['hyperparameters']['population']}"
+    ckpt_names = list(os.listdir(ckpt_folder))
+    for ckpt_name in ckpt_names:
+        seed_raw = ckpt_name.split("-")[0]
+        if seed_raw[4:].isdigit():
+            seed = int(seed_raw[4:])
+        else:
+            continue
+        ckpt_path = f"{ckpt_folder}/{ckpt_name}"
+
+        print(f"Loading model from checkpoint: {ckpt_path}")
+
+        # Load pre-trained model
+        model = MultiModalLightningTargetIdentifier.load_from_checkpoint(
+            checkpoint_path=ckpt_path,
+            config=config,
+            num_features_gc=num_features_gc,
+            num_features_go=num_features_go,
+            num_mutations=num_mutations,
+            max_seq_len=config['hyperparameters']['max_seq_len'],
+            num_genes=num_genes,
+            num_samples_per_class=None,  # Not needed for inference
+            class_prior=None  # Not needed for inference
+        )
+
+        # Run inference once on the unified loader
+        trainer = Trainer(accelerator="gpu" if torch.cuda.is_available() else "cpu", devices=1)
+        print("Running unified inference...")
+        prediction_results = trainer.predict(model=model, dataloaders=unlabeled_loader)
+
+        # Save results
+        output_path_folder = (f"{config['paths']['VARFORMER_PREDICT_OUTPUT']}{config['hyperparameters']['population']}"
+                       f"/unlabeled_predictions/")
+        output_path = f"{output_path_folder}/unlabeled_predictions_seed_{seed}.pkl"
+        os.makedirs(output_path_folder, exist_ok=True)
+        torch.save(prediction_results, output_path)
+        print(f"Unified predictions saved to {output_path}")
+        print(f"Total predictions: {len(prediction_results)}")
 
 
 def setup_training(**modules):
@@ -363,17 +455,12 @@ def setup_training(**modules):
     config = modules.get('config', False)
 
     data = ModuleDataProcessor(gc, go, pvc, psc, config=config).process()
-
     if config:
         pl.seed_everything(config['hyperparameters']['seed'])
         if config['hyperparameters']['mode'] == 'eval':
             train_model(data)
         elif config['hyperparameters']['mode'] == 'inference':
-            for i, data_split in enumerate(data):
-                if not os.path.exists(f"{config['paths']['VARFORMER_PREDICT_OUTPUT']}predictions_split_{i}.pkl"):
-                    train_model(data_split, i)
-                else:
-                    print(f"Predictions for split {data['split_idx']} already exist. Skipping inference...")
+            run_inference(data)
         else:
             raise ValueError("Invalid mode in config. Please set 'mode' to either 'eval' or 'inference'.")
     else:
@@ -622,86 +709,3 @@ def drugnome_ai(**modules):
                       "/benchmark/data/drugnomeai/drugnome_ai_labels.txt"
             ]
         )
-
-
-# legacy code
-def kfold_student(ensemble=False, **modules):
-    """
-    Training a student model by distilling from a teacher model where the teacher model is used to provide pseudo-labels
-    for the unlabeled data used by the student model.
-
-    Firstly, we will run inference over the unlabelled data using the teacher model to define the pseudolabels. Then,
-    we add the pseudolabels to the training data and train the student model on the combined dataset.
-    """
-    # TODO: Connect this to the teacher to learn end-to-end
-    print("Training student model by distillation from teacher model...\n")
-
-    gc = modules.get('gc', False)
-    go = modules.get('go', False)
-    pvc = modules.get('pvc', False)
-    psc = modules.get('psc', False)
-
-    modules = {
-        "gc": gc,
-        "go": go,
-        "pvc": pvc,
-        "psc": psc
-    }
-
-    print(f"Training teacher model with {' '.join([k for k, v in modules.items() if v])} modules...\n")
-
-    data = ModuleDataProcessor(gc, go, pvc, psc).process()
-
-    if not ensemble:
-        for module, preprocessor in data.items():
-            train_df = preprocessor.data
-            num_features = preprocessor.num_features
-            config = preprocessor.config
-
-            labels = train_df.iloc[:, -1].values
-
-            unlabelled_data = data[data.iloc[:, -1] == 0]
-            U = np.where(labels == 0)[0]
-
-            hyperparams = config['hyperparameters']
-
-            val = None
-            unlabelled_dl = normalise_data(unlabelled_data, val, hyperparams)
-            unlabelled_tensor = unlabelled_dl.dataset.features
-
-            teacher_model = BaseTargetIdentifier(config=hyperparams, num_features=num_features)
-            raw_state_dict = torch.load(
-                "checkpoints/distillation-3-teacher/swift-jazz-179-epoch=99-val_auroc=0.84-fold0.ckpt"
-            )['state_dict']
-
-            state_dict = {k.replace("model.", ""): v for k, v in raw_state_dict.items()}
-            teacher_model.load_state_dict(state_dict)
-            teacher_model.eval()
-
-            logits, probas, bin_preds = teacher_model(unlabelled_tensor)
-
-            delta = 0.25  # threshold for pseudo-labeling
-
-            pseudo_labels = torch.full_like(probas, -1)
-
-            pos_count = 0
-            neg_count = 0
-            for i, proba in enumerate(probas):
-                if proba >= hyperparams['mlp']['threshold']:
-                    pseudo_labels[i] = proba
-                    pos_count += 1
-                elif proba <= hyperparams['mlp']['threshold'] - delta:
-                    pseudo_labels[i] = proba
-                    neg_count += 1
-            unlabelled_count = len(probas) - pos_count - neg_count
-
-            # plot.plot_kde(pseudo_labels)
-
-            data.iloc[U, -1] = pseudo_labels.detach().numpy()
-
-            data = data[data.iloc[:, -1] != -1]
-
-            kfold_train(data, num_features, hyperparams, model_type="student", modules=module)
-    else:
-        # TODO: Implement ensemble training
-        pass
