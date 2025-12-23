@@ -171,6 +171,7 @@ class MultiModalTargetIdentifierV1(BaseTargetIdentifier):
         gene_var_emb, attn_weights = self.pvc_branch(
             {
                 'pathogenicity': x['pvc']['pathogenicity'],
+                'allele_frequency': x['pvc']['allele_frequency'],
                 'position': x['pvc']['position'],
                 'mutation': x['pvc']['mutation']
             },
@@ -188,7 +189,7 @@ class MultiModalTargetIdentifierV1(BaseTargetIdentifier):
 
 
 class MultiModalTargetIdentifier(torch.nn.Module):
-    def __init__(self, config, num_features_gc, num_features_go, num_mutations, max_seq_len, num_genes):
+    def __init__(self, config, num_features_gc, num_features_go, num_mutations, max_seq_len, num_genes, use_pvc=True):
         super(MultiModalTargetIdentifier, self).__init__()
 
         self.num_features_gc = num_features_gc
@@ -196,6 +197,7 @@ class MultiModalTargetIdentifier(torch.nn.Module):
         self.num_mutations = num_mutations
         self.max_seq_len = max_seq_len
         self.num_genes = num_genes
+        self.use_pvc = use_pvc
         self.config = config
         self.hyperparams = self.config['hyperparameters']
         self.dropout = nn.Dropout(float(self.hyperparams['dropout']))
@@ -216,7 +218,7 @@ class MultiModalTargetIdentifier(torch.nn.Module):
         # self.gc_feature_extractor = nn.Sequential(*gc_layers)  # Sequential MLP for GC branch
 
         self.gc_projection = nn.Sequential(
-            nn.Linear(num_features_gc, gc_width),
+            nn.Linear(self.num_features_gc, gc_width),
             nn.LayerNorm(gc_width),
             nn.ReLU(),
             nn.Dropout(p=float(config['hyperparameters']['dropout']))
@@ -245,25 +247,31 @@ class MultiModalTargetIdentifier(torch.nn.Module):
             nn.Dropout(p=float(config['hyperparameters']['dropout']))
         )
 
-        # 3. PVC Branch (Transformer)
-        self.varformer = VarformerTargetIdentifier(
-            config=config,
-            num_mutations=num_mutations,
-            max_seq_len=max_seq_len,
-            d_model=int(config['hyperparameters']['d_model']),
-        )
-
-        # Gene-Variant Attention
+        # 3. PVC Branch (Transformer) — only if use_pvc
         gene_feature_dim = gc_width + go_width
-        variant_feature_dim = int(config['hyperparameters']['d_model'])
-        attention_dim = int(config['hyperparameters']['gv_attn_dim'])
 
-        self.gene_variant_attention = GeneVariantAttention(
-            gene_feature_dim=gene_feature_dim,
-            variant_feature_dim=variant_feature_dim,
-            attention_dim=attention_dim,
-            nhead=int(config['hyperparameters']['nhead'])
-        )
+        if self.use_pvc:
+            self.varformer = VarformerTargetIdentifier(
+                config=config,
+                num_mutations=num_mutations,
+                max_seq_len=max_seq_len,
+                d_model=int(config['hyperparameters']['d_model']),
+            )
+
+            # Gene-Variant Attention
+            variant_feature_dim = int(config['hyperparameters']['d_model'])
+            attention_dim = int(config['hyperparameters']['gv_attn_dim'])
+
+            self.gene_variant_attention = GeneVariantAttention(
+                gene_feature_dim=gene_feature_dim,
+                variant_feature_dim=variant_feature_dim,
+                attention_dim=attention_dim,
+                nhead=int(config['hyperparameters']['nhead'])
+            )
+        else:
+            self.varformer = None
+            self.gene_variant_attention = None
+            attention_dim = 0
 
         # num_layers = int(config['hyperparameters']['num_layers'])
         # inp_dim_classifier = gene_feature_dim + attention_dim
@@ -302,29 +310,30 @@ class MultiModalTargetIdentifier(torch.nn.Module):
         self.spearman = SpearmanCorrCoef()
 
     def forward(self, x, mask=None):
-        # 1. Process GC and GO features through their linear layers
-        z_gc = self.gc_projection(x['gc'][0])
-        z_go = self.go_projection(x['go'][0])
+        device = next(self.parameters()).device
+
+        x_gc = x['gc'][0].to(device)
+        x_go = x['go'][0].to(device)
+
+        z_gc = self.gc_projection(x_gc)
+        z_go = self.go_projection(x_go)
         z_gene = torch.cat([z_gc, z_go], dim=-1)
 
-        # 2. Get gene embeddings from Varformer
-        z_pvc = self.varformer(
-            {
-                'pathogenicity': x['pvc']['pathogenicity'],
-                'position': x['pvc']['position'],
-                'mutation': x['pvc']['mutation']
-            },
-            mask=mask
-        )
+        if self.use_pvc:
+            pvc_input = {
+                'pathogenicity': x['pvc']['pathogenicity'].to(device),
+                'position': x['pvc']['position'].to(device),
+                'mutation': x['pvc']['mutation'].to(device),
+            }
 
-        # Apply Gene-Variant Attention
-        z_var, variant_attn_weights = self.gene_variant_attention(z_gene, z_pvc)
+            z_pvc = self.varformer(pvc_input, mask=mask)
+            z_var, variant_attn_weights = self.gene_variant_attention(z_gene, z_pvc)
+            concatenated_features = torch.cat([z_gene, z_var], dim=-1)
+        else:
+            z_var = None
+            variant_attn_weights = None
+            concatenated_features = z_gene
 
-        # 3. Concatenate processed GC, GO, and PVC features
-        concatenated_features = torch.cat([z_gene, z_var], dim=-1)
-
-        # 4. Feed concatenated features into the linear classifier
-        # RuntimeError: mat1 and mat2 shapes cannot be multiplied (128x336 and 672x168)
         logits = self.classification_head(concatenated_features).squeeze()
         probabilities = torch.sigmoid(logits)
         binary_predictions = (probabilities > float(self.hyperparams['threshold'])).float()
