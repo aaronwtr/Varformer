@@ -1,6 +1,7 @@
+import argparse
+import os
 import training
 import testing
-import argparse
 
 from inference import run_inference_pipeline
 from utils import utils
@@ -18,17 +19,13 @@ def main(mode="training", config=None, output=None):
             for seed in seeds:
                 print(f"Training model with seed: {seed}")
                 config["hyperparameters"]["seed"] = seed
-                training.setup_training(pvc=True, go=True, gc=True, config=config)
+                training.setup_training(pvc=False, go=True, gc=True, config=config)
         else:
-            training.setup_training(pvc=True, go=True, gc=True, config=config)
+            training.setup_training(pvc=False, go=True, gc=True, config=config)
     elif mode == "tuning":
         training.tune()
     elif mode == "testing":
         testing.run_test(pvc=True, go=True, gc=True, config=config, extract_genes_only=True)
-    elif mode == "inference":
-        if not output:
-            raise ValueError("For inference mode --output arguments is required.")
-        run_inference_pipeline(output=output)
     elif mode == "logistic_regression":
         if config['hyperparameters']['multiseed']:
             seeds = [7, 32, 42, 85, 482]
@@ -49,7 +46,7 @@ def main(mode="training", config=None, output=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Varformer.")
-    parser.add_argument("--mode", type=str, default="kfold_teacher", help="Mode to run the script in.")
+    parser.add_argument("--mode", type=str, default="training", help="Mode to run the script in.")
     parser.add_argument("--config", type=str, help="Path to the configuration file.")
     parser.add_argument("--output", type=str, help="Path to save the predictions (required for inference).")
     args = parser.parse_args()
