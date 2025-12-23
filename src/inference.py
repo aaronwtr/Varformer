@@ -69,6 +69,16 @@ def run_inference(model, test_data, batch_size=32):
     predictions = trainer.predict(model, dataloaders=test_data)
     return predictions
 
+def run_inference_pipeline(config, ckpt_path, save_path):
+    data = prepare_data(config)
+    model = load_model(ckpt_path, data, config)
+    # filter all genes to just the unlabeled genes
+    filtered_data = None
+    predictions = run_inference(model, filtered_data)
+    # save predictions to .xlsx file
+    predictions.to_excel(save_path)
+    print("Predictions saved to {}".format(save_path))
+
 
 def extract_base_variant_id(variant_id_with_consequence):
     # Split by underscore and take the first 4 parts (chr, pos, ref, alt)
@@ -484,7 +494,7 @@ def plot_attention_vs_gwas(gwas_path, per_gene_dfs, variant_map, disease_code="E
     return df
 
 
-def run_inference_pipeline(output):
+def varformer_prediction_analysis(output):
     config_path = 'cluster_config.yml'
     with open(config_path, 'r') as stream:
         config = yaml.safe_load(stream)

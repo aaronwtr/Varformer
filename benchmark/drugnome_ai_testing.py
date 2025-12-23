@@ -18,7 +18,6 @@ import warnings
 import fnmatch
 import wandb
 
-
 def map_gene_names(list_of_genes: list, source_type: str, target_type: str) -> dict:
     idmap = br.IDMapper('all')
     list_of_targets = idmap.convert(list_of_genes, source_type, target_type)
