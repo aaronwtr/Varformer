@@ -106,18 +106,21 @@ class ModuleDataProcessor:
         pvc_data = data['pvc']
 
         # Get gene sets from each modality
-        ensg_pvc = set(pvc_data.data.keys())
-        if 'labels' in ensg_pvc:  # Remove 'labels' key if present
-            ensg_pvc.remove('labels')
-
         ensg_gc = set(gc_data.data.index.tolist())
         ensg_go = set(go_data.data.index.tolist())
 
-        # Find the intersection of all three sets
-        common_genes = ensg_gc.intersection(ensg_pvc).intersection(ensg_go)
+        if pvc_data is not None:
+            ensg_pvc = set(pvc_data.data.keys())
+            if 'labels' in ensg_pvc:
+                ensg_pvc.remove('labels')
+            common_genes = ensg_gc.intersection(ensg_go).intersection(ensg_pvc)
+            print(f"Original gene counts: GC={len(ensg_gc)}, GO={len(ensg_go)}, PVC={len(ensg_pvc)}")
+        else:
+            ensg_pvc = None
+            common_genes = ensg_gc.intersection(ensg_go)
+            print(f"Original gene counts: GC={len(ensg_gc)}, GO={len(ensg_go)}, PVC=None")
 
-        print(f"Original gene counts: GC={len(ensg_gc)}, GO={len(ensg_go)}, PVC={len(ensg_pvc)}")
-        print(f"Common genes across all modalities: {len(common_genes)}")
+        print(f"Common genes across active modalities: {len(common_genes)}")
 
         # Keep only common genes in each modality
         data['gc'].data = data['gc'].data[data['gc'].data.index.isin(common_genes)]
@@ -126,18 +129,22 @@ class ModuleDataProcessor:
         data['go'].data = data['go'].data.loc[:, (data['go'].data != 0).any(axis=0)]
 
         # For PVC data which is in dictionary format
-        for gene in list(pvc_data.data.keys()):
-            if gene != 'labels' and gene not in common_genes:
-                pvc_data.data.pop(gene)
-                if gene in pvc_data.labels:
-                    pvc_data.labels.pop(gene)
+        if pvc_data is not None:
+            for gene in list(pvc_data.data.keys()):
+                if gene != 'labels' and gene not in common_genes:
+                    pvc_data.data.pop(gene)
+                    if gene in pvc_data.labels:
+                        pvc_data.labels.pop(gene)
 
-        # Verify all modalities now have the same number of genes
+        # Verify all active modalities now have the same number of genes
         gc_count = len(data['gc'].data)
         go_count = len(data['go'].data)
-        pvc_count = len(pvc_data.data) - (1 if 'labels' in pvc_data.data else 0)
 
-        assert gc_count == go_count == pvc_count, "Gene counts don't match across modalities"
+        if pvc_data is not None:
+            pvc_count = len(pvc_data.data) - (1 if 'labels' in pvc_data.data else 0)
+            assert gc_count == go_count == pvc_count, "Gene counts don't match across modalities"
+        else:
+            assert gc_count == go_count, "Gene counts don't match across modalities"
 
         gc_data = data['gc']
         go_data = data['go']
@@ -160,6 +167,8 @@ class ModuleDataProcessor:
             combined_train = {}
             combined_features = 0
             for module, preprocessor in data.items():
+                if preprocessor is None:
+                    continue
                 feature_data = preprocessor.data
                 combined_features += preprocessor.num_features
                 if isinstance(feature_data, pd.DataFrame):
@@ -168,7 +177,7 @@ class ModuleDataProcessor:
                 elif isinstance(feature_data, dict):
                     feature_data = {gene: feature_data[gene] for gene in feature_data if
                                     gene not in combined_test_genes}
-                    feature_data.pop('labels')
+                    feature_data.pop('labels', None)
                 else:
                     raise ValueError("Unsupported data type for feature_data. Should be DataFrame for GC and GO. Should"
                                      "be dict for PVC.")
@@ -258,16 +267,23 @@ class ModuleDataProcessor:
             pfam_pos_data_gc = gc_data.data[gc_data.data.index.isin(pfam_ensg)]
             pfam_pos_data_go = go_data.data[go_data.data.index.isin(pfam_ensg)]
 
-            pvc_labels = pvc_data.data['labels']
-            pfam_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pfam_ensg if ensg in list(pvc_labels.keys())}
+            if pvc_data is not None:
+                pvc_labels = pvc_data.data['labels']
+                pfam_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pfam_ensg if ensg in list(pvc_labels.keys())}
+                rcnt_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in rcnt_ensg if ensg in list(pvc_labels.keys())}
+                pharos_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pharos_ensg if
+                                       ensg in list(pvc_labels.keys())}
+            else:
+                pvc_labels = None
+                pfam_pos_data_pvc = None
+                rcnt_pos_data_pvc = None
+                pharos_pos_data_pvc = None
 
             rcnt_pos_data_gc = gc_data.data[gc_data.data.index.isin(rcnt_ensg)]
             rcnt_pos_data_go = go_data.data[go_data.data.index.isin(rcnt_ensg)]
-            rcnt_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in rcnt_ensg if ensg in list(pvc_labels.keys())}
 
             pharos_pos_data_gc = gc_data.data[gc_data.data.index.isin(pharos_ensg)]
             pharos_pos_data_go = go_data.data[go_data.data.index.isin(pharos_ensg)]
-            pharos_pos_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pharos_ensg if ensg in list(pvc_labels.keys())}
             pharos_pos_data_gc.loc[:, 'target'] = 1
             pharos_pos_data_go['target'] = 1
 
@@ -313,37 +329,55 @@ class ModuleDataProcessor:
             negative_test_ids = negative_test_ids.drop(pfam_negs.index)
             pfam_neg_data_gc = gc_data.data[gc_data.data.index.isin(pfam_negs.index)]
             pfam_neg_data_go = go_data.data[go_data.data.index.isin(pfam_negs.index)]
-            pfam_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pfam_negs.index if
-                                 ensg in list(pvc_labels.keys())}
+            if pvc_data is not None:
+                pfam_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pfam_negs.index if
+                                     ensg in list(pvc_labels.keys())}
+            else:
+                pfam_neg_data_pvc = None
 
             rcnt_negs = negative_test_ids.sample(n=num_rcnt_neg, random_state=self.config['hyperparameters']['seed'])
             negative_test_ids = negative_test_ids.drop(rcnt_negs.index)
             rcnt_neg_data_gc = gc_data.data[gc_data.data.index.isin(rcnt_negs.index)]
             rcnt_neg_data_go = go_data.data[go_data.data.index.isin(rcnt_negs.index)]
-            rcnt_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in rcnt_negs.index if
-                                 ensg in list(pvc_labels.keys())}
+            if pvc_data is not None:
+                rcnt_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in rcnt_negs.index if
+                                     ensg in list(pvc_labels.keys())}
+            else:
+                rcnt_neg_data_pvc = None
 
             pharos_negs = negative_test_ids.sample(n=num_pharos_neg,
                                                    random_state=self.config['hyperparameters']['seed'])
             pharos_neg_data_gc = gc_data.data[gc_data.data.index.isin(pharos_negs.index)]
             pharos_neg_data_go = go_data.data[go_data.data.index.isin(pharos_negs.index)]
-            pharos_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pharos_negs.index if
-                                   ensg in list(pvc_labels.keys())}
+            if pvc_data is not None:
+                pharos_neg_data_pvc = {ensg: pvc_data.data[ensg] for ensg in pharos_negs.index if
+                                       ensg in list(pvc_labels.keys())}
+            else:
+                pharos_neg_data_pvc = None
             pharos_neg_data_gc.loc[:, 'target'] = 0
             pharos_neg_data_go.loc[:, 'target'] = 0
 
             # Combine positive and negative data for each source
             pfam_data_gc = pd.concat([pfam_pos_data_gc, pfam_neg_data_gc])
             pfam_data_go = pd.concat([pfam_pos_data_go, pfam_neg_data_go])
-            pfam_data_pvc = {**pfam_pos_data_pvc, **pfam_neg_data_pvc}
+            # pfam_data_pvc = {**pfam_pos_data_pvc, **pfam_neg_data_pvc}
 
             rcnt_data_gc = pd.concat([rcnt_pos_data_gc, rcnt_neg_data_gc])
             rcnt_data_go = pd.concat([rcnt_pos_data_go, rcnt_neg_data_go])
-            rcnt_data_pvc = {**rcnt_pos_data_pvc, **rcnt_neg_data_pvc}
+            # rcnt_data_pvc = {**rcnt_pos_data_pvc, **rcnt_neg_data_pvc}
 
             pharos_data_gc = pd.concat([pharos_pos_data_gc, pharos_neg_data_gc])
             pharos_data_go = pd.concat([pharos_pos_data_go, pharos_neg_data_go])
-            pharos_data_pvc = {**pharos_pos_data_pvc, **pharos_neg_data_pvc}
+            # pharos_data_pvc = {**pharos_pos_data_pvc, **pharos_neg_data_pvc}
+
+            if pvc_data is not None:
+                pfam_data_pvc = {**pfam_pos_data_pvc, **pfam_neg_data_pvc}
+                rcnt_data_pvc = {**rcnt_pos_data_pvc, **rcnt_neg_data_pvc}
+                pharos_data_pvc = {**pharos_pos_data_pvc, **pharos_neg_data_pvc}
+            else:
+                pfam_data_pvc = None
+                rcnt_data_pvc = None
+                pharos_data_pvc = None
 
             test_labels = {}
 
@@ -373,6 +407,9 @@ class ModuleDataProcessor:
                     "pvc": pharos_data_pvc
                 }
             }
+
+            # save test_data to file:
+
 
             pfam_ids_all = pfam_data_gc.index.tolist()
             rcnt_ids_all = rcnt_data_gc.index.tolist()
@@ -528,7 +565,7 @@ class VarformerDataset(Dataset):
     def __len__(self) -> int:
         return len(self.variant_features)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, int, str]:
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         gene_name = self.gene_names[idx]
         variants_for_gene = self.variant_features[gene_name]
         gene_label = self.labels[gene_name]
@@ -577,12 +614,16 @@ class MultiModalData(Dataset):
         self.max_variants = max_variants
         self.test_source = test_source
         self.torch_dtype = dtype
+        if isinstance(self.torch_dtype, str):
+            self.torch_dtype = torch.bfloat16 if dtype == 'bf16-mixed' else torch.float32
+            torch.set_default_dtype(self.torch_dtype)
+
 
     def __len__(self):
         if self.data is not None:
             return len(self.labels)
         elif self.variant_data is not None:
-            return len(self.variant_features)
+            return len(self.variant_data['labels'])
         else:
             return 0
 
