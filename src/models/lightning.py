@@ -10,18 +10,20 @@ from models.target_identifier import MultiModalTargetIdentifier
 
 class MultiModalLightningTargetIdentifier(pl.LightningModule):
     def __init__(self, config, num_samples_per_class, num_features_gc, num_features_go, num_mutations, max_seq_len,
-                 num_genes, class_prior):
+                 num_genes, class_prior, use_pvc=True):
         self.save_hyperparameters()
         super().__init__()
 
         self.config = config['hyperparameters']
+        self.use_pvc = use_pvc
         self.model = MultiModalTargetIdentifier(
             config=config,
             num_features_gc=num_features_gc,
             num_features_go=num_features_go,
             num_mutations=num_mutations,
             max_seq_len=max_seq_len,
-            num_genes=num_genes
+            num_genes=num_genes,
+            use_pvc=use_pvc
         )
         self.pi = class_prior
         self.val_step_probas = []
@@ -31,7 +33,6 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         features = batch
-        mask = features['pvc']['mask']
         return self._common_step(features, batch_idx, 'predict')
 
     def _common_step(self, batch, batch_idx, step_type):
@@ -40,32 +41,33 @@ class MultiModalLightningTargetIdentifier(pl.LightningModule):
         if self.trainer.sanity_checking:
             return None
         else:
-            # Extract labels (assuming the pvc branch holds the PU labels)
-            for key, data in batch.items():
-                if key == "pvc":
-                    pvc_labels = batch[key]['labels']
-                    test_source = batch[key]['test_source'][0]
-                    gene_names = batch[key]['gene_name']
-
-            # Forward pass through the model (using the pvc mask for transformer inputs)
-            if self.config['return_attn']:
-                logits, probas, bin_preds, z_var, attn_weights = self.model(
-                    {
-                        'gc': batch['gc'],
-                        'go': batch['go'],
-                        'pvc': batch['pvc']
-                    },
-                    batch["pvc"]["mask"]
-                )
+            # Extract labels and gene names
+            # When PVC is present, get from pvc branch; otherwise get from gc branch
+            if self.use_pvc:
+                pvc_labels = batch['pvc']['labels']
+                test_source = batch['pvc']['test_source'][0]
+                gene_names = batch['pvc']['gene_name']
+                mask = batch['pvc']['mask']
             else:
-                logits, probas, bin_preds, z_var = self.model(
-                    {
-                        'gc': batch['gc'],
-                        'go': batch['go'],
-                        'pvc': batch['pvc']
-                    },
-                    batch["pvc"]["mask"]
-                )
+                # Labels come from gc branch when no pvc
+                pvc_labels = batch['gc'][1]  # (features, labels) tuple
+                test_source = batch['gc'][2] if len(batch['gc']) > 2 else None
+                gene_names = None  # Not available without pvc
+                mask = None
+
+            # Build input dict
+            model_input = {
+                'gc': batch['gc'],
+                'go': batch['go'],
+            }
+            if self.use_pvc:
+                model_input['pvc'] = batch['pvc']
+
+            # Forward pass
+            if self.config['return_attn']:
+                logits, probas, bin_preds, z_var, attn_weights = self.model(model_input, mask)
+            else:
+                logits, probas, bin_preds, z_var = self.model(model_input, mask)
 
             labels = pvc_labels  # Use the labels from pvc branch
             eps = 1e-8  # to avoid log(0)
