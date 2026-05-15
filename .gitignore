@@ -263,3 +263,19 @@ src/models/archive/
 
 # Brainstorming specs and design docs — local only, never pushed
 docs/superpowers/
+
+# Refactor: keep paper LaTeX local, keep local refactor scratch local
+paper/danio-paper/
+_archive/
+
+# Generated / log files that shouldn't be tracked
+src/Varformer.egg-info/
+src/train_error.log
+src/train_output.log
+src/tune_error.log
+src/train_*.log
+src/tune_*.log
+*.log
+sn-article.log
+texput.log
+line255.txt
