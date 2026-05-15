@@ -270,6 +270,8 @@ _archive/
 
 # Generated / log files that shouldn't be tracked
 src/Varformer.egg-info/
+varformer.egg-info/
+*.egg-info/
 src/train_error.log
 src/train_output.log
 src/tune_error.log
