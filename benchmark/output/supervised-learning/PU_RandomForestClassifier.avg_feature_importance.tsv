@@ -1,0 +1,325 @@
+features	RandomForestClassifier
+monoclonalCount	0.00012312045941817833
+ppiCount	3.12279400234447e-05
+hpm_prot_spec	4.072402201915288e-05
+hpa_RNA_spec	6.337195989541683e-05
+hpa_prot_spec	3.9695285294313596e-05
+GTEx_spec	5.2207967942362774e-05
+uniprot_seq_len	5.488991713995439e-05
+DGIdb_interaction_types	0.0005784922488082504
+Re_L1_seed_genes_overlap	0.00010458147181120582
+Re_L2_seed_genes_overlap	0.00023745718409396297
+in_web_L1_experimental_seed_genes_overlap	8.035752910211949e-05
+in_web_L2_experimental_seed_genes_overlap	0.00017059714808265915
+in_web_L1_inferred_seed_genes_overlap	0.00019207942571993587
+in_web_L2_inferred_seed_genes_overlap	0.00027587670880464365
+ctd_affects^abundance	5.4524721499226e-07
+ctd_affects^acetylation	0.0
+ctd_affects^activity	9.297783388821309e-06
+ctd_affects^binding	8.415557359689273e-05
+ctd_affects^chemical synthesis	0.0
+ctd_affects^cleavage	0.0
+ctd_affects^cotreatment	6.415610137652214e-05
+ctd_affects^expression	4.988926129085029e-05
+ctd_affects^folding	3.7470280232875026e-07
+ctd_affects^localization	2.9618382100775845e-06
+ctd_affects^metabolic processing	8.342929343101716e-06
+ctd_affects^methylation	1.9728651376422074e-05
+ctd_affects^phosphorylation	3.668915055208815e-08
+ctd_affects^reaction	4.509061688423564e-05
+ctd_affects^response to substance	3.989064229645901e-05
+ctd_affects^secretion	1.644498248657599e-06
+ctd_affects^splicing	1.4778292368279377e-06
+ctd_affects^sumoylation	0.0
+ctd_affects^transport	1.7880908153484381e-06
+ctd_affects^uptake	1.6684512893215797e-06
+ctd_decreases^ADP-ribosylation	0.0
+ctd_decreases^abundance	2.987518923290731e-06
+ctd_decreases^acetylation	0.0
+ctd_decreases^activity	0.00017360304908083316
+ctd_decreases^chemical synthesis	3.452811955278524e-07
+ctd_decreases^cleavage	0.0
+ctd_decreases^degradation	7.019254875571987e-07
+ctd_decreases^localization	0.0
+ctd_decreases^metabolic processing	1.972293177137503e-06
+ctd_decreases^methylation	1.9416763471017643e-05
+ctd_decreases^reaction	0.00011834509165874893
+ctd_decreases^response to substance	3.3128396501910554e-05
+ctd_decreases^secretion	2.6081832960246764e-07
+ctd_decreases^stability	0.0
+ctd_decreases^sumoylation	3.0109531315328985e-06
+ctd_decreases^uptake	5.106844610166164e-07
+ctd_increases^ADP-ribosylation	2.582477896646152e-06
+ctd_increases^O-linked glycosylation	7.338654191509745e-06
+ctd_increases^abundance	3.06161955122404e-05
+ctd_increases^acetylation	2.7741132046902854e-08
+ctd_increases^activity	8.755378239090186e-05
+ctd_increases^chemical synthesis	1.3788223570020005e-05
+ctd_increases^cleavage	7.579734932977766e-06
+ctd_increases^degradation	1.8342505152876866e-06
+ctd_increases^export	0.0
+ctd_increases^hydrolysis	4.2189167059763606e-08
+ctd_increases^import	1.1494585721648316e-06
+ctd_increases^methylation	3.533946214945395e-05
+ctd_increases^mutagenesis	1.946427519076556e-06
+ctd_increases^oxidation	2.5836912564633698e-06
+ctd_increases^reduction	2.0467039420628372e-07
+ctd_increases^response to substance	2.187948220098224e-05
+ctd_increases^stability	1.2516623368290697e-06
+ctd_increases^sumoylation	3.4557097334283063e-06
+ctd_increases^transport	6.850439008461468e-06
+ctd_increases^ubiquitination	9.388284521195073e-08
+ctd_increases^uptake	9.193643339832534e-06
+ctd_uniqueInteractions	0.0002001254476463294
+ctd_otherInteractionsCount	9.555716167909887e-06
+ctd_ARMS-mediated activation	6.465600892514908e-07
+ctd_Activation of HOX genes during differentiation	0.0
+ctd_Adaptive Immune System	1.3497415458200778e-06
+ctd_Adrenergic signaling in cardiomyocytes	4.918201300866517e-07
+ctd_Alcoholism	2.8597001514858246e-07
+ctd_Alzheimer's disease	4.875834004533071e-07
+ctd_Antigen processing: Ubiquitination & Proteasome degradation	6.744634380608635e-07
+ctd_Apelin signaling pathway	2.800097693963461e-07
+ctd_Apoptosis	2.480671445843545e-06
+ctd_Asparagine N-linked glycosylation	9.92738492188922e-07
+ctd_Autophagy - animal	4.736456967101718e-07
+ctd_Axon guidance	5.232425281775158e-06
+ctd_Beta-catenin independent WNT signaling	1.8754376793764512e-07
+ctd_Biological oxidations	1.6021001657179e-05
+ctd_Breast cancer	3.053238626982829e-07
+ctd_C-type lectin receptors (CLRs)	5.634696843289233e-08
+ctd_Calcium signaling pathway	6.320205656071695e-07
+ctd_Cap-dependent Translation Initiation	0.0
+ctd_Cardiac conduction	1.4977775952625296e-06
+ctd_Cell Cycle	1.7169249121322671e-06
+ctd_Cell Cycle Checkpoints	7.512774628673307e-07
+ctd_Cell adhesion molecules (CAMs)	1.3029330925336702e-06
+ctd_Cell cycle	8.434181229867012e-07
+ctd_Cell surface interactions at the vascular wall	8.00447430285047e-07
+ctd_Cell-Cell communication	5.391406463689955e-07
+ctd_Cellular Senescence	1.2677018373891233e-07
+ctd_Cellular responses to stress	1.0520374719564013e-06
+ctd_Chemokine signaling pathway	3.025794344993934e-07
+ctd_Chromatin modifying enzymes	1.3135184053986524e-07
+ctd_Cilium Assembly	8.789097032633523e-07
+ctd_Class A/1 (Rhodopsin-like receptors)	3.5192362844171638e-06
+ctd_Clathrin-mediated endocytosis	0.0
+ctd_Cytokine Signaling in Immune system	1.1620146667194048e-05
+ctd_Cytokine-cytokine receptor interaction	5.8922618091575195e-06
+ctd_DNA Double-Strand Break Repair	1.0781516666763578e-06
+ctd_DNA Repair	1.5800300971354991e-06
+ctd_Deubiquitination	3.766300669549657e-07
+ctd_Developmental Biology	3.400563635233644e-06
+ctd_Disease	3.2216734093443867e-06
+ctd_Diseases of signal transduction	1.5275962164269752e-06
+ctd_Dopaminergic synapse	3.799857938211857e-07
+ctd_Downstream signaling events of B Cell Receptor (BCR)	4.0979883819759627e-07
+ctd_ER to Golgi Anterograde Transport	0.0
+ctd_Endocytosis	3.892794006634506e-07
+ctd_Epigenetic regulation of gene expression	0.0
+ctd_Epstein-Barr virus infection	7.722011486576635e-07
+ctd_Extracellular matrix organization	7.354597080595009e-07
+ctd_Factors involved in megakaryocyte development and platelet production	3.2586655027535015e-08
+ctd_Fatty acid, triacylglycerol, and ketone body metabolism	8.093959755877114e-07
+ctd_Fluid shear stress and atherosclerosis	8.030661428443176e-07
+ctd_Focal adhesion	1.0383813670277814e-06
+ctd_FoxO signaling pathway	1.801662250749815e-06
+ctd_G alpha (i) signalling events	1.0877442029128326e-06
+ctd_G alpha (q) signalling events	6.20990282371992e-07
+ctd_G alpha (s) signalling events	1.782107125127865e-06
+ctd_G2/M Transition	2.746152818544872e-06
+ctd_GAB1 signalosome	0.0
+ctd_GPCR downstream signaling	9.129566327875895e-06
+ctd_Gastrin-CREB signalling pathway via PKC and MAPK	3.6285451601728925e-06
+ctd_Gene Expression	4.830084346378423e-06
+ctd_Gene Silencing by RNA	0.0
+ctd_Generic Transcription Pathway	4.577199517661818e-06
+ctd_Glycerophospholipid biosynthesis	3.613656093233473e-07
+ctd_Glycosaminoglycan metabolism	9.128251364339289e-06
+ctd_HATs acetylate histones	8.671501453526155e-07
+ctd_HIV Infection	8.441691393484179e-07
+ctd_HIV Life Cycle	2.9029025870150477e-07
+ctd_HTLV-I infection	1.4033797992585664e-06
+ctd_Hemostasis	1.821916253304604e-06
+ctd_Hepatitis B	1.6433132787869212e-06
+ctd_Hepatitis C	5.464368004273281e-07
+ctd_Herpes simplex infection	5.844475057152004e-07
+ctd_Hippo signaling pathway	3.16536656700452e-07
+ctd_Host Interactions of HIV factors	5.993017064831761e-07
+ctd_Huntington's disease	4.811424503336459e-07
+ctd_Immune System	5.029146870661513e-06
+ctd_Immunoregulatory interactions between a Lymphoid and a non-Lymphoid cell	2.5693259544721926e-07
+ctd_Infectious disease	5.826818230702092e-07
+ctd_Influenza A	1.1149062144456772e-06
+ctd_Influenza Infection	4.624254172288559e-11
+ctd_Innate Immune System	5.879161596526302e-06
+ctd_Insulin signaling pathway	3.8345532301033655e-07
+ctd_Interferon Signaling	7.69338475176411e-07
+ctd_Intra-Golgi and retrograde Golgi-to-ER traffic	3.2359084603762457e-07
+ctd_Ion channel transport	1.379056889314522e-06
+ctd_Jak-STAT signaling pathway	4.567274147844194e-07
+ctd_Keratinization	0.0
+ctd_M Phase	5.051295947250026e-07
+ctd_MAPK signaling pathway	2.6106598458895275e-06
+ctd_Major pathway of rRNA processing in the nucleolus and cytosol	2.787183524435545e-07
+ctd_Measles	1.7567654694250816e-06
+ctd_Membrane Trafficking	1.5944418458196772e-06
+ctd_Metabolic pathways	1.173453870945652e-05
+ctd_Metabolism	1.6805493876997843e-05
+ctd_Metabolism of amino acids and derivatives	1.896061257869314e-06
+ctd_Metabolism of carbohydrates	4.127865564842034e-06
+ctd_Metabolism of lipids and lipoproteins	2.9826236704413674e-06
+ctd_Metabolism of proteins	3.860660207083756e-06
+ctd_Metabolism of vitamins and cofactors	2.788786574092585e-07
+ctd_MicroRNAs in cancer	7.781455150578025e-07
+ctd_Mitotic G1-G1/S phases	1.2780123524844635e-06
+ctd_Mitotic Prophase	4.43653032392415e-07
+ctd_NOD-like receptor signaling pathway	3.814206538781414e-07
+ctd_Natural killer cell mediated cytotoxicity	1.5146909358511789e-06
+ctd_Neuroactive ligand-receptor interaction	2.6032008143341474e-05
+ctd_Neuronal System	2.9644362165191876e-06
+ctd_Neurotransmitter Receptor Binding And Downstream Transmission In The  Postsynaptic Cell	3.030537883465417e-07
+ctd_Neutrophil degranulation	3.0370220917025436e-06
+ctd_Non-alcoholic fatty liver disease (NAFLD)	1.3048795482579812e-06
+ctd_Olfactory Signaling Pathway	6.372013022933454e-08
+ctd_Oocyte meiosis	6.111676907328655e-07
+ctd_Organelle biogenesis and maintenance	1.0818593887198512e-06
+ctd_Osteoclast differentiation	2.555768821800007e-07
+ctd_Oxidative Stress Induced Senescence	2.0504317385170175e-08
+ctd_Oxidative phosphorylation	0.0
+ctd_Oxytocin signaling pathway	9.546202674667311e-08
+ctd_PI3K-Akt signaling pathway	2.2710569202455567e-06
+ctd_PPARA activates gene expression	3.064295767644395e-07
+ctd_Parkinson's disease	7.946656014140275e-08
+ctd_Pathways in cancer	1.8175359010446586e-06
+ctd_Peptide ligand-binding receptors	2.7675079769061435e-06
+ctd_Phagosome	8.448353161687953e-07
+ctd_Phospholipase D signaling pathway	0.0
+ctd_Phospholipid metabolism	6.009248650082039e-07
+ctd_Platelet activation, signaling and aggregation	2.4907209222911087e-06
+ctd_Platelet degranulation	8.228671107529174e-07
+ctd_Post-translational protein modification	1.578544450615853e-06
+ctd_Processing of Capped Intron-Containing Pre-mRNA	0.0
+ctd_Programmed Cell Death	1.9814837852851336e-07
+ctd_Protein processing in endoplasmic reticulum	1.0178463959902625e-07
+ctd_Proteoglycans in cancer	1.2969387793406294e-06
+ctd_Purine metabolism	1.4984369682025213e-06
+ctd_RHO GTPase Effectors	5.700273301643212e-07
+ctd_RNA Polymerase I, RNA Polymerase III, and Mitochondrial Transcription	0.0
+ctd_RNA Polymerase II Transcription	8.993712887791079e-10
+ctd_RNA transport	0.0
+ctd_Rap1 signaling pathway	6.138933225641591e-07
+ctd_Ras signaling pathway	2.980588049571847e-06
+ctd_Regulation of TP53 Activity	3.6037319043198047e-07
+ctd_Regulation of actin cytoskeleton	1.8226450622239952e-06
+ctd_Respiratory electron transport, ATP synthesis by chemiosmotic coupling, and heat production by uncoupling proteins.	2.086187862658106e-06
+ctd_Rho GTPase cycle	2.0263558364099685e-07
+ctd_Ribosome	2.3222800467009165e-08
+ctd_S Phase	5.126938244942017e-07
+ctd_SLC-mediated transmembrane transport	6.3083143598921064e-06
+ctd_Signal Transduction	2.7562823924556827e-05
+ctd_Signaling by Hedgehog	3.310906264081761e-08
+ctd_Signaling by Rho GTPases	1.9201285247967037e-07
+ctd_Signaling by Wnt	3.5538796443536846e-07
+ctd_Signaling pathways regulating pluripotency of stem cells	8.145761734019951e-08
+ctd_Spliceosome	0.0
+ctd_Systemic lupus erythematosus	2.3224250801433774e-07
+ctd_Tight junction	1.0050325356329913e-07
+ctd_Toll Like Receptor 4 (TLR4) Cascade	3.666680693036996e-07
+ctd_Transcriptional Regulation by TP53	8.605248789448925e-07
+ctd_Transcriptional misregulation in cancer	2.595367745217449e-07
+ctd_Transmembrane transport of small molecules	1.3265367580830981e-05
+ctd_Tuberculosis	3.184204929711279e-07
+ctd_Ubiquitin mediated proteolysis	2.9814425642484216e-07
+ctd_Viral carcinogenesis	1.0307323402873235e-06
+ctd_Wnt signaling pathway	2.6897049482625295e-07
+ctd_cAMP signaling pathway	2.7866673425200455e-06
+ctd_cGMP-PKG signaling pathway	1.2485593185101983e-07
+ctd_mTOR signaling pathway	1.8105774042793678e-07
+ctd_otherPathways	0.00010833970893502507
+string_db_L1_protein_seed_genes_overlap	0.0002916432383210809
+string_db_L2_protein_seed_genes_overlap	0.00029781211818730917
+string_db_L1_protein_sseed_genes_overlap_hmean_score	0.00013586404118981602
+string_db_L1_physical_sseed_genes_overlap_hmean_score	6.238241918467028e-05
+OMIM_uniq_diseases	1.7344322696211e-05
+IPR_d_AAA+ ATPase domain	7.439575502158193e-08
+IPR_d_Ankyrin repeat-containing domain	3.0504958117183854e-07
+IPR_d_BTB/POZ domain	4.8009665125133044e-08
+IPR_d_C2 domain	0.0
+IPR_d_Cadherin-like	0.0
+IPR_d_EF-hand domain	1.4144511392590034e-07
+IPR_d_EGF-like calcium-binding domain	8.996238397538476e-07
+IPR_d_EGF-like domain	9.350692887182925e-07
+IPR_d_Fibronectin type III	2.505015258980591e-07
+IPR_d_GPCR, rhodopsin-like, 7TM	5.006398898653477e-06
+IPR_d_Homeobox domain	2.868375386964475e-07
+IPR_d_Immunoglobulin I-set	0.0
+IPR_d_Immunoglobulin V-set domain	1.8780349409659203e-06
+IPR_d_Immunoglobulin subtype	6.667351917142284e-07
+IPR_d_Immunoglobulin subtype 2	3.4605128798143e-07
+IPR_d_Krueppel-associated box	3.81657333284213e-09
+IPR_d_Myc-type, basic helix-loop-helix (bHLH) domain	3.135431153545351e-08
+IPR_d_PDZ domain	1.4336404691449778e-06
+IPR_d_Pleckstrin homology domain	5.9426718734322207e-08
+IPR_d_Protein kinase domain	7.269830797099743e-05
+IPR_d_RNA recognition motif domain	2.33128616183938e-09
+IPR_d_SH2 domain	1.266508663683132e-06
+IPR_d_SH3 domain	1.4762562094834928e-06
+IPR_d_Serine proteases, trypsin domain	6.60100033348537e-08
+IPR_d_Serine-threonine/tyrosine-protein kinase, catalytic domain	1.27001090054302e-05
+IPR_d_Small GTP-binding protein domain	1.068317227853854e-06
+IPR_d_Tetratricopeptide repeat-containing domain	5.13300491778003e-07
+IPR_d_WD40-repeat-containing domain	8.304145713315007e-07
+IPR_d_Zinc finger C2H2-type	5.90066634561508e-07
+IPR_d_Zinc finger, RING-type	0.0
+IPR_f_Actin family	0.0
+IPR_f_BTB-kelch protein	0.0
+IPR_f_Cytochrome P450	0.0
+IPR_f_Cytochrome P450, E-class, group I	0.0
+IPR_f_G protein-coupled receptor, rhodopsin-like	2.9795015690802315e-06
+IPR_f_GPCR, family 2, secretin-like	0.0
+IPR_f_Keratin-associated protein	0.0
+IPR_f_Major facilitator superfamily	5.3386196015681096e-08
+IPR_f_Major facilitator,  sugar transporter-like	2.1105036008959384e-06
+IPR_f_Neurotransmitter-gated ion-channel	6.116547127963906e-07
+IPR_f_Nuclear hormone receptor	2.2284541276906393e-07
+IPR_f_Olfactory receptor	7.501710902489203e-07
+IPR_f_P-type ATPase	0.0
+IPR_f_PMP-22/EMP/MP20/Claudin superfamily	0.0
+IPR_f_Serpin family	0.0
+IPR_f_Short-chain dehydrogenase/reductase SDR	8.140051911841775e-06
+IPR_f_Small GTPase	0.0
+IPR_f_Small GTPase superfamily, Ras-type	0.0
+IPR_f_Transforming growth factor-beta-related	0.0
+IPR_sf_Alpha/Beta hydrolase fold	1.3903606059021164e-07
+IPR_sf_Armadillo-like helical	0.0
+IPR_sf_Armadillo-type fold	0.0
+IPR_sf_C-type lectin fold	2.3687535419025527e-07
+IPR_sf_C2 domain superfamily	3.7448123529305104e-07
+IPR_sf_Concanavalin A-like lectin/glucanase domain superfamily	3.2745767113522094e-07
+IPR_sf_EF-hand domain pair	8.916006027378441e-09
+IPR_sf_Growth factor receptor cysteine-rich domain superfamily	3.577702949397203e-07
+IPR_sf_Helix-loop-helix DNA-binding domain superfamily	7.688121211946308e-08
+IPR_sf_Homeobox-like domain superfamily	5.310624466981851e-07
+IPR_sf_Immunoglobulin E-set	0.0
+IPR_sf_KRAB domain superfamily	4.2131975227487505e-08
+IPR_sf_Leucine-rich repeat domain superfamily	3.182095621299533e-06
+IPR_sf_MFS transporter superfamily	3.9857598268485255e-07
+IPR_sf_NAD(P)-binding domain superfamily	5.265414505179179e-06
+IPR_sf_P-loop containing nucleoside triphosphate hydrolase	3.915324910002133e-06
+IPR_sf_PH-like domain superfamily	6.6710413858679e-07
+IPR_sf_Papain-like cysteine peptidase superfamily	0.0
+IPR_sf_S-adenosyl-L-methionine-dependent methyltransferase	7.530514950244901e-08
+IPR_sf_SKP1/BTB/POZ domain superfamily	3.790802132053116e-07
+IPR_sf_Sterile alpha motif/pointed domain superfamily	7.10627723534391e-07
+IPR_sf_Tetratricopeptide-like helical domain superfamily	4.3905473804622256e-08
+IPR_sf_Thioredoxin-like superfamily	6.565768444841394e-07
+IPR_sf_Ubiquitin-like domain superfamily	5.823018235655137e-07
+IPR_sf_WD40-repeat-containing domain superfamily	3.870432319319386e-08
+IPR_sf_WD40/YVTN repeat-like-containing domain superfamily	8.312565495891915e-07
+IPR_sf_Winged helix DNA-binding domain superfamily	2.470565148094533e-06
+IPR_sf_Winged helix-like DNA-binding domain superfamily	3.3695460088563547e-06
+IPR_sf_Zinc finger C2H2 superfamily	3.870725426679336e-07
+IPR_sf_Zinc finger, FYVE/PHD-type	0.0
+IPR_sf_Zinc finger, RING/FYVE/PHD-type	3.2986762980516364e-07
+IPR_sf_von Willebrand factor A-like domain superfamily	7.534520917759233e-07
