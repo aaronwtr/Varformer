@@ -32,8 +32,8 @@ from shutil import copyfileobj
 from utils.utils import (load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx,
                          map_gene_names)
 from utils.merge_am_data import merge_am_data
-from utils.preprocessing import featurise
-from models.target_identifier import MultiModalTargetIdentifier
+# from utils.preprocessing import featurise
+# from models.target_identifier import MultiModalTargetIdentifier
 from models.lightning import MultiModalLightningTargetIdentifier
 
 
@@ -69,6 +69,9 @@ class GeneCharacterisationPreprocessor:
 
         # Get all holdout_genes
         self.get_holdout_genes()
+
+        features_dir = self.config['paths']['FEATURES_DIR']
+        population = self.config['hyperparameters']['population']
 
         # check if features dir exists if not create it
         if not os.path.exists(f"{self.config['paths']['FEATURES_DIR']}/{self.population}/"):
@@ -156,6 +159,14 @@ class GeneCharacterisationPreprocessor:
         # label_df = label_df[['symbol', 'label']]
         # label_df.to_pickle("../data/labels/processed_labels.pkl")
         # print('break')
+
+        # Create population directory if it doesn't exist
+        os.makedirs(f'{features_dir}/{population}', exist_ok=True)
+
+        # Save the GC features (self.data contains the final feature matrix)
+        gc_features_path = f'{features_dir}/{population}/gene_characterisation_features.pkl'
+        with open(gc_features_path, 'wb') as f:
+            pkl.dump(self.data, f)
 
     def _get_files(self):
         """
@@ -2126,6 +2137,13 @@ class ModelPreprocessorInference:
             self.config
         )
 
+        test_loaders = self.create_test_loaders(
+            self.data_raw,
+            self.pvc_data,
+            self.torch_dtype,
+            self.config
+        )
+
         # Initialize model dimensions
         gc_features_dim = self.data_raw['gc'].shape[1] - 1 if 'target' in self.data_raw['gc'].columns else self.data_raw['gc'].shape[1]
         go_features_dim = self.data_raw['go'].shape[1] - 1 if 'target' in self.data_raw['go'].columns else self.data_raw['go'].shape[1]
@@ -2146,7 +2164,7 @@ class ModelPreprocessorInference:
         )
 
         accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'
-        return model, unlabeled_loader, self.config['hyperparameters'], accelerator
+        return unlabeled_loader, test_loaders, gc_features_dim, go_features_dim, num_genes, num_mutations
 
     def initialise_model(self, train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes_dict,
                          test_data_dict, torch_dtype, config):
@@ -2245,6 +2263,115 @@ class ModelPreprocessorInference:
         )
 
         return unlabeled_loader, dataset_size
+
+    @staticmethod
+    def create_test_loaders(config, consolidated_data, pvc_data, torch_dtype):
+        """
+        Create dataloaders for test genes (approved targets) from pfam, rcnt, and pharos test sets.
+
+        Args:
+            config: Configuration dictionary
+            consolidated_data: Dictionary with 'gc', 'go' dataframes containing ALL genes (train + test)
+            pvc_data: Dictionary mapping gene_id -> variant tensor
+            torch_dtype: Torch data type string ('bf16-mixed' or 'float32')
+
+        Returns:
+            Dictionary of test loaders: {'pfam': loader, 'rcnt': loader, 'pharos': loader}
+        """
+        import dataloader as dl
+        import pickle
+
+        # Convert dtype string to torch dtype
+        if torch_dtype == 'bf16-mixed':
+            dtype = torch.bfloat16
+        else:
+            dtype = torch.float32
+
+        test_loaders = {}
+
+        # Load test gene IDs from pickle file
+        test_labels_file = config['paths'].get('TEST_LABELS_FILE')
+
+        try:
+            with open(test_labels_file, 'rb') as f:
+                test_gene_ids = pickle.load(f)
+            print(f"  Loaded test gene IDs from {test_labels_file}")
+        except FileNotFoundError:
+            print(f"  ⚠️ Test labels file not found: {test_labels_file}")
+            return {}
+
+        # Create loader for each test set
+        for test_name in ['pfam', 'rcnt', 'pharos']:
+            if test_name not in test_gene_ids:
+                print(f"  Skipping {test_name}: not in test labels file")
+                continue
+
+            test_genes = test_gene_ids[test_name]
+
+            # Filter to genes available in all modalities
+            available_genes = [
+                gene for gene in test_genes
+                if gene in consolidated_data['gc'].index and
+                   gene in consolidated_data['go'].index and
+                   gene in pvc_data
+            ]
+
+            if len(available_genes) == 0:
+                print(f"  Skipping {test_name}: no genes available in data ({len(test_genes)} total)")
+                continue
+
+            print(f"  Creating {test_name} loader: {len(available_genes)}/{len(test_genes)} genes")
+
+            # Create datasets (same pattern as unlabeled)
+            gc_data_dict = {
+                gene: consolidated_data['gc'].loc[gene].drop(labels=['target'], errors='ignore').values.flatten()
+                for gene in available_genes
+            }
+
+            go_data_dict = {
+                gene: consolidated_data['go'].loc[gene].drop(labels=['target'], errors='ignore').values.flatten()
+                for gene in available_genes
+            }
+
+            # Labels are all 1 (positive/approved targets)
+            labels = {gene: 1 for gene in available_genes}
+
+            gc_dataset = dl.MultiModalData(
+                data=gc_data_dict,
+                labels=labels,
+                gene_names=available_genes,
+                dtype=dtype
+            )
+
+            go_dataset = dl.MultiModalData(
+                data=go_data_dict,
+                labels=labels,
+                gene_names=available_genes,
+                dtype=dtype
+            )
+
+            pvc_dataset = dl.MultiModalData(
+                data=None,
+                labels=None,
+                gene_names=available_genes,
+                dtype=dtype,
+                variant_data={
+                    'data': {gene: pvc_data[gene] for gene in available_genes},
+                    'labels': labels
+                },
+                max_variants=config['hyperparameters']['max_seq_len']
+            )
+
+            # Create loader
+            test_loaders[test_name] = dl.MultiModalDataLoader(
+                datasets={'gc': gc_dataset, 'go': go_dataset, 'pvc': pvc_dataset},
+                batch_size=min(32, len(available_genes)),
+                shuffle=False
+            )
+
+        print(f"✓ Created {len(test_loaders)} test loaders: {list(test_loaders.keys())}")
+        return test_loaders
+
 
 def extract_pvc_features(gene, pvc_data, max_variants=100):
     """
@@ -2455,7 +2582,7 @@ class LogisticRegressionPreprocessor:
             if gene in labels:
                 gc_feat = train_features['gc'].get(gene, np.zeros(train_raw['gc'].shape[1]))
                 go_feat = train_features['go'].get(gene, np.zeros(train_raw['go'].shape[1]))
-                pvc_feat = train_features['pvc'].get(gene, np.zeros(12))  # 12 PVC features
+                pvc_feat = train_features['pvc'].get(gene, np.zeros(10))  # 10 PVC features
                 combined_train_features[gene] = np.concatenate([gc_feat, go_feat, pvc_feat])
                 train_labels_list.append((gene, labels[gene]))
 
@@ -2463,7 +2590,7 @@ class LogisticRegressionPreprocessor:
             if gene in labels:
                 gc_feat = val_features['gc'].get(gene, np.zeros(val_raw['gc'].shape[1]))
                 go_feat = val_features['go'].get(gene, np.zeros(val_raw['go'].shape[1]))
-                pvc_feat = val_features['pvc'].get(gene, np.zeros(12))
+                pvc_feat = val_features['pvc'].get(gene, np.zeros(10))
                 combined_val_features[gene] = np.concatenate([gc_feat, go_feat, pvc_feat])
                 val_labels_list.append((gene, labels[gene]))
 
@@ -2475,7 +2602,7 @@ class LogisticRegressionPreprocessor:
                 if gene in test_labels:
                     gc_feat = test_features[test_set]['gc'].get(gene, np.zeros(test_gc_shape))
                     go_feat = test_features[test_set]['go'].get(gene, np.zeros(test_go_shape))
-                    pvc_feat = test_features[test_set]['pvc'].get(gene, np.zeros(12))
+                    pvc_feat = test_features[test_set]['pvc'].get(gene, np.zeros(10))
                     combined_test_features[test_set][gene] = np.concatenate([gc_feat, go_feat, pvc_feat])
                     test_labels_dict[test_set].append((gene, test_labels[gene]))
 
@@ -2510,7 +2637,7 @@ class LogisticRegressionPreprocessor:
         feature_composition = {
             'gc_features': train_raw['gc'].shape[1],
             'go_features': train_raw['go'].shape[1],
-            'pvc_features': 12,
+            'pvc_features': 10,
             'total_features': X_train.shape[1]
         }
         print(f"Feature composition: {feature_composition}")

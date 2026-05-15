@@ -260,3 +260,6 @@ src/models/archive/
 /data/targetPrioritisation/part-00140-be56a120-41f3-4c08-9a1b-660f19de8f20-c000.snappy.parquet
 /benchmark/DrugnomeAI-release/drugnome_ai/output/supervised-learning/models/iteration_2/RandomForestClassifier_8.model
 /benchmark/DrugnomeAI-release/drugnome_ai/output/supervised-learning/models/iteration_2/RandomForestClassifier_8.model
+
+# Brainstorming specs and design docs — local only, never pushed
+docs/superpowers/

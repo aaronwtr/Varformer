@@ -19,9 +19,9 @@ def main(mode="training", config=None, output=None):
             for seed in seeds:
                 print(f"Training model with seed: {seed}")
                 config["hyperparameters"]["seed"] = seed
-                training.setup_training(pvc=False, go=True, gc=True, config=config)
+                training.setup_training(pvc=True, go=True, gc=True, config=config)
         else:
-            training.setup_training(pvc=False, go=True, gc=True, config=config)
+            training.setup_training(pvc=True, go=True, gc=True, config=config)
     elif mode == "tuning":
         training.tune()
     elif mode == "testing":

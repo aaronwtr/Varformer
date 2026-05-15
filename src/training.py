@@ -376,6 +376,14 @@ def run_inference(data):
         torch_dtype=config['hyperparameters']['precision'],
     )
 
+    # --- Create test loaders for approved genes ---
+    test_loaders = ModelPreprocessorInference.create_test_loaders(
+        config=config,
+        consolidated_data=consolidated_data,
+        pvc_data=consolidated_pvc,
+        torch_dtype=config['hyperparameters']['precision']
+    )
+
     if unlabeled_loader is None:
         print("No unlabeled data found. Exiting inference.")
         return
@@ -400,7 +408,6 @@ def run_inference(data):
     num_features_gc = first_split['train']['gc'].shape[1] - 1 if 'target' in first_split['train']['gc'].columns else \
     first_split['train']['gc'].shape[1]
     num_features_go = first_split['train']['go'].shape[1]
-
 
     # Load checkpoint
     ckpt_folder = f"{config['paths']['CKPT_PATH']}{config['hyperparameters']['population']}"
@@ -435,12 +442,29 @@ def run_inference(data):
 
         # Save results
         output_path_folder = (f"{config['paths']['VARFORMER_PREDICT_OUTPUT']}{config['hyperparameters']['population']}"
-                       f"/unlabeled_predictions/")
+                       f"/unlabeled_predictions")
         output_path = f"{output_path_folder}/unlabeled_predictions_seed_{seed}.pkl"
         os.makedirs(output_path_folder, exist_ok=True)
         torch.save(prediction_results, output_path)
         print(f"Unified predictions saved to {output_path}")
         print(f"Total predictions: {len(prediction_results)}")
+
+        # Run inference on test genes (approved targets)
+        if len(test_loaders) > 0:
+            print("Running inference on test genes (approved targets)...")
+            all_test_results = []
+
+            for test_name, test_loader in test_loaders.items():
+                print(f"  Processing {test_name}...")
+                test_results = trainer.predict(model=model, dataloaders=test_loader)
+                all_test_results.extend(test_results)
+
+            # Save approved predictions
+            approved_output_folder = f"{config['paths']['VARFORMER_PREDICT_OUTPUT']}{config['hyperparameters']['population']}/approved_predictions/"
+            os.makedirs(approved_output_folder, exist_ok=True)
+            approved_output_path = f"{approved_output_folder}approved_predictions_seed_{seed}.pkl"
+            torch.save(all_test_results, approved_output_path)
+            print(f"Approved predictions saved to {approved_output_path}")
 
 
 def setup_training(**modules):
