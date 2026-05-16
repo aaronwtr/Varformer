@@ -82,7 +82,7 @@ class Hyperparameters(BaseModel):
         setattr(self, key, value)
 
     def __contains__(self, key: str) -> bool:
-        return key in self.model_fields
+        return key in self.__class__.model_fields
 
     def get(self, key: str, default: Any = None) -> Any:
         return getattr(self, key, default)
