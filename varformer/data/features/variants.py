@@ -17,48 +17,24 @@ from torch.utils.data import DataLoader
 
 from utils.utils import aa_to_idx, three_letter_aa_to_idx
 from utils.merge_am_data import merge_am_data
-from varformer.data.features.gc import GeneCharacterisationPreprocessor
 
 
-class PopulationVariantPreprocessor(GeneCharacterisationPreprocessor):
+class PopulationVariantPreprocessor:
     """
     This class processes protein variant information, specifically it obtains and processes amino acid sequence embeddings
     and missense variant pathogenicity embeddings, and it processes protein structure confidence scores, in particular
     it generates and processes embeddings of AlphaFold's residue-wise pLDDT score.
     """
 
-    def __init__(self, config, gcp=None):
-        if not gcp:
-            super().__init__(config)
-            self.gcp_data = self.data
-            self.full_gcp_data = self.full_data
-            self.gcp_pfam_pos = self.pfam_pos_data
-            self.gcp_rcnt_pos = self.rcnt_pos_data
-            self.gcp_pharos_pos = self.pharos_pos_data
-            self.gcp_pfam_neg = self.pfam_neg_data
-            self.gcp_rcnt_neg = self.rcnt_neg_data
-            self.gcp_pharos_neg = self.pharos_neg_data
-            self.gcp_ce_data = self.ce_data
-            self.gcp_population = self.population
-            # self.gcp_acmg = gcp.acmg_data
-        else:
-            self.gcp = gcp
-            self.pop_data = gcp.pop_data
-            self.target = gcp.target
-            self.gcp_data = gcp.data
-            self.full_gcp_data = gcp.full_data
-            self.population = gcp.population
-            # self.gcp_pfam_pos = gcp.pfam_pos_data
-            # self.gcp_rcnt_pos = gcp.rcnt_pos_data
-            # self.gcp_pharos_pos = gcp.pharos_pos_data
-            # self.gcp_pfam_neg = gcp.pfam_neg_data
-            # self.gcp_rcnt_neg = gcp.rcnt_neg_data
-            # self.gcp_pharos_neg = gcp.pharos_neg_data
-            # self.drgbl_targets_pfam = gcp.drgbl_targets_pfam
-            # self.rcnt_targets_fda = gcp.rcnt_targets_fda
-            # self.chem_targets_pharos = gcp.chem_targets_pharos
-            self.ensg_ids = gcp.ensg_ids
-            self.gcp_ce_data = gcp.ce_data
+    def __init__(self, config, gcp):
+        self.gcp = gcp
+        self.pop_data = gcp.pop_data
+        self.target = gcp.target
+        self.gcp_data = gcp.data
+        self.full_gcp_data = gcp.full_data
+        self.population = gcp.population
+        self.ensg_ids = gcp.ensg_ids
+        self.gcp_ce_data = gcp.ce_data
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
