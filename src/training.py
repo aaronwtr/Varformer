@@ -58,8 +58,11 @@ def tune():
 
 
 def objective(trial: optuna.trial.Trial) -> float:
-    with open("cluster_config.yml", 'r') as stream:
-        config = yaml.safe_load(stream)
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from varformer.config import Config
+    config = Config.load()
     pl.seed_everything(config['hyperparameters']['seed'])
     # Explicit categorical values for hyperparameters
     config['hyperparameters']['lr_start'] = trial.suggest_categorical(
