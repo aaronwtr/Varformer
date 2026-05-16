@@ -12,7 +12,8 @@ def main(mode="training", config=None, output=None):
         config = utils.load_config(config)
     else:
         print("No config file provided, using default config!")
-        config = utils.load_default_config()
+        from varformer.config import Config
+        config = Config.load()
     if mode == "training":
         if config['hyperparameters']['multiseed']:
             seeds = [7, 32, 42, 85, 482]
