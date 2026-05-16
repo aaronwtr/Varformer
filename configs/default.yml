@@ -1,0 +1,48 @@
+# Default hyperparameters for Varformer.
+# Population, seed, and use_pvc are runtime args, NOT config keys.
+# (`mode` is provisionally kept here for backward-compat; will go away in Phase 5.)
+hyperparameters:
+  # training & optimization
+  optimizer: AdamW
+  pusb: True
+  precision: "16-mixed"
+  epochs: 100
+  gradient_clip_val: null
+  batch_size: 128
+  grad_accum: null
+  lr_start: 1e-4
+  lr_end: 1e-5
+  scheduler: "CosineAnnealingLR"
+  T0: 200
+  weight_decay: 3e-4
+  use_pvc: True
+
+  # architecture
+  varformer_usage: True
+  gc_width: 32
+  go_width: 512
+  max_seq_len: 1024
+  num_encoder_layers: 3
+  d_model: 256
+  dim_feedforward: 4096
+  gv_attn_dim: 256
+  nhead: 8
+  depth_cls_head: 4
+  reduction: null
+  dropout: 0.3
+  threshold: 0.5
+
+  # logistic regression baseline
+  C: 1
+  penalty: "l2"
+  solver: "liblinear"
+  max_iter: 1000
+  class_weight: "balanced"
+
+  # misc
+  wandb: True
+  return_attn: True
+  num_workers: 0
+  seed: 57
+  multiseed: True
+  mode: "inference"
