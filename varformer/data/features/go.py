@@ -8,10 +8,8 @@ import numpy as np
 
 from tqdm import tqdm
 
-from varformer.data.features.gc import GeneCharacterisationPreprocessor
 
-
-class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
+class GeneOntologyPreprocessor:
     """
     This class processes gene ontology data, specifically it extracts and processes data from the Human Protein Atlas:
     biological processes, molecular functions, subcellular locations and tissue specificity.
@@ -19,49 +17,19 @@ class GeneOntologyPreprocessor(GeneCharacterisationPreprocessor):
     gene_ontology_features: pd.DataFrame
     data: pd.DataFrame
 
-    def __init__(self, config, gcp=None):
+    def __init__(self, config, gcp):
+        print("Gene Ontology Preprocessor booting up...")
+        self.config = config
+        self.gcp = gcp
+        self.pop_data = gcp.pop_data
+        self.target = gcp.target
+        self.gcp_data = gcp.data
+        self.full_gcp_data = gcp.full_data
+        self.population = gcp.population
+
         self.hpa_tissue_specificity_features = None
         self.gtex_tissue_specificity_features = None
         self.protein_atlas_feature_names = None
-        if not gcp:
-            super(GeneOntologyPreprocessor, self).__init__(config)
-            self.gcp_data = self.data
-            self.full_gcp_data = self.full_data
-            self.gcp_pfam_pos = self.pfam_pos_data
-            self.gcp_rcnt_pos = self.rcnt_pos_data
-            self.gcp_pharos_pos = self.pharos_pos_data
-            self.gcp_pfam_neg = self.pfam_neg_data
-            self.gcp_rcnt_neg = self.rcnt_neg_data
-            self.gcp_pharos_neg = self.pharos_neg_data
-            self.gcp_population = self.population
-            # self.gcp_acmg = gcp.acmg_data
-        else:
-            self.gcp = gcp
-            self.pop_data = gcp.pop_data
-            self.target = gcp.target
-            self.gcp_data = gcp.data
-            self.full_gcp_data = gcp.full_data
-            self.population = gcp.population
-            # self.gcp_pfam_pos = gcp.pfam_pos_data
-            # self.gcp_rcnt_pos = gcp.rcnt_pos_data
-            # self.gcp_pharos_pos = gcp.pharos_pos_data
-            # self.gcp_pfam_neg = gcp.pfam_neg_data
-            # self.gcp_rcnt_neg = gcp.rcnt_neg_data
-            # self.gcp_pharos_neg = gcp.pharos_neg_data
-            # self.pfam_ids = gcp.pfam_ids
-            # self.rcnt_ids = gcp.rcnt_ids
-            # self.pharos_ids = gcp.pharos_ids
-            # self.pfam_neg_data = gcp.pfam_neg_data
-            # self.rcnt_neg_data = gcp.rcnt_neg_data
-            # self.pharos_neg_data = gcp.pharos_neg_data
-            # self.pfam_ids_all = gcp.pfam_ids_all
-            # self.rcnt_ids_all = gcp.rcnt_ids_all
-            # self.pharos_ids_all = gcp.pharos_ids_all
-            # self.drgbl_targets_pfam = gcp.drgbl_targets_pfam
-            # self.gcp_acmg = gcp.acmg_data
-
-        print("Gene Ontology Preprocessor booting up...")
-        self.config = config
 
         # reset data variables
         self.pfam_data = None
