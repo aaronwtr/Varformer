@@ -12,10 +12,12 @@
 #SBATCH -p andrena
 #SBATCH -A pilot_andrena
 #SBATCH -n 1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=96G
+#SBATCH --cpus-per-gpu=14
+#SBATCH --mem-per-cpu=7G
 #SBATCH --gres=gpu:1
 #SBATCH -t 1:00:00
+# andrena enforces MaxMemPerCPU=7680M. 14 CPUs × 7 GB = 98 GB total — enough
+# for the legacy preprocessor (~17GB processed_pop_data + features in RAM).
 
 set -e
 
