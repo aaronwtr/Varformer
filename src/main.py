@@ -1,9 +1,6 @@
 import argparse
-import os
 import training
-import testing
 
-from inference import run_inference_pipeline
 from utils import utils
 
 
@@ -26,20 +23,24 @@ def main(mode="training", config=None, output=None):
     elif mode == "tuning":
         training.tune()
     elif mode == "testing":
-        testing.run_test(pvc=True, go=True, gc=True, config=config, extract_genes_only=True)
+        from varformer.inference.evaluate import run_test
+        run_test(pvc=True, go=True, gc=True, config=config, extract_genes_only=True)
     elif mode == "logistic_regression":
+        from paper.baselines.logistic_regression import logistic_regression
         if config['hyperparameters']['multiseed']:
             seeds = [7, 32, 42, 85, 482]
             for seed in seeds:
                 print(f"Training logistic regression model with seed: {seed}")
                 config["hyperparameters"]["seed"] = seed
-                training.logistic_regression(pvc=True, go=True, gc=True, config=config)
+                logistic_regression(pvc=True, go=True, gc=True, config=config)
         else:
-            training.logistic_regression(pvc=True, go=True, gc=True, config=config)
+            logistic_regression(pvc=True, go=True, gc=True, config=config)
     elif mode == "random":
-        training.random(pvc=True, go=True, gc=True, config=config)
+        from paper.baselines.random_baseline import random
+        random(pvc=True, go=True, gc=True, config=config)
     elif mode == "drugnome_ai":
-        training.drugnome_ai(pvc=True, go=True, gc=True, config=config)
+        from paper.baselines.drugnome_ai import drugnome_ai
+        drugnome_ai(pvc=True, go=True, gc=True, config=config)
     else:
         raise ValueError("Invalid mode. Pick from 'training', 'tuning', 'testing', 'inference', 'random',"
                          "logistic_regression, 'drugnome_ai or others.")
@@ -52,4 +53,3 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, help="Path to save the predictions (required for inference).")
     args = parser.parse_args()
     main(mode=args.mode, config=args.config, output=args.output)
-
