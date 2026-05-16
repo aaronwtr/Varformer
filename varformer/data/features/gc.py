@@ -29,78 +29,37 @@ from Bio import SeqIO
 from torch.utils.data import DataLoader
 from shutil import copyfileobj
 
+from typing import Optional
+
 from utils.utils import (load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx,
                          map_gene_names)
 from utils.merge_am_data import merge_am_data
 from models.lightning import MultiModalLightningTargetIdentifier
+from varformer.data.features.base import BaseFeatures
 
 
 # data preprocessing
-class GeneCharacterisationPreprocessor:
+class GeneCharacterisationPreprocessor(BaseFeatures):
     """
     This class loads and combines the different data sources into a single feature matrix to be fed into our model.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, base: Optional[BaseFeatures] = None):
         print("Gene Characterisation Preprocessor is booting up...")
-        self.config = config
-        self.population = self.config['hyperparameters']['population']
-        self.files_and_dirs = os.listdir(self.config['paths']['DATA_DIR'])
-        self.data_name_mapping = {
-            "CTD_chem_gene_ixns.csv": "CTD Chemical-Gene Interactions",
-            "gnomad.exomes.v2.1.1.lof_metrics.by_gene.csv": "gnomAD Exomes Loss-of-Function Metrics",
-            "9606.protein.links.full.v12.0.txt": "STRING Protein-Protein Interactions",
-            "part-00000-31eba8be-aff8-492e-9edb-4b5e8c821237-c000.snappy.parquet": "Mouse Knockout Phenotypes"
-        }
-        self.files = self._get_files()
-        self.datasets = self.load_data()
+        if base is not None:
+            # Adopt the BaseFeatures state without re-running its __init__
+            self.__dict__.update(base.__dict__)
+        else:
+            super().__init__(config)
+
+        features_dir = self.config['paths']['FEATURES_DIR']
+        population = self.config['hyperparameters']['population']
 
         self.chem_features = None
         self.gnomad_features = None
         self.mouse_ko_features = None
         self.gene_essentiality_features = None
         self.ppi_features = None
-
-        self.drgbl_targets_pfam = None
-        self.rcnt_targets_fda = None
-        self.chem_targets_pharos = None
-
-        # Get all holdout_genes
-        self.get_holdout_genes()
-
-        features_dir = self.config['paths']['FEATURES_DIR']
-        population = self.config['hyperparameters']['population']
-
-        # check if features dir exists if not create it
-        if not os.path.exists(f"{self.config['paths']['FEATURES_DIR']}/{self.population}/"):
-            os.makedirs(f"{self.config['paths']['FEATURES_DIR']}/{self.population}/")
-
-        # Load population exome data
-        self.pop_data = self.load_pop_data()
-        if isinstance(self.pop_data, pol.DataFrame):
-            self.pop_data = self.pop_data.to_pandas()
-
-        # check if the SWISSPROT and TREMBL columns are present, if they are, skip this bit
-        if 'SWISSPROT' in self.pop_data.columns or 'TREMBL' in self.pop_data.columns:
-            self.pop_data["UNIPROT"] = self.pop_data["SWISSPROT"].fillna(self.pop_data["TREMBL"])
-            self.pop_data = self.pop_data.drop(["SWISSPROT", "TREMBL"], axis=1)
-        self.pop_data[['ref_aa', 'alt_aa']] = self.pop_data['Amino_acids'].str.split('/', expand=True)
-        self.pop_data['protein_variant'] = (self.pop_data['ref_aa'] + self.pop_data['Protein_position'].astype(str) +
-                                            self.pop_data['alt_aa'])
-        self.pop_data['variant_id'] = (self.pop_data['CHROM'] + '_' + self.pop_data['POS'].astype(str) + '_' +
-                                       self.pop_data['REF'] + '_' + self.pop_data['ALT'] + '_' +
-                                       self.pop_data['protein_variant'])
-
-        self.pop_data = self.pop_data.drop_duplicates(subset=['variant_id'])
-
-        # Load raw G&H missense variant data
-        if self.population == 'elgh':
-            if not os.path.exists(self.config['paths']['RAW_GH']):
-                miva_feature_matrix = self.pop_data[self.pop_data['Consequence'] == 'missense_variant']
-                miva_feature_matrix = miva_feature_matrix[["Gene", "UNIPROT", "variant_id"]]
-                miva_feature_matrix = miva_feature_matrix.rename(columns={"Gene": "ENSG"})
-                miva_feature_matrix = miva_feature_matrix.drop_duplicates(subset="ENSG")
-                miva_feature_matrix.to_pickle(self.config['paths']['RAW_GH'])
 
         feature_extractors = {
             #   'chem_features.pkl': self.chem_feature_extractor,
@@ -158,282 +117,11 @@ class GeneCharacterisationPreprocessor:
         with open(gc_features_path, 'wb') as f:
             pkl.dump(self.data, f)
 
-    def _get_files(self):
-        """
-        Get the files from the data directory.
-        """
-        files = []
-        populations = ['elgh', 'amr', 'nfe']
-        populations = [pop for pop in populations if pop != self.population]
-        exclude = ['.DS_Store', 'elgh', 'clinvar', 'VariPred', 'string_data_counts.pkl', 'gnomad_data'] + populations
-        data_dir = self.config['paths']['DATA_DIR']
-
-        for file in self.files_and_dirs:
-            if "." in file and file not in exclude:
-                file_path = f"{data_dir}/{file}"
-                # Check if path contains population1/population2 pattern
-                if not self._contains_population_pattern(file_path, populations):
-                    files.append(file_path)
-            elif file not in exclude:
-                file_path = f"{data_dir}/{file}"
-                # Check if the directory path itself contains population pattern before parsing
-                if not self._contains_population_pattern(file_path, populations):
-                    _file = self._safe_dir_parser(file_path)
-                    # Only process if dir_parser returned a valid file path
-                    if _file is not None:
-                        # Check if parsed file path contains population1/population2 pattern
-                        if not self._contains_population_pattern(_file, populations):
-                            files.append(_file)
-
-        return files
-
-    def _contains_population_pattern(self, file_path, populations):
-        """
-        Check if file path contains any population1/population2 pattern.
-
-        Args:
-            file_path (str): The file path to check
-            populations (list): List of population codes to check against
-
-        Returns:
-            bool: True if path contains population1/population2 pattern, False otherwise
-        """
-        # Handle None file_path
-        if file_path is None:
-            return False
-
-        # Get all population codes including the current one
-        all_populations = ['elgh', 'amr', 'nfe']
-
-        # Check for any combination of population1/population2 in the path
-        for pop1 in all_populations:
-            for pop2 in all_populations:
-                if pop1 != pop2:  # Don't check pop1/pop1 patterns
-                    pattern = f"{pop1}/{pop2}"
-                    if pattern in file_path:
-                        return True
-
-        return False
-
-    def _safe_dir_parser(self, path):
-        """
-        Modified directory parser that avoids paths with population1/population2 patterns.
-
-        Args:
-            path (str): Directory path to parse
-
-        Returns:
-            str or None: File path if valid, None otherwise
-        """
-        import os
-
-        # Check if current path contains population pattern
-        if self._contains_population_pattern(path, []):
-            return None
-
-        if not os.path.exists(path):
-            return None
-
-        if os.path.isfile(path):
-            return path
-
-        try:
-            subfiles = os.listdir(path)
-            for subfile in subfiles:
-                subpath = os.path.join(path, subfile)
-
-                # Skip if subpath would create a population pattern
-                if self._contains_population_pattern(subpath, []):
-                    continue
-
-                if os.path.isfile(subpath):
-                    return subpath
-                elif os.path.isdir(subpath):
-                    result = self._safe_dir_parser(subpath)
-                    if result is not None:
-                        return result
-        except (OSError, PermissionError):
-            # Handle cases where directory cannot be accessed
-            pass
-
-        return None
-
-    def _dir_parser(self, path):
-        """
-        Recursive algorithm to parse the directory to get the files and their paths.
-        """
-        exclude = ['.DS_Store', 'elgh', 'archive']
-        subfiles = os.listdir(path)
-        for subfile in subfiles:
-            excl = '\t'.join(exclude)
-            if "." in subfile and subfile not in excl:
-                path = f"{path}/{subfile}"
-                return f"{path}"
-            elif subfile not in excl:
-                path = f"{path}/{subfile}"
-                self._dir_parser(path)
-
-    def load_data(self):
-        """
-        Load the data from the files.
-        """
-        datasets = {}
-        data_dir = self.config['paths']['DATA_DIR']
-        if "datasets.pkl" in os.listdir(self.config['paths']['DATA_DIR']):
-            with open(f'{data_dir}/datasets.pkl', 'rb') as fp:
-                datasets = pkl.load(fp)
-            return datasets
-        else:
-            for file in self.files:
-                file_name = file.split("/")[-1]
-                if file_name in self.data_name_mapping.keys():
-                    file_id = self.data_name_mapping[file_name]
-                    if any(word in file for word in ["csv", "txt"]):
-                        if '9606' not in file:
-                            datasets[file_id] = pd.read_csv(file)
-                        else:
-                            datasets[file_id] = pd.read_csv(file, sep=" ")
-                    elif any(word in file for word in ["xlsx", "xlsb"]):
-                        datasets[file_id] = pd.read_excel(file)
-                    elif "parquet" in file:
-                        datasets[file_id] = pd.read_parquet(file)
-                    else:
-                        raise ValueError(
-                            "The file format is not supported. Make sure data is .csv, .txt, Excel, or parquet.")
-            with open(f'{data_dir}/datasets.pkl', 'wb') as fp:
-                pkl.dump(datasets, fp)
-            return datasets
-
-    def load_pop_data(self):
-        """
-        Load population-exome data. Assumed the data is stored as <pop_id>_exomes_filtered.pkl.
-        pop_ids that are supported are: 'elgh', 'amr', 'afr' and 'nfe'.
-        """
-        assert self.population in ['elgh', 'amr', 'afr', 'nfe'], ("Population must be one of: 'elgh', 'amr', 'afr', or "
-                                                                  "'nfe'.")
-        pop_path = self.config['paths']['POP_DATA'] + f'{self.population}_exomes_filtered.pkl'
-        if not os.path.exists(pop_path):
-            pop_data = self.filter_raw_exomes()
-            return pop_data
-        else:
-            with open(pop_path, "rb") as f:
-                pop_data = pkl.load(f)
-            return pop_data
-
-    def filter_raw_exomes(self):
-        """
-        Filters raw exome variant data for a specific population and saves the processed data.
-
-        This function reads raw exome variant data from a specified Parquet file, processes
-        the data by renaming columns, selecting relevant columns based on specific criteria,
-        removing unnecessary prefixes, and filtering based on population-specific allele
-        frequency. The processed data is then saved as a serialized Pickle file.
-
-        :raises KeyError: If required configuration keys are missing in the `config` attribute.
-
-        :param self: An instance of the class containing this method. The following attributes
-            of the instance are used:
-
-            - `config`: A dictionary containing configuration settings, including file paths
-              under the "paths" key.
-            - `population`: A string representing the population name to filter the data for.
-            - `gh_data`: A DataFrame containing data against which the columns of the variant
-              data are matched.
-
-        :rtype: pandas.DataFrame
-        :return: A Pandas DataFrame containing the filtered variant data.
-        """
-        # path = f"{self.config['paths']['GNOMAD_DATA']}gnomad_{self.population}_variants/gnomad_exomes_{self.population}.parquet"
-        path = f"{self.config['paths']['GNOMAD_DATA']}gnomad_exomes_{self.population}.parquet"
-        gh_data = pd.read_pickle(self.config['paths']['GH_CSQ'])
-
-        variants = pol.read_parquet(path)
-
-        rename_mapping = {
-            'chrom': 'CHROM',
-            'pos': 'POS',
-            'ref': 'REF',
-            'alt': 'ALT'
-        }
-
-        # Get columns that actually exist and need renaming
-        existing_renames = {k: v for k, v in rename_mapping.items() if k in variants.columns}
-
-        if existing_renames:
-            variants = variants.rename(existing_renames)
-
-        gh_columns = set(gh_data.columns.tolist())
-        columns = variants.columns
-
-        # Find all columns that either match exactly or have partial overlap
-        selected_columns = []
-        for col in columns:
-            # Exact match or partial match
-            if ('AF' or 'AC' or 'AN') in col:
-                continue  # Skip AF-related columns except 'AF_<population>'
-            elif (col in gh_columns or
-                  any(gh_col in col or col in gh_col for gh_col in gh_columns)):
-                selected_columns.append(col)
-            else:
-                continue
-
-        if f'AF_{self.population}' not in selected_columns:
-            selected_columns.append(f'AF_{self.population}')
-
-        variants = variants.select(selected_columns)
-
-        variants = variants.rename(
-            {col: col.replace('vep_', '') for col in variants.columns if col.startswith('vep_')})
-        variants.head()
-
-        variants = variants.to_pandas()
-        with open(f"{self.config['paths']['POP_DATA']}{self.population}_exomes_filtered.pkl", "wb") as f:
-            pkl.dump(variants, f)
-
-        return variants
-
     def load_ground_truth(self):
         """
         Load the ground truth data.
         """
         return self.datasets["FDA Approved Drug Targets"]
-
-    def get_holdout_genes(self):
-        # ACMG actionable genes
-        # columns = ['disease', 'gene']
-        # acmg_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name=0)  # sheet 0 is acmg genes
-        # acmg_raw.columns = columns
-        # acmg_raw['gene'] = acmg_raw['gene'].apply(lambda x: x.replace(u'\xa0', u' '))
-        # genes = acmg_raw['gene'].tolist()
-        # genes = [gene.split(' ')[0] for gene in genes]
-        # ensg_gene_map = utils.map_gene_names(genes, 'symb', 'ensg')
-        # ensg_genes = list(ensg_gene_map.values())
-        # ensg_genes = list(set(ensg_genes))
-        # self.acmg_genes = ensg_genes
-
-        # Pfam targets
-        pfam_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name='pfam_drgbl')
-
-        ensg_pfam = pfam_raw['ENSG'].tolist()
-        self.drgbl_targets_pfam = ensg_pfam
-
-        # Check held out test set for common essential genes
-        # common_essentials = pd.read_csv(self.config['paths']['COMMON_ESSENTIALS_PATH'])
-        # common_essentials = common_essentials.rename(columns={common_essentials.columns[0]: 'gene_name'})
-        # common_essentials['gene_name'] = common_essentials['gene_name'].str.split(' ').str[0]
-        # common_essentials_pfam = common_essentials[common_essentials['gene_name'].isin(ensg_pfam)]
-        # print(f"There are {len(common_essentials_pfam)} common essential genes in the Pfam dataset. They are: "
-        #       f"{common_essentials_pfam['gene_name'].tolist()}")
-
-        # Recently approved targets
-        rcnt_app_raw = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name='rcnt_app_targets')
-        rcnt_app_genes = rcnt_app_raw['ENSG'].tolist()
-        self.rcnt_targets_fda = rcnt_app_genes
-
-        # Pharos targets
-        chem_targets_pharos = pd.read_excel(self.config['paths']['TEST_GENES_PATH'], sheet_name='chem_targets')
-        chem_targets_pharos_genes = chem_targets_pharos['ENSG'].tolist()
-        self.chem_targets_pharos = chem_targets_pharos_genes
 
     def load_opentargets_features(self):
         feature_path = self.config['paths']['OT_PATH']
