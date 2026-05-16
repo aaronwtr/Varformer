@@ -281,3 +281,6 @@ src/tune_*.log
 sn-article.log
 texput.log
 line255.txt
+
+# Benchmark reference predictions ARE tracked (override the *.pkl rule above)
+!benchmark/reference/**/*.pkl
