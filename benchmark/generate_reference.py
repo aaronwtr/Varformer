@@ -51,25 +51,20 @@ def generate_for_population(population: str) -> None:
     data = ModuleDataProcessor(gc=True, go=True, pvc=True, psc=False, config=config).process()
     input_genes = _load_input_genes(population)
 
-    # Consolidate train + test like training.run_inference does, then build test_loaders that
-    # contain the labelled test genes (our input set).
+    # process() in mode='inference' returns a LIST of split dicts; each split has
+    # train/test partition of the same common_genes. Concatenating one split's
+    # train+test reconstructs the full gene set for the loader.
     import pandas as pd
-    consolidated_data = {modality: [] for modality in ["gc", "go"]}
-    consolidated_pvc: dict = {}
 
-    if isinstance(data, list):
-        # Older API returns a list of splits
-        splits = data
-    else:
-        splits = [data]
+    splits = data if isinstance(data, list) else [data]
+    first = splits[0]
 
-    for split in splits:
-        for modality in ["gc", "go"]:
-            consolidated_data[modality].append(split["test_data"][modality])
-        consolidated_pvc.update(split["test_data"]["pvc"])
-
-    for modality in ["gc", "go"]:
-        consolidated_data[modality] = pd.concat(consolidated_data[modality], ignore_index=False)
+    consolidated_data = {
+        "gc": pd.concat([first["train"]["gc"], first["test_data"]["gc"]]),
+        "go": pd.concat([first["train"]["go"], first["test_data"]["go"]]),
+    }
+    consolidated_pvc = {**first["train"]["pvc"], **first["test_data"]["pvc"]}
+    consolidated_pvc.pop("labels", None)  # 'labels' is sibling metadata, not a gene entry
 
     test_loaders = ModelPreprocessorInference.create_test_loaders(
         config=config,
@@ -83,10 +78,10 @@ def generate_for_population(population: str) -> None:
         missense_map = pickle.load(f)
     num_mutations = len(missense_map)
 
-    first = splits[0]
-    num_genes = len(first["genes"]) + len(first["test_genes"])
+    # In inference mode, "labels" is the full {gene: label} map of common_genes
+    num_genes = len(first["labels"])
     num_features_gc = first["train"]["gc"].shape[1] - (1 if "target" in first["train"]["gc"].columns else 0)
-    num_features_go = first["train"]["go"].shape[1]
+    num_features_go = first["train"]["go"].shape[1] - (1 if "target" in first["train"]["go"].columns else 0)
 
     ckpt_dir = Path(config["paths"]["CKPT_PATH"]) / population
     output_dir = REPO / "benchmark" / "reference" / population
