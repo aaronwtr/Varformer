@@ -3,10 +3,17 @@
 Moved from src/training.py (tune + objective) in Phase 5.
 """
 import os
+import sys
 import torch
 import optuna
 import wandb
-import utils
+
+# utils lives in src/; ensure it is importable regardless of CWD
+_src_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..', 'src')
+if os.path.abspath(_src_path) not in sys.path:
+    sys.path.insert(0, os.path.abspath(_src_path))
+
+import utils  # noqa: E402
 
 import pytorch_lightning as pl
 
