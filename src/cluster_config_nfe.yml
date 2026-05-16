@@ -1,0 +1,82 @@
+paths:
+  DATA_DIR: "/data/scratch/bty174/genomic-drug-targeting/data"
+  FEATURES_DIR: "/data/scratch/bty174/genomic-drug-targeting/data/features"
+  RAW_GH: "/data/scratch/bty174/genomic-drug-targeting/data/features/raw_miva_feature_matrix.pkl"
+  GH_CSQ: "/data/scratch/bty174/genomic-drug-targeting/data/elgh/gh_parts/processed_gh_data/all_csqs_non_filtered.pkl"
+  ALL_GH: "/data/scratch/bty174/genomic-drug-targeting/data/processed_pop_data/elgh_exomes_filtered.pkl"
+  POP_DATA: "/data/scratch/bty174/genomic-drug-targeting/data/processed_pop_data/"
+  GNOMAD_DATA: "/data/scratch/bty174/genomic-drug-targeting/data/gnomad_data/"
+  VAR_MAP: "/data/scratch/bty174/genomic-drug-targeting/data/elgh/gh_parts/processed_gh_data/variant_to_rs_dict.pkl"
+  CKPT_PATH: "/data/scratch/bty174/genomic-drug-targeting/src/checkpoints/"
+  TEST_LABELS_FILE: "/data/scratch/bty174/genomic-drug-targeting/data/test_data/full_test_labels_per_source.pkl"
+  GENOME_PATH: "/data/scratch/bty174/genomic-drug-targeting/data/scratch/bty174/genomic-drug-targeting/data/hg38.fasta"
+  CITELINE_LABELS: "/data/scratch/bty174/genomic-drug-targeting/data/labels/citeline_manual_labels.pkl"
+  MISSENSE_MAP: "/data/scratch/bty174/genomic-drug-targeting/data/elgh/missense_mutation_map.pkl"
+  GENE_VAR_MAP: "/data/scratch/bty174/genomic-drug-targeting/data/elgh/gene_var_map.pkl"
+  GENE_VAR_LOC_MAP: "/data/scratch/bty174/genomic-drug-targeting/data/elgh/gene_loc_var_map.pkl"
+  MIVA_PATH: "/data/scratch/bty174/genomic-drug-targeting/data/elgh/all_functional.gatk_PASS.FS_30.DP_0.GQ_20.AB_0.01.functional.missingness_lt_0.genotype_counts.present_in_ELGH.n_transcripts_corrected.txt"
+  VARFORMER_PREDICT_OUTPUT: "/data/scratch/bty174/genomic-drug-targeting/data/output/"
+  AM_PATH: "/data/scratch/bty174/genomic-drug-targeting/data/alphamissense/"
+  AM_PATH_ISO: "/data/scratch/bty174/genomic-drug-targeting/data/alphamissense/AlphaMissense_isoforms_hg38.tsv"
+  AM_PATH_CAN: "/data/scratch/bty174/genomic-drug-targeting/data/alphamissense/AlphaMissense_hg38.tsv"
+  OT_PATH: "/data/scratch/bty174/genomic-drug-targeting/data/targetPrioritisation/processed/merged_opentargets_data.pkl"
+  COMMON_ESSENTIALS_PATH: "/data/scratch/bty174/genomic-drug-targeting/data/depmap/CRISPRInferredCommonEssentials.csv" # 23Q2 release
+  GENE_DRUG_EVIDENCE_PATH: "/data/scratch/bty174/genomic-drug-targeting/data/pharmgkb/clinicalAnnotations/clinical_annotations.tsv"
+  PROTEIN_ATLAS_FEATURES: "/data/scratch/bty174/genomic-drug-targeting/data/hpa/proteinatlas.tsv"
+  PPI_FEATURES: "/data/scratch/bty174/genomic-drug-targeting/data/string/9606.protein.links.full.v12.0.txt"
+  TEST_GENES_PATH: "/data/scratch/bty174/genomic-drug-targeting/data/test_data/holdout_genes.xlsx"
+  ADULT_ACTIONABLE_GENES_PATH: "/data/scratch/bty174/genomic-drug-targeting/data/test_data/ACI-overview-adult.tsv"
+  PEDIATRIC_ACTIONABLE_GENES_PATH: "/data/scratch/bty174/genomic-drug-targeting/data/test_data/ACI-overview-pediatric.tsv"
+  BINDING_AFFINITY_PATH: "/data/scratch/bty174/genomic-drug-targeting/data/bindingdb/BindingDB_All_202312.tsv"
+  TISSUE_EXPRESSION_HPA: "/data/scratch/bty174/genomic-drug-targeting/data/hpa/normal_tissue.tsv"
+  TISSUE_EXPRESSION_DESC_PATH: "/data/scratch/bty174/genomic-drug-targeting/data/hpa/rna_single_cell_cluster_description.tsv"
+  TISSUE_EXPRESSION_GTEX: "/data/scratch/bty174/genomic-drug-targeting/data/gtex/GTEx_Analysis_v10_RNASeQCv2.4.2_gene_median_tpm.gct.gz"
+
+
+hyperparameters:
+  # training and optimization
+  optimizer: AdamW
+  pusb: True
+  precision: "16-mixed" # "bf16-mixed"
+  # precision: "32"
+  epochs: 100
+  gradient_clip_val: null
+  batch_size: 128
+  grad_accum: null
+  lr_start: 1e-4
+  lr_end: 1e-5
+  scheduler: "CosineAnnealingLR"
+  T0: 200
+  weight_decay: 3e-4
+  use_pvc: true  # Use to perform variant module ablation
+
+  # architecture
+  varformer_usage: True
+  gc_width: 32
+  go_width: 512
+  max_seq_len: 1024 # varformer
+  num_encoder_layers: 3   # varformer
+  d_model: 256  # varformer
+  dim_feedforward: 4096  # varformer
+  gv_attn_dim: 256  # gene-variant attention
+  nhead: 8  # varformer / gene-variant attention
+  depth_cls_head: 4   # output classification head depth
+  reduction: None # choose from "padding", "pooling" or None
+  dropout: 0.3
+  threshold: 0.5
+
+  # logistic regression
+  C: 1
+  penalty: "l2"
+  solver: "liblinear"
+  max_iter: 1000
+  class_weight: "balanced"
+
+  # misc
+  wandb: True
+  return_attn: True
+  num_workers: 0
+  seed: 57
+  multiseed: True
+  mode: "inference" # "eval" or "inference". Determines which test set we use. The three eval sets or running inference on all unlabeled data.
+  population: "nfe" # "elgh", "amr", "nfe" or "afr"
