@@ -1,0 +1,176 @@
+"""Pydantic config models for Varformer.
+
+Replaces the ad-hoc YAML dict access via `cluster_config_*.yml`. Single source of truth:
+- `configs/default.yml` for hyperparameters
+- `configs/paths/{hpc,local}.yml` for path roots
+
+Path resolution:
+- `data_root`, `ckpt_root` are top-level in the paths YAML.
+- Per-file paths (RAW_GH, OT_PATH, etc.) are *derived* in this module.
+- Profile selected by VARFORMER_PROFILE env var (default 'local').
+
+Backwards-compat:
+- Config['hyperparameters']['d_model'] still works (legacy code uses dict access).
+- Config['paths']['CKPT_PATH'] still resolves to the derived legacy path key.
+"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any, Literal, Optional
+
+import yaml
+from pydantic import BaseModel
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CONFIGS = REPO_ROOT / "configs"
+
+Population = Literal["elgh", "nfe", "afr", "amr"]
+
+
+class Hyperparameters(BaseModel):
+    # training & optimization
+    optimizer: str = "AdamW"
+    pusb: bool = True
+    precision: str = "16-mixed"
+    epochs: int = 100
+    gradient_clip_val: Optional[float] = None
+    batch_size: int = 128
+    grad_accum: Optional[int] = None
+    lr_start: float = 1e-4
+    lr_end: float = 1e-5
+    scheduler: str = "CosineAnnealingLR"
+    T0: int = 200
+    weight_decay: float = 3e-4
+    use_pvc: bool = True
+
+    # architecture
+    varformer_usage: bool = True
+    gc_width: int = 32
+    go_width: int = 512
+    max_seq_len: int = 1024
+    num_encoder_layers: int = 3
+    d_model: int = 256
+    dim_feedforward: int = 4096
+    gv_attn_dim: int = 256
+    nhead: int = 8
+    depth_cls_head: int = 4
+    reduction: Optional[str] = None
+    dropout: float = 0.3
+    threshold: float = 0.5
+
+    # logistic regression baseline
+    C: float = 1.0
+    penalty: str = "l2"
+    solver: str = "liblinear"
+    max_iter: int = 1000
+    class_weight: str = "balanced"
+
+    # misc
+    wandb: bool = True
+    return_attn: bool = True
+    num_workers: int = 0
+    seed: int = 57
+    multiseed: bool = True
+    mode: Literal["eval", "inference"] = "inference"
+
+    # Backwards-compat: legacy code uses dict access.
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        setattr(self, key, value)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.model_fields
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+
+class Paths(BaseModel):
+    data_root: Path
+    ckpt_root: Path
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    @property
+    def legacy(self) -> dict[str, str]:
+        """Map old config keys (DATA_DIR, RAW_GH, ...) to derived paths.
+
+        All values are strings to match the existing legacy access pattern,
+        which often appends to paths via f-string concatenation.
+        """
+        d = self.data_root
+        return {
+            "DATA_DIR": str(d),
+            "FEATURES_DIR": str(d / "features"),
+            "RAW_GH": str(d / "features" / "raw_miva_feature_matrix.pkl"),
+            "GH_CSQ": str(d / "elgh" / "gh_parts" / "processed_gh_data" / "all_csqs_non_filtered.pkl"),
+            "ALL_GH": str(d / "processed_pop_data" / "elgh_exomes_filtered.pkl"),
+            "POP_DATA": str(d / "processed_pop_data") + "/",
+            "GNOMAD_DATA": str(d / "gnomad_data") + "/",
+            "VAR_MAP": str(d / "elgh" / "gh_parts" / "processed_gh_data" / "variant_to_rs_dict.pkl"),
+            "CKPT_PATH": str(self.ckpt_root) + "/",
+            "TEST_LABELS_FILE": str(d / "test_data" / "full_test_labels_per_source.pkl"),
+            "GENOME_PATH": str(d / "hg38.fasta"),
+            "CITELINE_LABELS": str(d / "labels" / "citeline_manual_labels.pkl"),
+            "MISSENSE_MAP": str(d / "elgh" / "missense_mutation_map.pkl"),
+            "GENE_VAR_MAP": str(d / "elgh" / "gene_var_map.pkl"),
+            "GENE_VAR_LOC_MAP": str(d / "elgh" / "gene_loc_var_map.pkl"),
+            "MIVA_PATH": str(d / "elgh" / "all_functional.gatk_PASS.FS_30.DP_0.GQ_20.AB_0.01.functional.missingness_lt_0.genotype_counts.present_in_ELGH.n_transcripts_corrected.txt"),
+            "VARFORMER_PREDICT_OUTPUT": str(d / "output") + "/",
+            "AM_PATH": str(d / "alphamissense") + "/",
+            "AM_PATH_ISO": str(d / "alphamissense" / "AlphaMissense_isoforms_hg38.tsv"),
+            "AM_PATH_CAN": str(d / "alphamissense" / "AlphaMissense_hg38.tsv"),
+            "OT_PATH": str(d / "targetPrioritisation" / "processed" / "merged_opentargets_data.pkl"),
+            "COMMON_ESSENTIALS_PATH": str(d / "depmap" / "CRISPRInferredCommonEssentials.csv"),
+            "GENE_DRUG_EVIDENCE_PATH": str(d / "pharmgkb" / "clinicalAnnotations" / "clinical_annotations.tsv"),
+            "PROTEIN_ATLAS_FEATURES": str(d / "hpa" / "proteinatlas.tsv"),
+            "PPI_FEATURES": str(d / "string" / "9606.protein.links.full.v12.0.txt"),
+            "TEST_GENES_PATH": str(d / "test_data" / "holdout_genes.xlsx"),
+            "ADULT_ACTIONABLE_GENES_PATH": str(d / "test_data" / "ACI-overview-adult.tsv"),
+            "PEDIATRIC_ACTIONABLE_GENES_PATH": str(d / "test_data" / "ACI-overview-pediatric.tsv"),
+            "BINDING_AFFINITY_PATH": str(d / "bindingdb" / "BindingDB_All_202312.tsv"),
+            "TISSUE_EXPRESSION_HPA": str(d / "hpa" / "normal_tissue.tsv"),
+            "TISSUE_EXPRESSION_DESC_PATH": str(d / "hpa" / "rna_single_cell_cluster_description.tsv"),
+            "TISSUE_EXPRESSION_GTEX": str(d / "gtex" / "GTEx_Analysis_v10_RNASeQCv2.4.2_gene_median_tpm.gct.gz"),
+        }
+
+    def __getitem__(self, key: str) -> str:
+        return self.legacy[key]
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.legacy
+
+
+class Config(BaseModel):
+    hyperparameters: Hyperparameters
+    paths: Paths
+
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
+
+    @classmethod
+    def load(
+        cls,
+        profile: Optional[str] = None,
+        hyperparams_override: Optional[dict] = None,
+    ) -> "Config":
+        if profile is None:
+            profile = os.environ.get("VARFORMER_PROFILE", "local")
+
+        with (CONFIGS / "default.yml").open() as f:
+            hp_dict = yaml.safe_load(f)["hyperparameters"]
+        if hyperparams_override:
+            hp_dict.update(hyperparams_override)
+        hp = Hyperparameters(**hp_dict)
+
+        with (CONFIGS / "paths" / f"{profile}.yml").open() as f:
+            paths_dict = yaml.safe_load(f)
+        paths = Paths(
+            data_root=Path(paths_dict["data_root"]),
+            ckpt_root=Path(paths_dict["ckpt_root"]),
+        )
+
+        return cls(hyperparameters=hp, paths=paths)
