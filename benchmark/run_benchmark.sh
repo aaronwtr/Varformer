@@ -6,10 +6,10 @@
 #SBATCH -A pilot_sae_gpu
 #SBATCH --constraint=80G
 #SBATCH -n 1
-#SBATCH --cpus-per-gpu=4
-#SBATCH --mem-per-cpu=11G
+#SBATCH --cpus-per-gpu=8
+#SBATCH --mem-per-cpu=12G
 #SBATCH --gres=gpu:1
-#SBATCH -t 0:30:00
+#SBATCH -t 1:00:00
 
 set -e
 
