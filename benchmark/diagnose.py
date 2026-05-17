@@ -96,8 +96,47 @@ def compare_state_dicts(sd_a, sd_b, label_a="OLD", label_b="NEW"):
     return max_diff
 
 
+def compare_batch_contents(loaders_old, loaders_new, loader_name="pfam"):
+    """Compare the first batch's gene_names + tensor values between OLD and NEW loaders."""
+    import numpy as np
+    loader_old = loaders_old[loader_name]
+    loader_new = loaders_new[loader_name]
+
+    batches_old = list(iter(loader_old))
+    batches_new = list(iter(loader_new))
+    print(f"  batches in {loader_name}: OLD={len(batches_old)}, NEW={len(batches_new)}")
+
+    for i in range(min(2, len(batches_old), len(batches_new))):
+        bo = batches_old[i]
+        bn = batches_new[i]
+        gn_o = bo["pvc"]["gene_name"] if "pvc" in bo else None
+        gn_n = bn["pvc"]["gene_name"] if "pvc" in bn else None
+        print(f"  batch {i} gene_names same order: {gn_o == gn_n}")
+        if gn_o != gn_n:
+            print(f"    OLD first 5: {gn_o[:5] if gn_o else None}")
+            print(f"    NEW first 5: {gn_n[:5] if gn_n else None}")
+            return
+        # Compare each tensor in the batch
+        for mod_key in ["gc", "go", "pvc"]:
+            ov = bo[mod_key]
+            nv = bn[mod_key]
+            if isinstance(ov, dict):
+                for k in ov:
+                    if hasattr(ov[k], "shape"):
+                        diff = (ov[k].float() - nv[k].float()).abs().max().item()
+                        if diff > 0:
+                            print(f"    batch {i} {mod_key}.{k}: shape={tuple(ov[k].shape)} max_diff={diff:.3e}")
+            elif isinstance(ov, (list, tuple)):
+                for j in range(len(ov)):
+                    if hasattr(ov[j], "shape"):
+                        diff = (ov[j].float() - nv[j].float()).abs().max().item()
+                        if diff > 0:
+                            print(f"    batch {i} {mod_key}[{j}]: shape={tuple(ov[j].shape)} max_diff={diff:.3e}")
+
+
 def compare_first_batch_forward(lm_old, lm_new, loaders_old, loaders_new):
-    """Run forward on the first batch of pfam loader for both models. Compare outputs."""
+    """Run nn.Module forward (NOT _common_step which needs trainer) on first pfam batch."""
+    import numpy as np
     lm_old.eval()
     lm_new.eval()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -107,12 +146,9 @@ def compare_first_batch_forward(lm_old, lm_new, loaders_old, loaders_new):
     loader_old = loaders_old["pfam"]
     loader_new = loaders_new["pfam"]
 
-    it_old = iter(loader_old)
-    it_new = iter(loader_new)
-    batch_old = next(it_old)
-    batch_new = next(it_new)
+    batch_old = next(iter(loader_old))
+    batch_new = next(iter(loader_new))
 
-    # Move tensors in dicts to device
     def to_dev(b):
         out = {}
         for k, v in b.items():
@@ -128,26 +164,24 @@ def compare_first_batch_forward(lm_old, lm_new, loaders_old, loaders_new):
     batch_old = to_dev(batch_old)
     batch_new = to_dev(batch_new)
 
-    # Use the LightningModule's _common_step with predict to get the dict output
-    with torch.no_grad():
-        out_old = lm_old._common_step(batch_old, 0, "predict")
-        out_new = lm_new._common_step(batch_new, 0, "predict")
+    # Build the model input dict + mask the same way _common_step does
+    mask_old = batch_old["pvc"]["mask"]
+    mask_new = batch_new["pvc"]["mask"]
+    inp_old = {"gc": batch_old["gc"], "go": batch_old["go"], "pvc": batch_old["pvc"]}
+    inp_new = {"gc": batch_new["gc"], "go": batch_new["go"], "pvc": batch_new["pvc"]}
 
-    keys_common = set(out_old.keys()) & set(out_new.keys())
-    print(f"  forward genes in common: {len(keys_common)} (OLD={len(out_old)}, NEW={len(out_new)})")
-    max_pred = 0.0
-    max_attn = 0.0
-    max_zvar = 0.0
-    for g in keys_common:
-        max_pred = max(max_pred, abs(out_old[g]["prediction"] - out_new[g]["prediction"]))
-        import numpy as np
-        a, b = np.asarray(out_old[g]["attn_weights"]), np.asarray(out_new[g]["attn_weights"])
-        max_attn = max(max_attn, float(np.max(np.abs(a - b))))
-        a, b = np.asarray(out_old[g]["z_var"]), np.asarray(out_new[g]["z_var"])
-        max_zvar = max(max_zvar, float(np.max(np.abs(a - b))))
-    print(f"  forward pred max diff: {max_pred:.3e}")
-    print(f"  forward attn max diff: {max_attn:.3e}")
-    print(f"  forward z_var max diff: {max_zvar:.3e}")
+    with torch.no_grad():
+        out_old = lm_old.model(inp_old, mask_old)
+        out_new = lm_new.model(inp_new, mask_new)
+
+    # out is (logits, probas, bin_preds, z_var, attn_weights) when return_attn=True
+    for i, name in enumerate(["logits", "probas", "bin_preds", "z_var", "attn_weights"]):
+        if i >= len(out_old) or out_old[i] is None or out_new[i] is None:
+            print(f"  {name}: skipped (None)")
+            continue
+        diff = (out_old[i].float() - out_new[i].float()).abs().max().item()
+        rel = diff / max(out_old[i].float().abs().max().item(), 1e-12)
+        print(f"  {name}: max abs diff = {diff:.3e} (rel {rel:.3e})")
 
 
 if __name__ == "__main__":
@@ -170,5 +204,9 @@ if __name__ == "__main__":
     compare_state_dicts(sd_old_inner, sd_new_inner)
     print()
 
-    print("=== forward pass on first pfam batch ===")
+    print("=== batch contents (pfam loader) ===")
+    compare_batch_contents(loaders_old, loaders_new, "pfam")
+    print()
+
+    print("=== forward pass on first pfam batch (nn.Module directly) ===")
     compare_first_batch_forward(lm_old, lm_new, loaders_old, loaders_new)
