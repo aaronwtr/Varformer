@@ -170,7 +170,10 @@ def predict_subset(model, genes, return_attention=False):
     Returns:
         dict mapping gene_id -> {"prediction", "classification", "z_var"[, "attn_weights"]}
     """
-    torch.set_float32_matmul_precision('medium')
+    # Intentionally do NOT call torch.set_float32_matmul_precision('medium') here:
+    # that's a GLOBAL setting that downgrades matmul to TF32 on Ampere, causing ~1e-3
+    # drift vs the reference predictions (which were captured with default 'highest').
+    # Training paths may set 'medium' for throughput, but inference must preserve precision.
 
     lm = model._lightning_module
     # Reuse test_loaders cached at model-load time; they were built from the same data
