@@ -1,4 +1,36 @@
 # Clinically Informed Genomic Drug Target Prediction
+
+## Installation
+
+```bash
+uv sync
+# or: pip install -e .
+```
+
+## Quickstart
+
+```python
+from varformer import Varformer
+
+# Inference with a published checkpoint
+model = Varformer.from_pretrained("nfe", seed="best")
+predictions = model.predict(genes=["ENSG00000141510", "ENSG00000139618"])
+for gene_id, payload in predictions.items():
+    print(gene_id, payload["prediction"], payload["classification"])
+
+# Ensemble across all 5 seeds
+ensemble = Varformer.from_pretrained("nfe", seed="ensemble")
+ens_preds = ensemble.predict(genes=[...])
+
+# Train a new model
+checkpoints = Varformer.trainer(population="elgh").fit(seeds=[7, 42, 85])
+
+# Evaluation on a labelled holdout
+metrics = model.evaluate(test_set="pfam")
+```
+
+See `docs/` (local design specs) for architecture notes.
+
 ## Project aim
 In this work, we develop a machine learning model that prioritizes drug targets on gene-level based on tractability. We define tractability as the likelihood of identifying a modulator that interacts effectively with the target/domain, similar to [https://pubmed.ncbi.nlm.nih.gov/34707284/](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6072525/#:~:text=Target%20tractability%20(a.k.a.%20ligandability),%2Fdomain%20(or%20pathway).(https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6072525/#:~:text=Target%20tractability%20(a.k.a.%20ligandability),%2Fdomain%20(or%20pathway).)) This prioritization is done by considering features that are informative of the success of a drug in clinical trials and learning their appropiate feature weights by using target associated clinical trial approval/withdrawal data as training data. Ground truth clinical trial data will not exist for all genes but by training on a subset of targets, we can develop a model that performs the tractability predictions for all genes. Some external validation sources will be needed to assess the accuracy of this method *(What data to use for this purpose?)*. The model will have a two main modules. The first module is a gene characterization module. In this module, we collect features that characterize a gene as idiosyncratically as possible. This module will be used to assess the target quality, i.e. how likely will this target react positively to drugs without hindering normal function? We further distinguish the gene characterization module in two submodules:
 
