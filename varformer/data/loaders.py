@@ -1,5 +1,6 @@
 """ModelPreprocessorEval and ModelPreprocessorInference — moved from src/preprocessing.py (Phase 4A)."""
 import pickle as pkl
+import types
 
 import torch
 import pandas as pd
@@ -7,8 +8,21 @@ import numpy as np
 
 from sklearn.model_selection import train_test_split
 
-import dataloader as dl
-from models.lightning import MultiModalLightningTargetIdentifier
+# Legacy `dl.<name>` references resolve via this synthetic namespace pointing at the
+# new package locations, instead of importing the src/dataloader shim. This lets the
+# SDK run without src/ on sys.path.
+from varformer.data import datasets as _datasets
+from varformer.data import samplers as _samplers
+
+dl = types.SimpleNamespace(
+    MultiModalData=_datasets.MultiModalData,
+    MultiModalDataLoader=_samplers.MultiModalDataLoader,
+    VarformerDataset=_datasets.VarformerDataset,
+    DrugTargetData=_datasets.DrugTargetData,
+    SynchronizedMultiModalBatchSampler=_samplers.SynchronizedMultiModalBatchSampler,
+)
+
+from varformer.training.lightning_module import VarformerLightningModule as MultiModalLightningTargetIdentifier
 
 
 # Model preprocessing
