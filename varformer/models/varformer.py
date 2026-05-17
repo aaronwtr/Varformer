@@ -224,42 +224,83 @@ class Varformer(nn.Module):
 
     @classmethod
     def _build_and_load(cls, config, population, ckpt_path):
-        """Internal: instantiate LightningModule, load legacy checkpoint, return nn.Module instance with metadata."""
+        """Build the LightningModule from data-derived dims + cluster config, load checkpoint.
+
+        Mirrors the benchmark's reference-generation path exactly so the SDK predict()
+        is observationally identical to the original src/training.run_inference path:
+          - load `src/cluster_config_{population}.yml` directly (same YAML the references used)
+          - derive num_features_gc/go/num_genes from the loaded data, not the checkpoint hp
+          - construct the LightningModule with that raw dict; load_state_dict with strict=False
+        Returns the inner nn.Module instance carrying the LightningModule and config as
+        non-module attributes (object.__setattr__ to avoid cycle with nn.Module child registry).
+        """
+        from pathlib import Path as _Path
+        import pickle
+        import pandas as pd
+        import yaml
+
         from varformer.checkpoints import load_legacy_checkpoint
         from varformer.training.lightning_module import VarformerLightningModule
-        import pickle
+        from varformer.data.pipeline import ModuleDataProcessor
+        from varformer.data.loaders import ModelPreprocessorInference
 
-        with open(str(config.paths["MISSENSE_MAP"]), "rb") as f:
+        # Locate the per-population cluster config that produced the reference predictions.
+        repo_root = _Path(__file__).resolve().parents[2]
+        cluster_cfg_path = repo_root / "src" / f"cluster_config_{population}.yml"
+        with cluster_cfg_path.open() as f:
+            cfg = yaml.safe_load(f)
+        cfg["hyperparameters"]["population"] = population
+        cfg["hyperparameters"]["return_attn"] = True
+        cfg["hyperparameters"]["mode"] = "inference"
+
+        # Run the data pipeline (same call shape the benchmark uses) to derive dims.
+        data = ModuleDataProcessor(gc=True, go=True, pvc=True, psc=False, config=cfg).process()
+        splits = data if isinstance(data, list) else [data]
+        first = splits[0]
+        num_features_gc = first["train"]["gc"].shape[1] - (1 if "target" in first["train"]["gc"].columns else 0)
+        num_features_go = first["train"]["go"].shape[1] - (1 if "target" in first["train"]["go"].columns else 0)
+        num_genes = len(first["labels"])
+
+        with open(cfg["paths"]["MISSENSE_MAP"], "rb") as f:
             missense_map = pickle.load(f)
         num_mutations = len(missense_map)
 
-        raw_ckpt = load_legacy_checkpoint(ckpt_path)
-        hp = raw_ckpt.get("hyper_parameters", {})
-        num_features_gc = hp.get("num_features_gc")
-        num_features_go = hp.get("num_features_go")
-        max_seq_len = hp.get("max_seq_len", config.hyperparameters.max_seq_len)
-        num_genes = hp.get("num_genes", 0)
-
         lm = VarformerLightningModule(
-            config={"hyperparameters": config.hyperparameters.model_dump()},
+            config=cfg,
             num_samples_per_class=None,
             num_features_gc=num_features_gc,
             num_features_go=num_features_go,
             num_mutations=num_mutations,
-            max_seq_len=max_seq_len,
+            max_seq_len=cfg["hyperparameters"]["max_seq_len"],
             num_genes=num_genes,
             class_prior=None,
-            use_pvc=config.hyperparameters.use_pvc,
+            use_pvc=cfg["hyperparameters"].get("use_pvc", True),
         )
+        raw_ckpt = load_legacy_checkpoint(ckpt_path)
         lm.load_state_dict(raw_ckpt["state_dict"], strict=False)
-        # Return the inner nn.Module with metadata. Use object.__setattr__ to bypass
-        # nn.Module's __setattr__ hook — if we used regular assignment, lm (an
-        # nn.Module) would be registered as a child of `instance` (its own .model),
-        # creating a cycle that breaks .apply()/.to() recursion.
+
+        # Build test_loaders the way the reference path did; cache so predict_subset reuses them.
+        consolidated_data = {
+            "gc": pd.concat([first["train"]["gc"], first["test_data"]["gc"]]),
+            "go": pd.concat([first["train"]["go"], first["test_data"]["go"]]),
+        }
+        consolidated_pvc = {**first["train"]["pvc"], **first["test_data"]["pvc"]}
+        consolidated_pvc.pop("labels", None)
+        test_loaders = ModelPreprocessorInference.create_test_loaders(
+            config=cfg,
+            consolidated_data=consolidated_data,
+            pvc_data=consolidated_pvc,
+            torch_dtype=cfg["hyperparameters"]["precision"],
+        )
+
         instance = lm.model
+        # object.__setattr__ to bypass nn.Module's child-registry hook; setting _lightning_module
+        # the normal way creates a cycle (lm.model == instance) and breaks .apply()/.to() recursion.
         object.__setattr__(instance, "_population", population)
         object.__setattr__(instance, "_lightning_module", lm)
         object.__setattr__(instance, "_config", config)
+        object.__setattr__(instance, "_cfg_dict", cfg)
+        object.__setattr__(instance, "_test_loaders", test_loaders)
         return instance
 
     @classmethod

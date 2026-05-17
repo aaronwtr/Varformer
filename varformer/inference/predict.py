@@ -173,41 +173,9 @@ def predict_subset(model, genes, return_attention=False):
     torch.set_float32_matmul_precision('medium')
 
     lm = model._lightning_module
-    config = model._config
-    population = model._population
-
-    # Build legacy config dict that the data pipeline expects.
-    cfg = {
-        "hyperparameters": {
-            **config.hyperparameters.model_dump(),
-            "population": population,
-            "return_attn": True,  # always collect; strip below if not wanted
-            "mode": "inference",
-        },
-        "paths": config.paths.legacy,
-    }
-
-    # Load data via the new package paths (mirroring generate_reference.py shape).
-    from varformer.data.pipeline import ModuleDataProcessor
-    from varformer.data.loaders import ModelPreprocessorInference
-
-    data = ModuleDataProcessor(gc=True, go=True, pvc=True, psc=False, config=cfg).process()
-    splits = data if isinstance(data, list) else [data]
-    first = splits[0]
-
-    consolidated_data = {
-        "gc": pd.concat([first["train"]["gc"], first["test_data"]["gc"]]),
-        "go": pd.concat([first["train"]["go"], first["test_data"]["go"]]),
-    }
-    consolidated_pvc = {**first["train"]["pvc"], **first["test_data"]["pvc"]}
-    consolidated_pvc.pop("labels", None)
-
-    test_loaders = ModelPreprocessorInference.create_test_loaders(
-        config=cfg,
-        consolidated_data=consolidated_data,
-        pvc_data=consolidated_pvc,
-        torch_dtype=cfg["hyperparameters"]["precision"],
-    )
+    # Reuse test_loaders cached at model-load time; they were built from the same data
+    # pipeline + config that produced the benchmark reference predictions.
+    test_loaders = model._test_loaders
 
     trainer = Trainer(accelerator="gpu" if torch.cuda.is_available() else "cpu", devices=1)
 
