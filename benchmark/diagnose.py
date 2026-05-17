@@ -210,3 +210,36 @@ if __name__ == "__main__":
 
     print("=== forward pass on first pfam batch (nn.Module directly) ===")
     compare_first_batch_forward(lm_old, lm_new, loaders_old, loaders_new)
+    print()
+
+    print("=== both paths vs saved REFERENCE (benchmark/reference/nfe/seed42.pkl) ===")
+    import numpy as np
+    from pytorch_lightning import Trainer
+    ref_path = REPO / "benchmark" / "reference" / pop / f"seed{seed}.pkl"
+    with ref_path.open("rb") as f:
+        reference = pickle.load(f)
+    print(f"  reference: {len(reference)} genes")
+    sample_gid = next(iter(reference))
+    ref_payload = reference[sample_gid]
+    print(f"  sample gene: {sample_gid}")
+    print(f"    reference prediction: {ref_payload['prediction']:.6f}")
+    print(f"    reference z_var[:5]: {np.asarray(ref_payload['z_var'])[:5]}")
+    print(f"    reference attn_weights[:5]: {np.asarray(ref_payload['attn_weights'])[:5]}")
+
+    # Run trainer.predict on lm_old + first loader; capture predictions
+    lm_old_cpu = lm_old.cpu()
+    trainer = Trainer(accelerator="gpu" if torch.cuda.is_available() else "cpu", devices=1)
+    candidate_old = {}
+    for loader_name, loader in loaders_old.items():
+        for batch in trainer.predict(model=lm_old, dataloaders=loader):
+            for gid, payload in batch.items():
+                candidate_old[gid] = payload
+    print(f"  OLD-path candidate: {len(candidate_old)} genes")
+    if sample_gid in candidate_old:
+        cp = candidate_old[sample_gid]
+        print(f"    OLD prediction:      {cp['prediction']:.6f}  (diff vs ref: {abs(cp['prediction']-ref_payload['prediction']):.3e})")
+        print(f"    OLD z_var[:5]:       {np.asarray(cp['z_var'])[:5]}")
+        diff_zvar = float(np.max(np.abs(np.asarray(cp['z_var']) - np.asarray(ref_payload['z_var']))))
+        print(f"    OLD z_var max abs diff vs ref: {diff_zvar:.3e}")
+    else:
+        print(f"    OLD: sample gene {sample_gid} NOT FOUND in candidate")
