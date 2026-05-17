@@ -6,7 +6,6 @@ import argparse
 
 import matplotlib.pyplot as plt
 import torch
-import utils
 import requests
 import time
 import esm
@@ -31,10 +30,11 @@ from shutil import copyfileobj
 
 from typing import Optional
 
-from utils.utils import (load_combined_labels, combine_features_and_labels, aa_to_idx, three_letter_aa_to_idx,
-                         map_gene_names)
-from utils.merge_am_data import merge_am_data
-from models.lightning import MultiModalLightningTargetIdentifier
+from varformer.data.splits import load_combined_labels, combine_features_and_labels, get_labels
+from varformer.utils.aa_codes import aa_to_idx, three_letter_aa_to_idx
+from varformer.utils.gene_id import map_gene_names
+from varformer.data.parsers.alphamissense import merge_am_data
+from varformer.training.lightning_module import VarformerLightningModule as MultiModalLightningTargetIdentifier
 from varformer.data.features.base import BaseFeatures
 
 
@@ -98,7 +98,7 @@ class GeneCharacterisationPreprocessor(BaseFeatures):
         self.target = load_combined_labels(self.ot_targets, self.config)
 
         # Combine features and target
-        self.labels_dict = utils.utils.get_labels(self.ensg_ids, self.target)
+        self.labels_dict = get_labels(self.ensg_ids, self.target)
         self.full_data = combine_features_and_labels(self.ensg_ids, self.features, self.target)
         self.full_data.set_index('targetId', inplace=True)
         # feature statistics can be checked here!

@@ -4,7 +4,19 @@ import random
 import yaml
 import pandas as pd
 
-import preprocessing as preprocessing
+import types
+
+from varformer.data.features.gc import GeneCharacterisationPreprocessor
+from varformer.data.features.go import GeneOntologyPreprocessor
+from varformer.data.features.variants import PopulationVariantPreprocessor
+
+# Legacy `preprocessing.<Class>` references resolve via this synthetic namespace,
+# avoiding the src/preprocessing shim and the sys.path injection it would need.
+preprocessing = types.SimpleNamespace(
+    GeneCharacterisationPreprocessor=GeneCharacterisationPreprocessor,
+    GeneOntologyPreprocessor=GeneOntologyPreprocessor,
+    PopulationVariantPreprocessor=PopulationVariantPreprocessor,
+)
 
 from tabulate import tabulate
 
