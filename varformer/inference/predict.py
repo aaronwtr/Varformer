@@ -1,6 +1,7 @@
 """Inference pipeline for the Varformer model.
 
 Moved from src/training.py (run_inference) in Phase 5.
+Phase 7: Added predict_subset() for SDK predict() method.
 """
 import os
 import torch
@@ -149,3 +150,84 @@ def run_inference(data):
             approved_output_path = f"{approved_output_folder}approved_predictions_seed_{seed}.pkl"
             torch.save(all_test_results, approved_output_path)
             print(f"Approved predictions saved to {approved_output_path}")
+
+
+def predict_subset(model, genes, return_attention=False):
+    """Run inference for the SDK's predict() method.
+
+    Uses the LightningModule and config cached on ``model`` by
+    ``Varformer._build_and_load`` and mirrors the data pipeline used in
+    ``benchmark/generate_reference.py:generate_for_population`` so that outputs
+    are bit-exact with the benchmark reference.
+
+    Args:
+        model:            A ``Varformer`` nn.Module instance with ``_lightning_module``,
+                          ``_config``, and ``_population`` attributes set by
+                          ``Varformer._build_and_load``.
+        genes:            List of Ensembl gene IDs to return predictions for.
+        return_attention: If False, strip ``attn_weights`` from returned payloads.
+
+    Returns:
+        dict mapping gene_id -> {"prediction", "classification", "z_var"[, "attn_weights"]}
+    """
+    torch.set_float32_matmul_precision('medium')
+
+    lm = model._lightning_module
+    config = model._config
+    population = model._population
+
+    # Build legacy config dict that the data pipeline expects.
+    cfg = {
+        "hyperparameters": {
+            **config.hyperparameters.model_dump(),
+            "population": population,
+            "return_attn": True,  # always collect; strip below if not wanted
+            "mode": "inference",
+        },
+        "paths": config.paths.legacy,
+    }
+
+    # Load data via legacy src pipeline (mirroring generate_reference.py).
+    import sys
+    from pathlib import Path
+    REPO = Path(__file__).resolve().parents[3]
+    sys.path.insert(0, str(REPO / "src"))
+
+    from dataloader import ModuleDataProcessor
+    from preprocessing import ModelPreprocessorInference
+
+    data = ModuleDataProcessor(gc=True, go=True, pvc=True, psc=False, config=cfg).process()
+    splits = data if isinstance(data, list) else [data]
+    first = splits[0]
+
+    consolidated_data = {
+        "gc": pd.concat([first["train"]["gc"], first["test_data"]["gc"]]),
+        "go": pd.concat([first["train"]["go"], first["test_data"]["go"]]),
+    }
+    consolidated_pvc = {**first["train"]["pvc"], **first["test_data"]["pvc"]}
+    consolidated_pvc.pop("labels", None)
+
+    test_loaders = ModelPreprocessorInference.create_test_loaders(
+        config=cfg,
+        consolidated_data=consolidated_data,
+        pvc_data=consolidated_pvc,
+        torch_dtype=cfg["hyperparameters"]["precision"],
+    )
+
+    trainer = Trainer(accelerator="gpu" if torch.cuda.is_available() else "cpu", devices=1)
+
+    gene_set = set(genes)
+    results: dict = {}
+    for loader_name, loader in test_loaders.items():
+        batch_results = trainer.predict(model=lm, dataloaders=loader)
+        for batch in batch_results:
+            for gid, payload in batch.items():
+                if gid in gene_set:
+                    results[gid] = payload
+
+    # Strip attn_weights if not requested.
+    if not return_attention:
+        for payload in results.values():
+            payload.pop("attn_weights", None)
+
+    return results
