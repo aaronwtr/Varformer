@@ -1,7 +1,7 @@
 """Offline data-prep script: generate raw and Varformer gene embeddings.
 
 Moved from src/generate_embeddings.py (Phase 6 refactor).
-Run from the repo root with the package installed (or PYTHONPATH=src:.).
+Run from the repo root with the package installed (pip install -e .).
 """
 import argparse
 import os
@@ -307,7 +307,7 @@ def main():
     pattern = re.compile(r"val_spearman=([0-9]*\.?[0-9]+)")
 
     for pop in populations:
-        ckpt_folder = f"/data/scratch/bty174/genomic-drug-targeting/src/checkpoints/{pop}"
+        ckpt_folder = f"/data/scratch/bty174/genomic-drug-targeting/checkpoints/{pop}"
         ckpt_files = [f for f in os.listdir(ckpt_folder) if f.endswith(".ckpt")]
 
         def get_spearman(fname: str) -> float:
