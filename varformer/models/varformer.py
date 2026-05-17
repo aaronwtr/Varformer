@@ -224,34 +224,32 @@ class Varformer(nn.Module):
 
     @classmethod
     def _build_and_load(cls, config, population, ckpt_path):
-        """Build the LightningModule from data-derived dims + cluster config, load checkpoint.
+        """Build the LightningModule from data-derived dims, load checkpoint.
 
-        Mirrors the benchmark's reference-generation path exactly so the SDK predict()
-        is observationally identical to the original src/training.run_inference path:
-          - load `src/cluster_config_{population}.yml` directly (same YAML the references used)
-          - derive num_features_gc/go/num_genes from the loaded data, not the checkpoint hp
-          - construct the LightningModule with that raw dict; load_state_dict with strict=False
+        Builds a legacy-shaped cfg dict from the Config object so downstream code that
+        does cfg['hyperparameters']['X'] / cfg['paths']['Y'] keeps working unchanged.
         Returns the inner nn.Module instance carrying the LightningModule and config as
         non-module attributes (object.__setattr__ to avoid cycle with nn.Module child registry).
         """
-        from pathlib import Path as _Path
         import pickle
         import pandas as pd
-        import yaml
 
         from varformer.checkpoints import load_legacy_checkpoint
         from varformer.training.lightning_module import VarformerLightningModule
         from varformer.data.pipeline import ModuleDataProcessor
         from varformer.data.loaders import ModelPreprocessorInference
 
-        # Locate the per-population cluster config that produced the reference predictions.
-        repo_root = _Path(__file__).resolve().parents[2]
-        cluster_cfg_path = repo_root / "src" / f"cluster_config_{population}.yml"
-        with cluster_cfg_path.open() as f:
-            cfg = yaml.safe_load(f)
-        cfg["hyperparameters"]["population"] = population
-        cfg["hyperparameters"]["return_attn"] = True
-        cfg["hyperparameters"]["mode"] = "inference"
+        # Build a legacy-shaped cfg dict from the Config object so downstream code that
+        # does cfg['hyperparameters']['X'] / cfg['paths']['Y'] keeps working unchanged.
+        cfg = {
+            "hyperparameters": {
+                **config.hyperparameters.model_dump(),
+                "population": population,
+                "return_attn": True,
+                "mode": "inference",
+            },
+            "paths": config.paths.legacy,
+        }
 
         # Run the data pipeline (same call shape the benchmark uses) to derive dims.
         data = ModuleDataProcessor(gc=True, go=True, pvc=True, psc=False, config=cfg).process()
