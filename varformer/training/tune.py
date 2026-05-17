@@ -3,19 +3,13 @@
 Moved from src/training.py (tune + objective) in Phase 5.
 """
 import os
-import sys
 import torch
 import optuna
 import wandb
 
-# utils lives in src/; ensure it is importable regardless of CWD
-_src_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..', 'src')
-if os.path.abspath(_src_path) not in sys.path:
-    sys.path.insert(0, os.path.abspath(_src_path))
-
-import utils  # noqa: E402
-
 import pytorch_lightning as pl
+
+from varformer.utils.seeding import set_seed
 
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import LearningRateMonitor
@@ -55,9 +49,6 @@ def tune():
 
 
 def objective(trial: optuna.trial.Trial) -> float:
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
     from varformer.config import Config
     config = Config.load()
     pl.seed_everything(config['hyperparameters']['seed'])
@@ -142,7 +133,7 @@ def objective(trial: optuna.trial.Trial) -> float:
     total_params = model_summary.total_parameters
     wandb.config.update({"total_params": total_params}, allow_val_change=True)
 
-    utils.utils.set_seed(config['hyperparameters']['seed'])
+    set_seed(config['hyperparameters']['seed'])
     lr_monitor = LearningRateMonitor(logging_interval='step')
     early_stop_callback = PyTorchLightningPruningCallback(trial, monitor='val_f1')
 

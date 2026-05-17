@@ -3,19 +3,13 @@
 Moved from src/training.py (train_model) in Phase 5.
 """
 import os
-import sys
 import datetime
 import torch
 import wandb
 
-# utils lives in src/; ensure it is importable regardless of CWD
-_src_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', '..', 'src')
-if os.path.abspath(_src_path) not in sys.path:
-    sys.path.insert(0, os.path.abspath(_src_path))
-
-import utils  # noqa: E402
-
 import pytorch_lightning as pl
+
+from varformer.utils.seeding import set_seed
 
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
@@ -86,7 +80,7 @@ def train_model(data):
         mode='max'
     )
 
-    utils.utils.set_seed(config['hyperparameters']['seed'])
+    set_seed(config['hyperparameters']['seed'])
 
     # Configure trainer based on available GPUs
     if torch.cuda.device_count() > 1:
