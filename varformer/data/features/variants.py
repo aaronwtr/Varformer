@@ -15,8 +15,8 @@ import numpy as np
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-from utils.utils import aa_to_idx, three_letter_aa_to_idx
-from utils.merge_am_data import merge_am_data
+from varformer.utils.aa_codes import aa_to_idx, three_letter_aa_to_idx
+from varformer.data.parsers.alphamissense import merge_am_data
 
 
 class PopulationVariantPreprocessor:

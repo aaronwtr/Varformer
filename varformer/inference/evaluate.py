@@ -123,11 +123,8 @@ def evaluate_subset(model, test_set: str) -> dict:
         "paths": config.paths.legacy,
     }
 
-    REPO = Path(__file__).resolve().parents[3]
-    sys.path.insert(0, str(REPO / "src"))
-
-    from dataloader import ModuleDataProcessor
-    from preprocessing import ModelPreprocessorInference
+    from varformer.data.pipeline import ModuleDataProcessor
+    from varformer.data.loaders import ModelPreprocessorInference
 
     data = ModuleDataProcessor(gc=True, go=True, pvc=True, psc=False, config=cfg).process()
     splits = data if isinstance(data, list) else [data]
