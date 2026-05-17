@@ -227,7 +227,6 @@ if __name__ == "__main__":
     print(f"    reference attn_weights[:5]: {np.asarray(ref_payload['attn_weights'])[:5]}")
 
     # Run trainer.predict on lm_old + first loader; capture predictions
-    lm_old_cpu = lm_old.cpu()
     trainer = Trainer(accelerator="gpu" if torch.cuda.is_available() else "cpu", devices=1)
     candidate_old = {}
     for loader_name, loader in loaders_old.items():
@@ -243,3 +242,32 @@ if __name__ == "__main__":
         print(f"    OLD z_var max abs diff vs ref: {diff_zvar:.3e}")
     else:
         print(f"    OLD: sample gene {sample_gid} NOT FOUND in candidate")
+
+    print()
+    # NEW: run trainer.predict on lm_new + loaders_new (the SDK path)
+    trainer2 = Trainer(accelerator="gpu" if torch.cuda.is_available() else "cpu", devices=1)
+    candidate_new = {}
+    for loader_name, loader in loaders_new.items():
+        for batch in trainer2.predict(model=lm_new, dataloaders=loader):
+            for gid, payload in batch.items():
+                candidate_new[gid] = payload
+    print(f"  NEW-path candidate: {len(candidate_new)} genes")
+    if sample_gid in candidate_new:
+        cp = candidate_new[sample_gid]
+        print(f"    NEW prediction:      {cp['prediction']:.6f}  (diff vs ref: {abs(cp['prediction']-ref_payload['prediction']):.3e})")
+        print(f"    NEW z_var[:5]:       {np.asarray(cp['z_var'])[:5]}")
+        diff_zvar = float(np.max(np.abs(np.asarray(cp['z_var']) - np.asarray(ref_payload['z_var']))))
+        print(f"    NEW z_var max abs diff vs ref: {diff_zvar:.3e}")
+    else:
+        print(f"    NEW: sample gene {sample_gid} NOT FOUND in candidate")
+
+    print()
+    # Direct: OLD vs NEW trainer.predict outputs
+    common = set(candidate_old) & set(candidate_new)
+    if common:
+        max_pred_diff = max(abs(candidate_old[g]["prediction"] - candidate_new[g]["prediction"]) for g in common)
+        max_zvar_diff = max(
+            float(np.max(np.abs(np.asarray(candidate_old[g]["z_var"]) - np.asarray(candidate_new[g]["z_var"]))))
+            for g in common
+        )
+        print(f"  OLD-candidate vs NEW-candidate: max pred diff={max_pred_diff:.3e}, max z_var diff={max_zvar_diff:.3e}")
