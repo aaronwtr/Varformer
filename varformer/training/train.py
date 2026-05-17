@@ -132,3 +132,46 @@ def train_model(data):
     trainer.test(dataloaders=test_combined["rcnt"], ckpt_path='best')
     trainer.test(dataloaders=test_combined["pharos"], ckpt_path='best')
     run.finish()
+
+    best_path = checkpoint_callback.best_model_path
+    return best_path if best_path else None
+
+
+class VarformerTrainer:
+    """Facade for training one or more Varformer models on a population.
+
+    Usage::
+
+        trainer = VarformerTrainer(population="elgh", config_overrides={"epochs": 50})
+        ckpts = trainer.fit(seeds=[7, 42, 85])
+    """
+
+    def __init__(self, population: str, config_overrides=None, output_dir=None):
+        from varformer.config import Config
+        self.population = population
+        self.config = Config.load(hyperparams_override=config_overrides or {})
+        self.output_dir = output_dir
+
+    def fit(self, seeds):
+        """Train one model per seed; return list of best-checkpoint Paths."""
+        from pathlib import Path
+        from varformer.data.pipeline import ModuleDataProcessor
+
+        paths: list = []
+        for seed in seeds:
+            cfg = {
+                "hyperparameters": {
+                    **self.config.hyperparameters.model_dump(),
+                    "seed": int(seed),
+                    "population": self.population,
+                    "mode": "eval",
+                },
+                "paths": self.config.paths,
+            }
+            data = ModuleDataProcessor(
+                gc=True, go=True, pvc=cfg["hyperparameters"]["use_pvc"], psc=False, config=cfg
+            ).process()
+            ckpt_path = train_model(data)
+            if ckpt_path is not None:
+                paths.append(Path(ckpt_path))
+        return paths
