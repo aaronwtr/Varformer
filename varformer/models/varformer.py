@@ -252,11 +252,14 @@ class Varformer(nn.Module):
             use_pvc=config.hyperparameters.use_pvc,
         )
         lm.load_state_dict(raw_ckpt["state_dict"], strict=False)
-        # Return the inner nn.Module with metadata; cache the LightningModule for predict/evaluate.
+        # Return the inner nn.Module with metadata. Use object.__setattr__ to bypass
+        # nn.Module's __setattr__ hook — if we used regular assignment, lm (an
+        # nn.Module) would be registered as a child of `instance` (its own .model),
+        # creating a cycle that breaks .apply()/.to() recursion.
         instance = lm.model
-        instance._population = population
-        instance._lightning_module = lm
-        instance._config = config
+        object.__setattr__(instance, "_population", population)
+        object.__setattr__(instance, "_lightning_module", lm)
+        object.__setattr__(instance, "_config", config)
         return instance
 
     @classmethod
