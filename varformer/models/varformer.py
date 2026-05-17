@@ -184,3 +184,109 @@ class Varformer(nn.Module):
             return logits, probabilities, binary_predictions, z_var, variant_attn_weights
         else:
             return logits, probabilities, binary_predictions, z_var
+
+    # ------------------------------------------------------------------
+    # Public SDK class methods (Phase 7)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_pretrained(cls, population: str, seed=42):
+        """Load a published checkpoint for (population, seed).
+
+        seed:
+          - int: load that specific seed.
+          - "best": pick checkpoint with highest val_spearman parsed from filename.
+          - "ensemble": load all 5 seeds, return a VarformerEnsemble wrapper.
+        """
+        from varformer.config import Config
+        from varformer.checkpoints import find_checkpoint, best_seed
+
+        if seed == "ensemble":
+            from varformer.models.ensemble import VarformerEnsemble
+            return VarformerEnsemble.from_pretrained(population)
+
+        config = Config.load()
+        ckpt_root = config.paths.ckpt_root
+        if seed == "best":
+            seed = best_seed(ckpt_root, population)
+        ckpt_path = find_checkpoint(ckpt_root, population, int(seed))
+        return cls._build_and_load(config, population, ckpt_path)
+
+    @classmethod
+    def from_checkpoint(cls, path):
+        """Load any checkpoint by path."""
+        from varformer.config import Config
+        from pathlib import Path
+        config = Config.load()
+        p = Path(path)
+        population = p.parent.name if p.parent.name in ("nfe", "elgh", "afr", "amr") else "nfe"
+        return cls._build_and_load(config, population, p)
+
+    @classmethod
+    def _build_and_load(cls, config, population, ckpt_path):
+        """Internal: instantiate LightningModule, load legacy checkpoint, return nn.Module instance with metadata."""
+        from varformer.checkpoints import load_legacy_checkpoint
+        from varformer.training.lightning_module import VarformerLightningModule
+        import pickle
+
+        with open(str(config.paths["MISSENSE_MAP"]), "rb") as f:
+            missense_map = pickle.load(f)
+        num_mutations = len(missense_map)
+
+        raw_ckpt = load_legacy_checkpoint(ckpt_path)
+        hp = raw_ckpt.get("hyper_parameters", {})
+        num_features_gc = hp.get("num_features_gc")
+        num_features_go = hp.get("num_features_go")
+        max_seq_len = hp.get("max_seq_len", config.hyperparameters.max_seq_len)
+        num_genes = hp.get("num_genes", 0)
+
+        lm = VarformerLightningModule(
+            config={"hyperparameters": config.hyperparameters.model_dump()},
+            num_samples_per_class=None,
+            num_features_gc=num_features_gc,
+            num_features_go=num_features_go,
+            num_mutations=num_mutations,
+            max_seq_len=max_seq_len,
+            num_genes=num_genes,
+            class_prior=None,
+            use_pvc=config.hyperparameters.use_pvc,
+        )
+        lm.load_state_dict(raw_ckpt["state_dict"], strict=False)
+        # Return the inner nn.Module with metadata; cache the LightningModule for predict/evaluate.
+        instance = lm.model
+        instance._population = population
+        instance._lightning_module = lm
+        instance._config = config
+        return instance
+
+    @classmethod
+    def trainer(cls, population, config_overrides=None, output_dir=None):
+        """Return a VarformerTrainer for the given population."""
+        from varformer.training.train import VarformerTrainer
+        return VarformerTrainer(population=population, config_overrides=config_overrides, output_dir=output_dir)
+
+    @classmethod
+    def tune(cls, population, n_trials=100, **kwargs):
+        """Run hyperparameter search via Optuna; return best params + metric."""
+        from varformer.training.tune import tune as _tune
+        import os
+        os.environ["VARFORMER_POPULATION"] = population
+        result = _tune()
+        return {
+            "best_params": getattr(result, "best_params", {}),
+            "best_metric": getattr(result, "best_value", float("nan")),
+        }
+
+    def predict(self, genes, return_attention=False):
+        """Run inference on the given gene list using local features.
+
+        Returns {gene_id: {"prediction", "classification", "z_var", "attn_weights"?}}.
+        Outputs are JSON-serializable (Python primitives + numpy arrays).
+        """
+        from varformer.inference.predict import predict_subset
+        return predict_subset(self, genes, return_attention=return_attention)
+
+    def evaluate(self, test_set):
+        """Run on labelled holdout (pfam | rcnt | pharos), return metric dict."""
+        from varformer.inference.evaluate import evaluate_subset
+        return evaluate_subset(self, test_set)
