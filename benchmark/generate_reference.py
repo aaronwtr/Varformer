@@ -1,7 +1,9 @@
 """Run inference on the frozen gene list with each checkpoint and save reference outputs.
 
 Run ONCE at the start of the refactor; never re-run.
-Imports from the current src/ code (pre-refactor).
+Imports from src/ code (pre-refactor semantics — frozen at Phase 0).
+WARNING: src/ has been deleted; this script is intentionally frozen and cannot be
+re-run. It exists only for audit purposes. Reference outputs are in benchmark/reference/.
 """
 import argparse
 import pickle

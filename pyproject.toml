@@ -72,4 +72,3 @@ include = ["varformer*"]
 exclude = ["benchmark*", "tests*", "paper*", "notebooks*", "scripts*", "src*"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
