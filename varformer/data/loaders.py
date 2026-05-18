@@ -150,11 +150,6 @@ class ModelPreprocessorEval:
                 val_norm = val_raw[module_str].values
                 train_norm = train_data.values
 
-                # scaler = MinMaxScaler()
-                # train_norm = scaler.fit_transform(train_norm)
-                # val_norm = scaler.transform(val_norm)
-                # scalers[module_str] = scaler
-
                 train_norm = {gene: train_norm[i] for i, gene in enumerate(train_genes)}
                 val_norm = {gene: val_norm[i] for i, gene in enumerate(val_genes)}
 
@@ -173,8 +168,6 @@ class ModelPreprocessorEval:
                 )
 
                 for key, modalities in test_raw.items():
-                    # normed = scaler.transform(modalities[module_str].values)
-                    # normed = {gene: normed[i] for i, gene in enumerate(test_genes[key][module_str])}
                     test_data = {gene: modalities[module_str].values[i] for i, gene in enumerate(test_genes[key])}
                     test_datasets[key][module_str] = dl.MultiModalData(
                         data=test_data,
