@@ -24,19 +24,37 @@ from varformer.models.variant_encoder import VariantEncoder
 class Varformer(nn.Module):
     """Multi-modal gene tractability predictor.
 
-    Combines GC (genome context) features, GO (gene ontology) features, and
-    per-variant transformer embeddings to predict gene tractability.
+    Combines three input branches — genome-context (GC) features, gene-ontology
+    (GO) features, and a per-variant transformer (PVC) — to predict the
+    binary drug-target tractability of a gene.  The PVC branch encodes a
+    padded sequence of population variants through a transformer encoder and
+    then attends over those variant embeddings conditioned on the gene-level
+    representation (GeneVariantAttention).  All three branches are fused and
+    passed through a classification head.
+
+    Most users should construct instances via the class-method factory rather
+    than calling ``__init__`` directly:
+
+    Example:
+        >>> model = Varformer.from_pretrained("nfe", seed=42)
+        >>> predictions = model.predict(["ENSG00000141510", "ENSG00000012048"])
+        >>> print(predictions["ENSG00000141510"]["prediction"])
+        0.73
 
     Args:
-        config:              Dict or Config object supporting
-                             config['hyperparameters'] access.
-        num_features_gc:     Width of the GC feature vector per gene.
-        num_features_go:     Width of the GO feature vector per gene.
-        num_mutations:       Vocabulary size of mutation encodings.
-        max_seq_len:         Maximum number of variants per gene.
-        num_genes:           Total number of genes (used for informational
-                             purposes; not tied to any parameter shape).
-        use_pvc:             Whether the variant-context (PVC) branch is active.
+        config: Dict or Config object supporting ``config['hyperparameters']``
+            key access.  Typically built by ``varformer.config.Config.load()``.
+        num_features_gc: Width of the GC feature vector per gene.
+        num_features_go: Width of the GO feature vector per gene.
+        num_mutations: Vocabulary size of mutation encodings (number of unique
+            missense mutation types in the missense map).
+        max_seq_len: Maximum number of variants per gene; sequences are padded
+            or truncated to this length.
+        num_genes: Total number of genes in the dataset.  Used for logging
+            only; not tied to any learnable parameter shape.
+        use_pvc: Whether the variant-context (PVC) branch is active.  When
+            ``False`` the model behaves as a GC+GO-only classifier and
+            ``VariantEncoder`` / ``GeneVariantAttention`` are not instantiated.
     """
 
     def __init__(
@@ -132,20 +150,40 @@ class Varformer(nn.Module):
         x: dict,
         mask: torch.Tensor | None = None,
     ):
-        """Forward pass.
+        """Low-level nn.Module forward pass.
+
+        Most users should call ``predict()`` instead; this method is exposed for
+        fine-grained control inside Lightning training loops.
 
         Args:
-            x:    Dict with keys 'gc', 'go', and (if use_pvc) 'pvc'.
-                  - x['gc']: tuple/list whose first element is [B, num_features_gc].
-                  - x['go']: tuple/list whose first element is [B, num_features_go].
-                  - x['pvc']: dict with 'pathogenicity', 'position', 'mutation'.
-            mask: [B, max_seq_len] bool padding mask (True = padding).
+            x: Feature dict with the following keys:
+
+                * ``"gc"`` — tuple/list whose first element is a float tensor of
+                  shape ``[B, num_features_gc]``.
+                * ``"go"`` — tuple/list whose first element is a float tensor of
+                  shape ``[B, num_features_go]``.
+                * ``"pvc"`` — (only when ``use_pvc=True``) dict with keys
+                  ``"pathogenicity"``, ``"position"``, and ``"mutation"``, each
+                  a tensor of shape ``[B, max_seq_len]``.
+
+            mask: Boolean padding mask of shape ``[B, max_seq_len]`` where
+                ``True`` marks padding positions.  Ignored when ``use_pvc=False``.
 
         Returns:
-            If return_attn is True:
-                (logits, probas, bin_preds, z_var, attn_weights)
-            Else:
-                (logits, probas, bin_preds, z_var)
+            A tuple whose length depends on ``config["hyperparameters"]["return_attn"]``:
+
+            * ``return_attn=True``:
+              ``(logits, probabilities, binary_predictions, z_var, attn_weights)``
+            * ``return_attn=False``:
+              ``(logits, probabilities, binary_predictions, z_var)``
+
+            Where ``logits`` are raw pre-sigmoid scores of shape ``[B]``,
+            ``probabilities`` are sigmoid-activated scores in ``[0, 1]``,
+            ``binary_predictions`` are thresholded 0/1 floats,
+            ``z_var`` is the attended variant embedding of shape ``[B, attention_dim]``
+            (or ``None`` when ``use_pvc=False``), and ``attn_weights`` is the
+            per-variant attention weight vector of shape ``[B, max_seq_len]``
+            (or ``None`` when ``use_pvc=False``).
         """
         device = next(self.parameters()).device
 
@@ -191,12 +229,39 @@ class Varformer(nn.Module):
 
     @classmethod
     def from_pretrained(cls, population: str, seed=42):
-        """Load a published checkpoint for (population, seed).
+        """Load a published checkpoint for a given population and seed.
 
-        seed:
-          - int: load that specific seed.
-          - "best": pick checkpoint with highest val_spearman parsed from filename.
-          - "ensemble": load all 5 seeds, return a VarformerEnsemble wrapper.
+        Resolves the checkpoint path from the configured checkpoint root
+        (``Config.paths.ckpt_root``), builds the model with data-derived
+        dimensions, and loads the weights via ``load_legacy_checkpoint``.
+
+        Args:
+            population: Population identifier.  One of ``"nfe"``, ``"elgh"``,
+                ``"afr"``, ``"amr"``.
+            seed: Which model seed to load.  Accepts three forms:
+
+                * ``int`` — loads the checkpoint for exactly that seed (e.g.
+                  ``seed=42``).
+                * ``"best"`` — selects the seed whose checkpoint filename
+                  encodes the highest ``val_spearman`` score.
+                * ``"ensemble"`` — loads **all** available checkpoints for the
+                  population and returns a ``VarformerEnsemble`` rather than a
+                  single ``Varformer`` instance.
+
+        Returns:
+            A ``Varformer`` nn.Module instance ready for ``predict()`` and
+            ``evaluate()`` calls, **unless** ``seed="ensemble"``, in which case
+            a ``VarformerEnsemble`` is returned.
+
+        Raises:
+            FileNotFoundError: if no checkpoint matching the (population, seed)
+                pair is found under the checkpoint root.
+
+        Example:
+            >>> model = Varformer.from_pretrained("nfe", seed=42)
+            >>> predictions = model.predict(["ENSG00000141510"])
+            >>> ensemble = Varformer.from_pretrained("nfe", seed="ensemble")
+            >>> predictions = ensemble.predict(["ENSG00000141510"])
         """
         from varformer.config import Config
         from varformer.checkpoints import find_checkpoint, best_seed
@@ -214,7 +279,31 @@ class Varformer(nn.Module):
 
     @classmethod
     def from_checkpoint(cls, path):
-        """Load any checkpoint by path."""
+        """Load a model from an arbitrary checkpoint file path.
+
+        Infers the population from the parent directory name when that name is
+        one of ``"nfe"``, ``"elgh"``, ``"afr"``, ``"amr"``; falls back to
+        ``"nfe"`` otherwise.  Useful when working with checkpoints saved by
+        ``VarformerTrainer.fit()`` or custom training runs.
+
+        Args:
+            path: Path to a ``.ckpt`` file (string or path-like).  The parent
+                directory name is used to infer the population if possible.
+
+        Returns:
+            A ``Varformer`` nn.Module instance ready for ``predict()`` and
+            ``evaluate()`` calls, with ``_population``, ``_lightning_module``,
+            ``_config``, ``_cfg_dict``, and ``_test_loaders`` set as
+            non-module attributes.
+
+        Raises:
+            FileNotFoundError: if ``path`` does not exist or cannot be loaded
+                by PyTorch Lightning.
+
+        Example:
+            >>> model = Varformer.from_checkpoint("checkpoints/nfe/seed42-epoch=99-val_spearman=0.61.ckpt")
+            >>> predictions = model.predict(["ENSG00000141510"])
+        """
         from varformer.config import Config
         from pathlib import Path
         config = Config.load()
@@ -303,13 +392,63 @@ class Varformer(nn.Module):
 
     @classmethod
     def trainer(cls, population, config_overrides=None, output_dir=None):
-        """Return a VarformerTrainer for the given population."""
+        """Create a ``VarformerTrainer`` configured for the given population.
+
+        Convenience factory that constructs a ``VarformerTrainer`` instance.
+        Call ``.fit(seeds=[...])`` on the returned object to start training.
+
+        Args:
+            population: Population identifier.  One of ``"nfe"``, ``"elgh"``,
+                ``"afr"``, ``"amr"``.
+            config_overrides: Optional dict of hyperparameter key-value pairs
+                that override the defaults loaded from ``Config``.  For example,
+                ``{"epochs": 50, "lr_start": 1e-4}``.
+            output_dir: Optional directory path where checkpoints will be
+                written.  When ``None`` the trainer uses the default checkpoint
+                path from ``Config``.
+
+        Returns:
+            A ``VarformerTrainer`` instance.
+
+        Example:
+            >>> trainer = Varformer.trainer("elgh", config_overrides={"epochs": 50})
+            >>> ckpt_paths = trainer.fit(seeds=[7, 42, 85])
+        """
         from varformer.training.train import VarformerTrainer
         return VarformerTrainer(population=population, config_overrides=config_overrides, output_dir=output_dir)
 
     @classmethod
     def tune(cls, population, n_trials=100, **kwargs):
-        """Run hyperparameter search via Optuna; return best params + metric."""
+        """Run Optuna hyperparameter search for the given population.
+
+        Sets the ``VARFORMER_POPULATION`` environment variable and delegates to
+        ``varformer.training.tune.tune()``.
+
+        Args:
+            population: Population identifier.  One of ``"nfe"``, ``"elgh"``,
+                ``"afr"``, ``"amr"``.
+            n_trials: Number of Optuna trials to run.  Currently forwarded as
+                context but not consumed by the underlying ``tune()`` call
+                (which reads its own config).
+            **kwargs: Reserved for future keyword arguments; currently unused.
+
+        Returns:
+            A dict with two keys:
+
+            * ``"best_params"`` (``dict``) — hyperparameter values of the best
+              trial.
+            * ``"best_metric"`` (``float``) — best validation metric achieved.
+
+            .. note::
+                Due to a known limitation, the underlying ``tune()`` function
+                does not currently return the Optuna study object, so
+                ``"best_params"`` may be an empty dict and ``"best_metric"``
+                may be ``nan`` even after a successful run.
+
+        Example:
+            >>> result = Varformer.tune("nfe", n_trials=50)
+            >>> print(result["best_metric"])
+        """
         from varformer.training.tune import tune as _tune
         import os
         os.environ["VARFORMER_POPULATION"] = population
@@ -320,15 +459,74 @@ class Varformer(nn.Module):
         }
 
     def predict(self, genes, return_attention=False):
-        """Run inference on the given gene list using local features.
+        """Run inference on a list of genes using locally cached features.
 
-        Returns {gene_id: {"prediction", "classification", "z_var", "attn_weights"?}}.
-        Outputs are JSON-serializable (Python primitives + numpy arrays).
+        Delegates to ``varformer.inference.predict.predict_subset``, which
+        reuses the data loaders and Lightning module cached at load time.
+        Output is bit-exact with the benchmark reference predictions.
+
+        Args:
+            genes: List of Ensembl gene IDs (e.g. ``"ENSG00000141510"``) to
+                return predictions for.  Genes not present in the cached
+                loaders are silently omitted from the result.
+            return_attention: When ``True``, include per-variant attention
+                weights in each gene's result dict.
+
+        Returns:
+            A dict mapping each recognised gene ID to a payload dict with the
+            following keys:
+
+            * ``"prediction"`` (``float`` in ``[0, 1]``) — sigmoid probability
+              of tractability.
+            * ``"classification"`` (``int``, ``0`` or ``1``) — binarised
+              prediction using the trained decision threshold.
+            * ``"z_var"`` (``numpy.ndarray`` of shape ``(d_model,)``) — attended
+              variant embedding for the gene.
+            * ``"attn_weights"`` (``numpy.ndarray`` of shape ``(max_seq_len,)``)
+              — per-variant attention weights.  **Only present when**
+              ``return_attention=True``.
+
+            All values are JSON-serialisable (numpy arrays can be converted with
+            ``.tolist()``).
+
+        Example:
+            >>> model = Varformer.from_pretrained("nfe", seed=42)
+            >>> preds = model.predict(["ENSG00000141510", "ENSG00000012048"])
+            >>> print(preds["ENSG00000141510"]["prediction"])
+            0.73
+            >>> preds_attn = model.predict(["ENSG00000141510"], return_attention=True)
+            >>> print(preds_attn["ENSG00000141510"]["attn_weights"].shape)
+            (512,)
         """
         from varformer.inference.predict import predict_subset
         return predict_subset(self, genes, return_attention=return_attention)
 
-    def evaluate(self, test_set):
-        """Run on labelled holdout (pfam | rcnt | pharos), return metric dict."""
+    def evaluate(self, test_set: str) -> dict:
+        """Evaluate the model on a labelled holdout set and return metrics.
+
+        Runs the model in eval mode over the test partition and computes the
+        standard binary-classification metric suite. The model must already
+        be loaded with ``from_pretrained()`` or ``from_checkpoint()``.
+
+        Args:
+            test_set: Which labelled test partition to score against. One of:
+                ``"pfam"``   — Pfam-derived holdout genes.
+                ``"rcnt"``   — Recent FDA-approval holdout genes.
+                ``"pharos"`` — Pharos chemoinformatics holdout genes.
+
+        Returns:
+            Metrics dict with keys ``{"auroc", "auprc", "spearman", "accuracy",
+            "recall", "precision", "f1"}``. Values are floats in ``[0, 1]``.
+
+        Raises:
+            KeyError: if ``test_set`` is not one of the three supported names.
+            FileNotFoundError: if the test-labels pickle file is missing.
+
+        Example:
+            >>> model = Varformer.from_pretrained("nfe", seed="best")
+            >>> metrics = model.evaluate(test_set="pfam")
+            >>> print(metrics["auroc"])
+            0.87
+        """
         from varformer.inference.evaluate import evaluate_subset
         return evaluate_subset(self, test_set)
