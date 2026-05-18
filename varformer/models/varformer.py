@@ -417,46 +417,6 @@ class Varformer(nn.Module):
         from varformer.training.train import VarformerTrainer
         return VarformerTrainer(population=population, config_overrides=config_overrides, output_dir=output_dir)
 
-    @classmethod
-    def tune(cls, population, n_trials=100, **kwargs):
-        """Run Optuna hyperparameter search for the given population.
-
-        Sets the ``VARFORMER_POPULATION`` environment variable and delegates to
-        ``varformer.training.tune.tune()``.
-
-        Args:
-            population: Population identifier.  One of ``"nfe"``, ``"sas"``,
-                ``"afr"``, ``"amr"``.
-            n_trials: Number of Optuna trials to run.  Currently forwarded as
-                context but not consumed by the underlying ``tune()`` call
-                (which reads its own config).
-            **kwargs: Reserved for future keyword arguments; currently unused.
-
-        Returns:
-            A dict with two keys:
-
-            * ``"best_params"`` (``dict``) — hyperparameter values of the best
-              trial.
-            * ``"best_metric"`` (``float``) — best validation metric achieved.
-
-            .. note::
-                Due to a known limitation, the underlying ``tune()`` function
-                does not currently return the Optuna study object, so
-                ``"best_params"`` may be an empty dict and ``"best_metric"``
-                may be ``nan`` even after a successful run.
-
-        Example:
-            >>> result = Varformer.tune("nfe", n_trials=50)
-            >>> print(result["best_metric"])
-        """
-        from varformer.training.tune import tune as _tune
-        import os
-        os.environ["VARFORMER_POPULATION"] = population
-        result = _tune()
-        return {
-            "best_params": getattr(result, "best_params", {}),
-            "best_metric": getattr(result, "best_value", float("nan")),
-        }
 
     def predict(self, genes, return_attention=False):
         """Run inference on a list of genes using locally cached features.
