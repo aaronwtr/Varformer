@@ -140,10 +140,18 @@ def train_model(data):
 class VarformerTrainer:
     """Facade for training one or more Varformer models on a population.
 
-    Usage::
+    Wraps ``varformer.training.train.train_model`` to provide a clean SDK
+    interface.  Each call to ``fit()`` trains one model per requested seed,
+    returning the best checkpoint path for each.
 
-        trainer = VarformerTrainer(population="elgh", config_overrides={"epochs": 50})
-        ckpts = trainer.fit(seeds=[7, 42, 85])
+    Prefer constructing instances through the ``Varformer.trainer()`` class
+    method rather than calling ``__init__`` directly:
+
+    Example:
+        >>> trainer = Varformer.trainer("elgh", config_overrides={"epochs": 50})
+        >>> ckpt_paths = trainer.fit(seeds=[7, 42, 85])
+        >>> print(ckpt_paths[0])
+        PosixPath('checkpoints/14-05-2026/seed7-epoch=49-val_spearman=0.59.ckpt')
     """
 
     def __init__(self, population: str, config_overrides=None, output_dir=None):
@@ -152,8 +160,32 @@ class VarformerTrainer:
         self.config = Config.load(hyperparams_override=config_overrides or {})
         self.output_dir = output_dir
 
-    def fit(self, seeds):
-        """Train one model per seed; return list of best-checkpoint Paths."""
+    def fit(self, seeds: list) -> list:
+        """Train one model per seed and return the best checkpoint path per seed.
+
+        For each seed the full data pipeline is executed
+        (``ModuleDataProcessor``), the Lightning training loop runs to
+        completion, and the checkpoint with the highest ``val_spearman`` on the
+        validation set is selected by ``ModelCheckpoint``.
+
+        Args:
+            seeds: List of integer random seeds to train.  Each seed produces
+                an independent model run with deterministic weight
+                initialisation and data shuffling.  Common practice is to pass
+                ``[7, 42, 85, 123, 256]`` for a five-seed ensemble.
+
+        Returns:
+            A list of ``pathlib.Path`` objects, one per seed, pointing to the
+            best checkpoint file saved during that run.  Seeds whose training
+            run does not produce a checkpoint (e.g. due to an early error) are
+            silently omitted, so the returned list may be shorter than
+            ``seeds``.
+
+        Example:
+            >>> trainer = Varformer.trainer("nfe")
+            >>> paths = trainer.fit(seeds=[42])
+            >>> model = Varformer.from_checkpoint(paths[0])
+        """
         from pathlib import Path
         from varformer.data.pipeline import ModuleDataProcessor
 
