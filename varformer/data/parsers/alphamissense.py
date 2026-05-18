@@ -1,19 +1,52 @@
 """AlphaMissense data merging with population exome data."""
 import pandas as pd
-import polars as pol
 
 
-def merge_am_data(pop_df: pd.DataFrame, pop: str):
-    # TOD: make this compatible with config as to not hardcode paths
-    # path_1 = '/data/scratch/bty174/genomic-drug-targeting/data/alphamissense/AlphaMissense_isoforms_hg38.tsv'
-    # path_2 = '/data/scratch/bty174/genomic-drug-targeting/data/alphamissense/AlphaMissense_hg38.tsv'
+def merge_am_data(
+    pop_df: pd.DataFrame,
+    pop: str,
+    *,
+    am_path_iso: str | None = None,
+    am_path_can: str | None = None,
+    config=None,
+) -> pd.DataFrame:
+    """Merge AlphaMissense pathogenicity scores into a population variant DataFrame.
 
-    path_1 = '../data/alphamissense/AlphaMissense_isoforms_hg38.tsv'
-    path_2 = '../data/alphamissense/AlphaMissense_hg38.tsv'
+    Paths are resolved in this priority order:
+    1. Explicit ``am_path_iso`` / ``am_path_can`` keyword arguments.
+    2. ``config['paths']['AM_PATH_ISO']`` / ``config['paths']['AM_PATH_CAN']``
+       (any mapping that supports key access, e.g. a ``varformer.config.Config``).
+    3. Relative fall-back ``../data/alphamissense/...`` for backwards-compat.
+
+    Args:
+        pop_df: Population exome DataFrame (columns: CHROM, POS, REF, ALT,
+                Amino_acids, Protein_position, …).
+        pop: Population identifier, e.g. ``"sas"``, ``"nfe"``, ``"afr"``, ``"amr"``.
+        am_path_iso: Path to AlphaMissense isoforms TSV
+                     (``AlphaMissense_isoforms_hg38.tsv``).
+        am_path_can: Path to AlphaMissense canonical TSV
+                     (``AlphaMissense_hg38.tsv``).
+        config: Optional config object whose ``config['paths']['AM_PATH_ISO']``
+                and ``config['paths']['AM_PATH_CAN']`` entries are used when the
+                explicit path arguments are not provided.
+
+    Returns:
+        Merged DataFrame with ``am_pathogenicity`` column, filtered to rows
+        where the score is not NaN.
+    """
+    if am_path_iso is None and config is not None:
+        am_path_iso = config['paths']['AM_PATH_ISO']
+    if am_path_can is None and config is not None:
+        am_path_can = config['paths']['AM_PATH_CAN']
+
+    if am_path_iso is None:
+        am_path_iso = '../data/alphamissense/AlphaMissense_isoforms_hg38.tsv'
+    if am_path_can is None:
+        am_path_can = '../data/alphamissense/AlphaMissense_hg38.tsv'
 
     # Load
-    am_iso = pd.read_csv(path_1, sep='\t', skiprows=3)
-    am_can = pd.read_csv(path_2, sep='\t')
+    am_iso = pd.read_csv(am_path_iso, sep='\t', skiprows=3)
+    am_can = pd.read_csv(am_path_can, sep='\t')
 
     # Construct variant_id
     for df in [am_iso, am_can]:
@@ -41,10 +74,5 @@ def merge_am_data(pop_df: pd.DataFrame, pop: str):
     pop_df = pop_df.drop_duplicates(subset=['variant_id'])
     pop_df = pop_df.merge(am, on='variant_id', how='left')
     pop_df = pop_df[pop_df['am_pathogenicity'].notna()]
-
-    # pop_dir = f'/data/scratch/bty174/genomic-drug-targeting/data/alphamissense/{pop}'
-    # if not os.path.exists(pop_dir):
-    #     os.makedirs(pop_dir)
-    # pop_df.to_parquet(pop_dir + f'{pop}_am_data_full.parquet', engine='pyarrow', compression='snappy')
 
     return pop_df
