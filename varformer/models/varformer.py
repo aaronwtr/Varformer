@@ -12,7 +12,7 @@ Metrics (Accuracy, AUROC, ...) have been moved to VarformerLightningModule.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 import torch
 from torch import nn
@@ -148,7 +148,7 @@ class Varformer(nn.Module):
     def forward(
         self,
         x: dict,
-        mask: torch.Tensor | None = None,
+        mask: Optional[torch.Tensor] = None,
     ):
         """Low-level nn.Module forward pass.
 

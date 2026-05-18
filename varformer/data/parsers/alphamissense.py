@@ -1,4 +1,8 @@
 """AlphaMissense data merging with population exome data."""
+from __future__ import annotations
+
+from typing import Optional
+
 import pandas as pd
 
 
@@ -6,8 +10,8 @@ def merge_am_data(
     pop_df: pd.DataFrame,
     pop: str,
     *,
-    am_path_iso: str | None = None,
-    am_path_can: str | None = None,
+    am_path_iso: Optional[str] = None,
+    am_path_can: Optional[str] = None,
     config=None,
 ) -> pd.DataFrame:
     """Merge AlphaMissense pathogenicity scores into a population variant DataFrame.
