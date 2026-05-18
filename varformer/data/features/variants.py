@@ -60,7 +60,7 @@ class PopulationVariantPreprocessor:
         print("Preparing GH data for variant-level embeddings...")
         data_dir = config['paths']['FEATURES_DIR']
         if not os.path.exists(f'{data_dir}/{self.population}/am_pop_merge.pkl'):
-            am = merge_am_data(self.pop_data, self.population)
+            am = merge_am_data(self.pop_data, self.population, config=config)
             if hasattr(am, 'to_pandas') and not isinstance(am, pd.DataFrame):
                 self.pop_data = am.to_pandas()
             elif isinstance(am, pd.DataFrame):
