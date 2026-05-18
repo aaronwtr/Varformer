@@ -1,4 +1,4 @@
-"""Model training for the Varformer model (eval mode)."""
+"""Train a Varformer model for one (population, seed) configuration."""
 import os
 import datetime
 import torch
@@ -17,34 +17,13 @@ from varformer.training.callbacks import BestThresholdCallback
 
 
 def train_model(data):
-    """Train the model in evaluation mode"""
-    torch.set_float32_matmul_precision('medium')
+    """Train a Varformer model for one (population, seed) configuration."""
     config = data['config']
 
     # Initialize wandb run
-    hyperparameters = dict(
-        lr_start=config['hyperparameters']['lr_start'],
-        lr_end=config['hyperparameters']['lr_end'],
-        T0=config['hyperparameters']['T0'],
-        cls_depth=config['hyperparameters']['depth_cls_head'],
-        num_encoder_layers=config['hyperparameters']['num_encoder_layers'],
-        nhead=config['hyperparameters']['nhead'],
-        gc_width=config['hyperparameters']['gc_width'],
-        go_width=config['hyperparameters']['go_width'],
-        d_model=config['hyperparameters']['d_model'],
-        dim_feedforward=config['hyperparameters']['dim_feedforward'],
-        gv_attn_dim=config['hyperparameters']['gv_attn_dim'],
-        batch_size=config['hyperparameters']['batch_size'],
-        optimizer=config['hyperparameters']['optimizer'],
-        epochs=config['hyperparameters']['epochs'],
-        dropout=config['hyperparameters']['dropout'],
-        weight_decay=config['hyperparameters']['weight_decay'],
-        threshold=config['hyperparameters']['threshold']
-    )
-
     run = wandb.init(
         project="drug-target-prediction",
-        config=hyperparameters,
+        config=config['hyperparameters'],
         group=f"varformer-{config['hyperparameters']['population']}"
     )
 
@@ -79,48 +58,30 @@ def train_model(data):
 
     set_seed(config['hyperparameters']['seed'])
 
-    # Configure trainer based on available GPUs
+    # Build trainer kwargs, adding conditional options only when needed.
+    trainer_kwargs = dict(
+        max_epochs=int(config['hyperparameters']['epochs']),
+        accelerator=accelerator,
+        enable_progress_bar=True,
+        precision=config['hyperparameters']['precision'],
+        logger=WandbLogger(wandb.run),
+        callbacks=[lr_monitor, checkpoint_callback, best_threshold_callback],
+        gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
+        deterministic=True,
+    )
+
     if torch.cuda.device_count() > 1:
-        trainer = pl.Trainer(
-            max_epochs=int(config['hyperparameters']['epochs']),
-            accelerator=accelerator,
-            enable_progress_bar=True,
-            log_every_n_steps=1,
-            logger=WandbLogger(wandb.run),
-            callbacks=[lr_monitor, checkpoint_callback, best_threshold_callback],
-            precision=config['hyperparameters']['precision'],
-            strategy="ddp_find_unused_parameters_true",
-            devices=-1,
-            gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
-            deterministic=True
-        )
+        trainer_kwargs["strategy"] = "ddp_find_unused_parameters_true"
+        trainer_kwargs["devices"] = -1
+        trainer_kwargs["log_every_n_steps"] = 1
     else:
         if config['hyperparameters']['grad_accum'] is not None:
-            trainer = pl.Trainer(
-                max_epochs=int(config['hyperparameters']['epochs']),
-                accelerator=accelerator,
-                enable_progress_bar=True,
-                log_every_n_steps=1,
-                precision=config['hyperparameters']['precision'],
-                logger=WandbLogger(wandb.run),
-                callbacks=[lr_monitor, checkpoint_callback, best_threshold_callback],
-                gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
-                accumulate_grad_batches=config['hyperparameters']['grad_accum'],
-                # limit_train_batches=0.1,  # Limit to 10% of training data for debugging purposes
-                deterministic=True
-            )
+            trainer_kwargs["accumulate_grad_batches"] = config['hyperparameters']['grad_accum']
+            trainer_kwargs["log_every_n_steps"] = 1
         else:
-            trainer = pl.Trainer(
-                max_epochs=int(config['hyperparameters']['epochs']),
-                accelerator=accelerator,
-                enable_progress_bar=True,
-                log_every_n_steps=10,
-                precision=config['hyperparameters']['precision'],
-                logger=WandbLogger(wandb.run),
-                callbacks=[lr_monitor, checkpoint_callback, best_threshold_callback],
-                gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
-                deterministic=True
-            )
+            trainer_kwargs["log_every_n_steps"] = 10
+
+    trainer = pl.Trainer(**trainer_kwargs)
 
     trainer.fit(model, train_combined, val_combined)
 
