@@ -6,7 +6,7 @@ Replaces the ad-hoc YAML dict access via `cluster_config_*.yml`. Single source o
 
 Path resolution:
 - `data_root`, `ckpt_root` are top-level in the paths YAML.
-- Per-file paths (RAW_GH, OT_PATH, etc.) are *derived* in this module.
+- Per-file paths (OT_PATH, etc.) are *derived* in this module.
 - Profile selected by VARFORMER_PROFILE env var (default 'local').
 
 Backwards-compat:
@@ -96,7 +96,7 @@ class Paths(BaseModel):
 
     @property
     def legacy(self) -> dict[str, str]:
-        """Map old config keys (DATA_DIR, RAW_GH, ...) to derived paths.
+        """Map old config keys (DATA_DIR, OT_PATH, ...) to derived paths.
 
         All values are strings to match the existing legacy access pattern,
         which often appends to paths via f-string concatenation.
@@ -105,7 +105,6 @@ class Paths(BaseModel):
         return {
             "DATA_DIR": str(d),
             "FEATURES_DIR": str(d / "features"),
-            "RAW_GH": str(d / "features" / "raw_miva_feature_matrix.pkl"),
             "GH_CSQ": str(d / "elgh" / "gh_parts" / "processed_gh_data" / "all_csqs_non_filtered.pkl"),
             "ALL_GH": str(d / "processed_pop_data" / "elgh_exomes_filtered.pkl"),
             "POP_DATA": str(d / "processed_pop_data") + "/",
