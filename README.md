@@ -92,7 +92,7 @@ Varformer is a multimodal architecture combining gene-centric features with popu
 ```
 varformer/         # the importable package
   models/          # VariantEncoder, GeneVariantAttention, Varformer (architecture)
-  training/        # VarformerLightningModule, train, tune, callbacks
+  training/        # VarformerLightningModule, train, callbacks
   inference/       # predict, evaluate, load
   data/            # features/, parsers/, datasets, samplers, pipeline, loaders, splits
   utils/           # seeding, aa_codes, gene_id

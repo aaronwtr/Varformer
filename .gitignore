@@ -261,6 +261,9 @@ src/models/archive/
 /benchmark/DrugnomeAI-release/drugnome_ai/output/supervised-learning/models/iteration_2/RandomForestClassifier_8.model
 /benchmark/DrugnomeAI-release/drugnome_ai/output/supervised-learning/models/iteration_2/RandomForestClassifier_8.model
 
+# HPO tuning — local-only, not pushed to public github
+varformer/training/tune.py
+
 # Brainstorming specs and design docs — local only, never pushed
 docs/superpowers/
 
