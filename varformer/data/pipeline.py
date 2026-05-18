@@ -4,20 +4,9 @@ import random
 import yaml
 import pandas as pd
 
-import types
-
 from varformer.data.features.gc import GeneCharacterisationPreprocessor
 from varformer.data.features.go import GeneOntologyPreprocessor
 from varformer.data.features.variants import PopulationVariantPreprocessor
-
-# Legacy `preprocessing.<Class>` references resolve via this synthetic namespace,
-# avoiding the src/preprocessing shim and the sys.path injection it would need.
-preprocessing = types.SimpleNamespace(
-    GeneCharacterisationPreprocessor=GeneCharacterisationPreprocessor,
-    GeneOntologyPreprocessor=GeneOntologyPreprocessor,
-    PopulationVariantPreprocessor=PopulationVariantPreprocessor,
-)
-
 from tabulate import tabulate
 
 
@@ -46,17 +35,17 @@ class ModuleDataProcessor:
         return self.homogenize_data(data)
 
     def open_gc_data(self):
-        gcp = preprocessing.GeneCharacterisationPreprocessor(config=self.config)
+        gcp = GeneCharacterisationPreprocessor(config=self.config)
         print("Gene characterisation features preprocessed!\n")
         return gcp
 
     def open_go_data(self, gc_data):
-        gop = preprocessing.GeneOntologyPreprocessor(config=self.config, gcp=gc_data)
+        gop = GeneOntologyPreprocessor(config=self.config, gcp=gc_data)
         print("Gene ontology features preprocessed!\n")
         return gop
 
     def open_pvc_data(self, gc_data):
-        pvc = preprocessing.PopulationVariantPreprocessor(config=self.config, gcp=gc_data)
+        pvc = PopulationVariantPreprocessor(config=self.config, gcp=gc_data)
         print("Population variants preprocessed!\n")
         return pvc
 
