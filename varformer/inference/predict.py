@@ -1,8 +1,4 @@
-"""Inference pipeline for the Varformer model.
-
-Moved from src/training.py (run_inference) in Phase 5.
-Phase 7: Added predict_subset() for SDK predict() method.
-"""
+"""Inference pipeline for the Varformer model."""
 import os
 import torch
 import pickle as pkl

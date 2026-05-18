@@ -1,4 +1,4 @@
-"""GeneOntologyPreprocessor — moved from src/preprocessing.py (Phase 4A)."""
+"""Gene Ontology feature extraction and preprocessing."""
 import os
 import pickle as pkl
 import gzip

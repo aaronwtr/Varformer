@@ -1,4 +1,4 @@
-"""GeneCharacterisationPreprocessor — moved from src/preprocessing.py (Phase 4A)."""
+"""Gene-level feature extraction from OpenTargets and population exome data."""
 import os
 import gc
 import warnings

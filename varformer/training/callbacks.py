@@ -1,7 +1,4 @@
-"""Training callbacks for the Varformer model.
-
-Moved from src/utils/custom_callbacks.py in Phase 5.
-"""
+"""Training callbacks for the Varformer model."""
 from pytorch_lightning.callbacks import Callback
 
 

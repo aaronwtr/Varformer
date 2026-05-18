@@ -1,4 +1,4 @@
-"""PopulationVariantPreprocessor and extract_pvc_features — moved from src/preprocessing.py (Phase 4A)."""
+"""Population variant preprocessing and pathogenicity feature extraction."""
 import os
 import gzip
 import pickle as pkl

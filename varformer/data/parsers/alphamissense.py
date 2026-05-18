@@ -1,10 +1,10 @@
-"""merge_am_data — moved from src/utils/merge_am_data.py (Phase 4A)."""
+"""AlphaMissense data merging with population exome data."""
 import pandas as pd
 import polars as pol
 
 
 def merge_am_data(pop_df: pd.DataFrame, pop: str):
-    # TODO: make this compatible with config as to not hardcode paths
+    # TOD: make this compatible with config as to not hardcode paths
     # path_1 = '/data/scratch/bty174/genomic-drug-targeting/data/alphamissense/AlphaMissense_isoforms_hg38.tsv'
     # path_2 = '/data/scratch/bty174/genomic-drug-targeting/data/alphamissense/AlphaMissense_hg38.tsv'
 

@@ -1,4 +1,4 @@
-"""OptimizedGnomadVepParser — moved from src/utils/gnomad_vep_parser.py (Phase 4A)."""
+"""Optimized gnomAD VEP annotation parser for population variant data."""
 import pandas as pd
 import pysam
 from pathlib import Path

@@ -1,4 +1,4 @@
-"""VCF processor — moved from src/proc_vcf.py (Phase 4A).
+"""VCF processor for population exome data.
 
 This file was originally a script (top-level executable code); it is preserved
 verbatim here so it can be imported or run as a module.
