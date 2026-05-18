@@ -301,7 +301,7 @@ class ModelPreprocessorInference:
         )
 
         accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'
-        return unlabeled_loader, test_loaders, gc_features_dim, go_features_dim, num_genes, num_mutations
+        return unlabeled_loader, test_loaders, gc_features_dim, go_features_dim, len(self.gene_names), num_mutations
 
     def initialise_model(self, train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes_dict,
                          test_data_dict, torch_dtype, config):
