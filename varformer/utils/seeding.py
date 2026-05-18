@@ -1,7 +1,4 @@
-"""Random-seed helpers.
-
-Extracted from src/utils/utils.py (Phase 6 refactor).
-"""
+"""Random seed utilities."""
 import random
 
 import numpy as np

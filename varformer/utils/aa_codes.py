@@ -1,7 +1,4 @@
-"""Amino-acid encoding helpers.
-
-Extracted from src/utils/utils.py (Phase 6 refactor).
-"""
+"""Amino-acid encoding helpers."""
 
 
 def aa_to_idx(aa: str, dna_encoded: bool = False) -> int:

@@ -1,4 +1,4 @@
-"""SynchronizedMultiModalBatchSampler, MultiModalDataLoader — moved from src/dataloader.py (Phase 4A)."""
+"""Synchronized batch sampler and dataloader for multi-modal training data."""
 import torch
 
 from torch.utils.data import Dataset, BatchSampler, Sampler

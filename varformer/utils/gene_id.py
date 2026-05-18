@@ -1,7 +1,4 @@
-"""Gene / protein identifier helpers.
-
-Extracted from src/utils/utils.py (Phase 6 refactor).
-"""
+"""Gene / protein identifier helpers."""
 import warnings
 
 import requests

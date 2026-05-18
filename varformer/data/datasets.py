@@ -1,4 +1,4 @@
-"""DrugTargetData, VarformerDataset, MultiModalData — moved from src/dataloader.py (Phase 4A)."""
+"""PyTorch Dataset classes for drug-target, variant, and multi-modal data."""
 import torch
 import numpy as np
 

@@ -1,7 +1,4 @@
-"""Hyperparameter tuning with Optuna for the Varformer model.
-
-Moved from src/training.py (tune + objective) in Phase 5.
-"""
+"""Hyperparameter tuning with Optuna for the Varformer model."""
 import os
 import torch
 import optuna

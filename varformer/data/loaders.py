@@ -1,4 +1,4 @@
-"""ModelPreprocessorEval and ModelPreprocessorInference — moved from src/preprocessing.py (Phase 4A)."""
+"""ModelPreprocessorEval and ModelPreprocessorInference for data loading and model initialisation."""
 import pickle as pkl
 import types
 

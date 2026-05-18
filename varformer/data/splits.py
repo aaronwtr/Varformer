@@ -1,7 +1,4 @@
-"""Label-loading helpers for drug-target splits.
-
-Extracted from src/utils/utils.py (Phase 6 refactor).
-"""
+"""Label-loading helpers for drug-target splits."""
 import pickle as pkl
 
 import pandas as pd

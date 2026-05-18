@@ -224,7 +224,7 @@ class Varformer(nn.Module):
             return logits, probabilities, binary_predictions, z_var
 
     # ------------------------------------------------------------------
-    # Public SDK class methods (Phase 7)
+    # Public SDK class methods
     # ------------------------------------------------------------------
 
     @classmethod

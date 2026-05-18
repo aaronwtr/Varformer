@@ -1,4 +1,4 @@
-"""ModuleDataProcessor — moved from src/dataloader.py (Phase 4A)."""
+"""Multi-modal data pipeline for gene characterisation, ontology, and variant features."""
 import random
 
 import yaml

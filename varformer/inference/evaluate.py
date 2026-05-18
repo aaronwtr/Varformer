@@ -1,8 +1,4 @@
-"""Model evaluation and testing utilities for the Varformer model.
-
-Moved from src/testing.py in Phase 5.
-Phase 7: Added evaluate_subset() for SDK evaluate() method.
-"""
+"""Model evaluation and testing utilities for the Varformer model."""
 import torch
 
 from pytorch_lightning import Trainer

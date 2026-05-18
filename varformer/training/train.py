@@ -1,7 +1,4 @@
-"""Model training for the Varformer model (eval mode).
-
-Moved from src/training.py (train_model) in Phase 5.
-"""
+"""Model training for the Varformer model (eval mode)."""
 import os
 import datetime
 import torch
