@@ -8,8 +8,8 @@ import numpy as np
 from tqdm import tqdm
 import os
 
-IN_DIR = "../data/elgh/gh_parts/raw_vcfs"
-OUT_DIR = "../data/elgh/gh_parts/processed_gh_data/all_csqs/"
+IN_DIR = "../data/sas/gh_parts/raw_vcfs"
+OUT_DIR = "../data/sas/gh_parts/processed_gh_data/all_csqs/"
 
 csq_of_interest = ['splice_acceptor_variant', 'splice_donor_variant', 'start_lost', 'stop_lost', 'stop_gained',
                    'missense_variant', 'inframe_insertion', 'inframe_deletion', 'frameshift_variant', ]
@@ -116,4 +116,4 @@ for txt_file in tqdm(txt_files):
     dfs.append(df)
 
 combined_df = pd.concat(dfs, ignore_index=True)
-combined_df.to_pickle(f'../data/elgh/gh_parts/processed_gh_data/all_csqs_non_filtered.pkl')
+combined_df.to_pickle(f'../data/sas/gh_parts/processed_gh_data/all_csqs_non_filtered.pkl')

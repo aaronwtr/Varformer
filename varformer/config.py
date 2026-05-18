@@ -25,7 +25,7 @@ from pydantic import BaseModel
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIGS = REPO_ROOT / "configs"
 
-Population = Literal["elgh", "nfe", "afr", "amr"]
+Population = Literal["sas", "nfe", "afr", "amr"]
 
 
 class Hyperparameters(BaseModel):
@@ -105,19 +105,18 @@ class Paths(BaseModel):
         return {
             "DATA_DIR": str(d),
             "FEATURES_DIR": str(d / "features"),
-            "GH_CSQ": str(d / "elgh" / "gh_parts" / "processed_gh_data" / "all_csqs_non_filtered.pkl"),
-            "ALL_GH": str(d / "processed_pop_data" / "elgh_exomes_filtered.pkl"),
+            "GH_CSQ": str(d / "sas" / "gh_parts" / "processed_gh_data" / "all_csqs_non_filtered.pkl"),
+            "ALL_GH": str(d / "processed_pop_data" / "sas_exomes_filtered.pkl"),
             "POP_DATA": str(d / "processed_pop_data") + "/",
             "GNOMAD_DATA": str(d / "gnomad_data") + "/",
-            "VAR_MAP": str(d / "elgh" / "gh_parts" / "processed_gh_data" / "variant_to_rs_dict.pkl"),
+            "VAR_MAP": str(d / "sas" / "gh_parts" / "processed_gh_data" / "variant_to_rs_dict.pkl"),
             "CKPT_PATH": str(self.ckpt_root) + "/",
             "TEST_LABELS_FILE": str(d / "test_data" / "full_test_labels_per_source.pkl"),
             "GENOME_PATH": str(d / "hg38.fasta"),
             "CITELINE_LABELS": str(d / "labels" / "citeline_manual_labels.pkl"),
-            "MISSENSE_MAP": str(d / "elgh" / "missense_mutation_map.pkl"),
-            "GENE_VAR_MAP": str(d / "elgh" / "gene_var_map.pkl"),
-            "GENE_VAR_LOC_MAP": str(d / "elgh" / "gene_loc_var_map.pkl"),
-            "MIVA_PATH": str(d / "elgh" / "all_functional.gatk_PASS.FS_30.DP_0.GQ_20.AB_0.01.functional.missingness_lt_0.genotype_counts.present_in_ELGH.n_transcripts_corrected.txt"),
+            "MISSENSE_MAP": str(d / "sas" / "missense_mutation_map.pkl"),
+            "GENE_VAR_MAP": str(d / "sas" / "gene_var_map.pkl"),
+            "GENE_VAR_LOC_MAP": str(d / "sas" / "gene_loc_var_map.pkl"),
             "VARFORMER_PREDICT_OUTPUT": str(d / "output") + "/",
             "AM_PATH": str(d / "alphamissense") + "/",
             "AM_PATH_ISO": str(d / "alphamissense" / "AlphaMissense_isoforms_hg38.tsv"),

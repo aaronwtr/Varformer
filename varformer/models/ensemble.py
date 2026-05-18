@@ -38,7 +38,7 @@ class VarformerEnsemble:
         ``Varformer.from_checkpoint``.
 
         Args:
-            population: Population identifier.  One of ``"nfe"``, ``"elgh"``,
+            population: Population identifier.  One of ``"nfe"``, ``"sas"``,
                 ``"afr"``, ``"amr"``.
 
         Returns:

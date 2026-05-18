@@ -6,7 +6,7 @@ from varformer import Varformer
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--population", required=True, choices=["nfe", "elgh", "afr", "amr"])
+    p.add_argument("--population", required=True, choices=["nfe", "sas", "afr", "amr"])
     p.add_argument("--seeds", type=int, nargs="+", default=[42])
     p.add_argument("--output-dir", default="./checkpoints/")
     args = p.parse_args()

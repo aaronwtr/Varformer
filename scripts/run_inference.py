@@ -9,7 +9,7 @@ from varformer import Varformer
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--population", required=True, choices=["nfe", "elgh", "afr", "amr"])
+    p.add_argument("--population", required=True, choices=["nfe", "sas", "afr", "amr"])
     p.add_argument("--seed", default="best", help='int, "best", or "ensemble"')
     p.add_argument("--genes-file", required=True, help="text file, one Ensembl ID per line")
     p.add_argument("--out", default="-", help="JSON output path or '-' for stdout")
