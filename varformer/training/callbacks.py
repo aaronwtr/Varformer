@@ -3,6 +3,8 @@ from pytorch_lightning.callbacks import Callback
 
 
 class BestThresholdCallback(Callback):
+    """Tracks the classification threshold from the epoch with the best val_spearman score."""
+
     def __init__(self, monitor='val_spearman', mode='max'):
         self.metric = monitor
         self.best_threshold = None
