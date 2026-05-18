@@ -87,8 +87,6 @@ class GeneCharacterisationPreprocessor(BaseFeatures):
         self.features = self.features.fillna(0)
 
         self.ensg_ids = self.features["targetId"]
-        # self.features, self.ensg_ids, self.uniprot_ids = featurise(ensg_features)
-        # self.norm = True
 
         # Ground truth
         self.features = self.features.rename(columns={'maxClinicalTrialPhase': 'target'})
