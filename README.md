@@ -55,7 +55,7 @@ print(metrics["auroc"], metrics["auprc"], metrics["spearman"])
 
 ```python
 trainer = Varformer.trainer(
-    population="elgh",                            # see "Population labels" below
+    population="sas",                             # see "Population labels" below
     config_overrides={"epochs": 50, "lr_start": 3e-5},
     output_dir="./checkpoints/",
 )
@@ -81,11 +81,11 @@ Varformer is a multimodal architecture combining gene-centric features with popu
 | Code label | Cohort | Seeds |
 |---|---|---|
 | `nfe` | Non-Finnish European (gnomAD) | 42, 85, 482, 589, 612 |
-| `elgh` | **South Asian** — Genes & Health (Bangladeshi + Pakistani), N=44,288 | 7, 32, 57, 64, 482 |
+| `sas` | **South Asian** — Genes & Health (Bangladeshi + Pakistani), N=44,288 | 7, 32, 57, 64, 482 |
 | `afr` | African (gnomAD) | (per release) |
 | `amr` | Admixed American (gnomAD) | (per release) |
 
-**Population labels.** The internal code label `elgh` corresponds to the **SAS (South Asian)** cohort in the paper, sourced from the East London Genes & Health study. All other populations come from gnomAD. Checkpoints live under `checkpoints/<label>/seed{N}-epoch=*-val_spearman=*.ckpt`.
+**Population labels.** The `sas` label corresponds to the South Asian cohort sourced from the East London Genes & Health study. All other populations come from gnomAD. Checkpoints live under `checkpoints/<label>/seed{N}-epoch=*-val_spearman=*.ckpt`.
 
 ## Repository layout
 

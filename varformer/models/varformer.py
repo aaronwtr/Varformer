@@ -236,7 +236,7 @@ class Varformer(nn.Module):
         dimensions, and loads the weights via ``load_legacy_checkpoint``.
 
         Args:
-            population: Population identifier.  One of ``"nfe"``, ``"elgh"``,
+            population: Population identifier.  One of ``"nfe"``, ``"sas"``,
                 ``"afr"``, ``"amr"``.
             seed: Which model seed to load.  Accepts three forms:
 
@@ -282,7 +282,7 @@ class Varformer(nn.Module):
         """Load a model from an arbitrary checkpoint file path.
 
         Infers the population from the parent directory name when that name is
-        one of ``"nfe"``, ``"elgh"``, ``"afr"``, ``"amr"``; falls back to
+        one of ``"nfe"``, ``"sas"``, ``"afr"``, ``"amr"``; falls back to
         ``"nfe"`` otherwise.  Useful when working with checkpoints saved by
         ``VarformerTrainer.fit()`` or custom training runs.
 
@@ -308,7 +308,7 @@ class Varformer(nn.Module):
         from pathlib import Path
         config = Config.load()
         p = Path(path)
-        population = p.parent.name if p.parent.name in ("nfe", "elgh", "afr", "amr") else "nfe"
+        population = p.parent.name if p.parent.name in ("nfe", "sas", "afr", "amr") else "nfe"
         return cls._build_and_load(config, population, p)
 
     @classmethod
@@ -398,7 +398,7 @@ class Varformer(nn.Module):
         Call ``.fit(seeds=[...])`` on the returned object to start training.
 
         Args:
-            population: Population identifier.  One of ``"nfe"``, ``"elgh"``,
+            population: Population identifier.  One of ``"nfe"``, ``"sas"``,
                 ``"afr"``, ``"amr"``.
             config_overrides: Optional dict of hyperparameter key-value pairs
                 that override the defaults loaded from ``Config``.  For example,
@@ -411,7 +411,7 @@ class Varformer(nn.Module):
             A ``VarformerTrainer`` instance.
 
         Example:
-            >>> trainer = Varformer.trainer("elgh", config_overrides={"epochs": 50})
+            >>> trainer = Varformer.trainer("sas", config_overrides={"epochs": 50})
             >>> ckpt_paths = trainer.fit(seeds=[7, 42, 85])
         """
         from varformer.training.train import VarformerTrainer
@@ -425,7 +425,7 @@ class Varformer(nn.Module):
         ``varformer.training.tune.tune()``.
 
         Args:
-            population: Population identifier.  One of ``"nfe"``, ``"elgh"``,
+            population: Population identifier.  One of ``"nfe"``, ``"sas"``,
                 ``"afr"``, ``"amr"``.
             n_trials: Number of Optuna trials to run.  Currently forwarded as
                 context but not consumed by the underlying ``tune()`` call

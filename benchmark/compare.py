@@ -19,7 +19,7 @@ TOL_ZVAR_REL = 1e-3
 
 CHECKPOINTS = {
     "nfe": [42, 85, 482, 589, 612],
-    "elgh": [7, 32, 57, 64, 482],
+    "sas": [7, 32, 57, 64, 482],
 }
 
 
@@ -84,6 +84,6 @@ def main(populations: list) -> int:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--populations", nargs="+", default=["nfe", "elgh"])
+    parser.add_argument("--populations", nargs="+", default=["nfe", "sas"])
     args = parser.parse_args()
     sys.exit(main(args.populations))

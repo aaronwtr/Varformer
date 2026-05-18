@@ -51,10 +51,10 @@ class BaseFeatures:
     def load_pop_data(self):
         """
         Load population-exome data. Assumed the data is stored as <pop_id>_exomes_filtered.pkl.
-        pop_ids that are supported are: 'elgh', 'amr', 'afr' and 'nfe'.
+        pop_ids that are supported are: 'sas', 'amr', 'afr' and 'nfe'.
         """
-        assert self.population in ['elgh', 'amr', 'afr', 'nfe'], (
-            "Population must be one of: 'elgh', 'amr', 'afr', or 'nfe'.")
+        assert self.population in ['sas', 'amr', 'afr', 'nfe'], (
+            "Population must be one of: 'sas', 'amr', 'afr', or 'nfe'.")
         pop_path = self.config['paths']['POP_DATA'] + f'{self.population}_exomes_filtered.pkl'
         if not os.path.exists(pop_path):
             pop_data = self.filter_raw_exomes()

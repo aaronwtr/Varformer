@@ -28,9 +28,9 @@ source .venv/bin/activate
 MODE="${1:-compare}"
 
 if [ "$MODE" = "generate" ]; then
-    python benchmark/generate_reference.py --populations nfe elgh
+    python benchmark/generate_reference.py --populations nfe sas
 elif [ "$MODE" = "compare" ]; then
-    python benchmark/compare.py --populations nfe elgh
+    python benchmark/compare.py --populations nfe sas
 else
     echo "Unknown mode: $MODE" >&2
     exit 1

@@ -145,7 +145,7 @@ class VarformerTrainer:
     method rather than calling ``__init__`` directly:
 
     Example:
-        >>> trainer = Varformer.trainer("elgh", config_overrides={"epochs": 50})
+        >>> trainer = Varformer.trainer("sas", config_overrides={"epochs": 50})
         >>> ckpt_paths = trainer.fit(seeds=[7, 42, 85])
         >>> print(ckpt_paths[0])
         PosixPath('checkpoints/14-05-2026/seed7-epoch=49-val_spearman=0.59.ckpt')
