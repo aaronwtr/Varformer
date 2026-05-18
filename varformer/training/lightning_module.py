@@ -1,18 +1,8 @@
-"""VarformerLightningModule: Lightning training wrapper for Varformer.
+"""PyTorch Lightning wrapper around the Varformer architecture.
 
-Renamed from MultiModalLightningTargetIdentifier (src/models/lightning.py).
-
-Key changes from the original:
-  - Metrics (Accuracy, AUROC, SpearmanCorrCoef, Recall, Precision, F1Score,
-    AveragePrecision) have been moved from the nn.Module into this class.
-  - _log() now references self.<metric> instead of self.model.<metric>.
-  - model.varformer is now a VariantEncoder (no VarformerTargetIdentifier wrapper).
-
-Deleted legacy classes (no replacement):
-  - BaseLightningTargetIdentifier
-  - MLPLightningTargetIdentifier
-  - VarformerLightningTargetIdentifier
-  - ShardedVarformerLightningTargetIdentifier
+Owns training/val/test/predict steps, the PUL (nnPU) loss, metric logging,
+optimizer + scheduler configuration. The underlying nn.Module is a `Varformer`
+instance accessible as `self.model`.
 """
 from __future__ import annotations
 
@@ -109,38 +99,28 @@ class VarformerLightningModule(pl.LightningModule):
             eps = 1e-8
 
             if step_type == "train":
-                if self.hyperparams.get("pusb", False):
-                    pos_mask = labels == 1
-                    unlabeled_mask = labels == 0
+                # Varformer uses nnPU (non-negative PU) loss; pusb must be enabled.
+                if not self.hyperparams.get("pusb", False):
+                    raise NotImplementedError(
+                        "Varformer training requires hyperparameters.pusb=True (nnPU loss)."
+                    )
+                pos_mask = labels == 1
+                unlabeled_mask = labels == 0
 
-                    if pos_mask.sum() > 0:
-                        pos_mean_log = torch.mean(torch.log(probas[pos_mask] + eps))
-                        pos_mean_log_1 = torch.mean(torch.log(1 - probas[pos_mask] + eps))
-                    else:
-                        pos_mean_log = torch.tensor(0.0, device=self.device)
-                        pos_mean_log_1 = torch.tensor(0.0, device=self.device)
-                    if unlabeled_mask.sum() > 0:
-                        unlabeled_mean_log_1 = torch.mean(torch.log(1 - probas[unlabeled_mask] + eps))
-                    else:
-                        unlabeled_mean_log_1 = torch.tensor(0.0, device=self.device)
-
-                    loss_positive = -self.pi * pos_mean_log
-                    loss_unlabeled_component = self.pi * pos_mean_log_1 - unlabeled_mean_log_1
-                    loss = loss_positive + torch.relu(loss_unlabeled_component)
+                if pos_mask.sum() > 0:
+                    pos_mean_log = torch.mean(torch.log(probas[pos_mask] + eps))
+                    pos_mean_log_1 = torch.mean(torch.log(1 - probas[pos_mask] + eps))
                 else:
-                    beta = self.beta
-                    epsilon = 1e-8
-                    n0 = self.num_samples_per_class[0]
-                    n1 = self.num_samples_per_class[1]
-                    w0 = (1.0 - beta) / (1.0 - beta ** n0 + epsilon)
-                    w1 = (1.0 - beta) / (1.0 - beta ** n1 + epsilon)
-                    norm_factor = 2.0 / (w0 + w1)
-                    w0 *= norm_factor
-                    w1 *= norm_factor
-                    weight_val_0 = torch.tensor(w0, device=self.device, dtype=logits.dtype)
-                    weight_val_1 = torch.tensor(w1, device=self.device, dtype=logits.dtype)
-                    class_weight = torch.where(labels == 0, weight_val_0, weight_val_1)
-                    loss = F.binary_cross_entropy_with_logits(logits, labels.float(), weight=class_weight)
+                    pos_mean_log = torch.tensor(0.0, device=self.device)
+                    pos_mean_log_1 = torch.tensor(0.0, device=self.device)
+                if unlabeled_mask.sum() > 0:
+                    unlabeled_mean_log_1 = torch.mean(torch.log(1 - probas[unlabeled_mask] + eps))
+                else:
+                    unlabeled_mean_log_1 = torch.tensor(0.0, device=self.device)
+
+                loss_positive = -self.pi * pos_mean_log
+                loss_unlabeled_component = self.pi * pos_mean_log_1 - unlabeled_mean_log_1
+                loss = loss_positive + torch.relu(loss_unlabeled_component)
 
                 self._log(labels, step_type, loss, bin_preds, probas)
 
@@ -198,7 +178,7 @@ class VarformerLightningModule(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         return self._common_step(batch, batch_idx, "test")
 
-    def _log(self, labels, step_type, loss, bin_preds, probas, pos_loss=None, neg_loss=None, test_source=None):
+    def _log(self, labels, step_type, loss, bin_preds, probas, test_source=None):
         if bin_preds.shape != labels.shape:
             if bin_preds.dim() == 0:
                 bin_preds = bin_preds.unsqueeze(0)
@@ -210,16 +190,11 @@ class VarformerLightningModule(pl.LightningModule):
             if labels.dim() == 0:
                 labels = labels.unsqueeze(0)
         if step_type in ["train", "val"]:
-            if pos_loss is not None:
-                self.log(f"{step_type}_pos_loss", pos_loss, batch_size=labels.shape[0])
-            if neg_loss is not None:
-                self.log(f"{step_type}_neg_loss", neg_loss, batch_size=labels.shape[0])
-
             self.log(f"{step_type}_loss", loss, batch_size=labels.shape[0])
             self.log(f"{step_type}_acc", self.acc(bin_preds, labels), batch_size=labels.shape[0])
             self.log(f"{step_type}_auroc", self.auroc(probas, labels.int()), batch_size=labels.shape[0])
-            self.model_spearman = self.spearman(probas, labels.float())
-            self.log(f"{step_type}_spearman", self.model_spearman, batch_size=labels.shape[0])
+            spearman_val = self.spearman(probas, labels.float())
+            self.log(f"{step_type}_spearman", spearman_val, batch_size=labels.shape[0])
             self.log(f"{step_type}_recall", self.recall(bin_preds, labels.long()), batch_size=labels.shape[0])
             self.log(f"{step_type}_precision", self.precision(bin_preds, labels.long()), batch_size=labels.shape[0])
             self.log(f"{step_type}_f1", self.f1(bin_preds, labels.long()), batch_size=labels.shape[0])
@@ -285,18 +260,3 @@ class VarformerLightningModule(pl.LightningModule):
 
         return [optimizer], [{"scheduler": lr_scheduler, "interval": "step"}]
 
-    def initialize_weights(self, seed=None):
-        if seed is not None:
-            torch.manual_seed(seed)
-
-        initial_weights = {}
-
-        for name, module in self.model.named_modules():
-            if isinstance(module, torch.nn.Linear):
-                torch.nn.init.xavier_uniform_(module.weight)
-                initial_weights[name + ".weight"] = module.weight.detach().clone()
-                if module.bias is not None:
-                    torch.nn.init.zeros_(module.bias)
-                    initial_weights[name + ".bias"] = module.bias.detach().clone()
-
-        return initial_weights
