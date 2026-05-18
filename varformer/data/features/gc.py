@@ -73,12 +73,6 @@ class GeneCharacterisationPreprocessor(BaseFeatures):
         with open(gc_features_path, 'wb') as f:
             pkl.dump(self.data, f)
 
-    def load_ground_truth(self):
-        """
-        Load the ground truth data.
-        """
-        return self.datasets["FDA Approved Drug Targets"]
-
     def load_opentargets_features(self):
         feature_path = self.config['paths']['OT_PATH']
         ot_df = pd.read_pickle(feature_path)
