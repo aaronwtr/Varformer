@@ -12,7 +12,7 @@ import numpy as np
 
 REPO = Path(__file__).resolve().parents[1]
 
-# Tolerances per design spec §2
+# Tolerances: predictions and attention bit-exact-ish; z_var allowed small relative drift.
 TOL_PRED_ABS = 1e-5
 TOL_ATTN_ABS = 1e-5
 TOL_ZVAR_REL = 1e-3
