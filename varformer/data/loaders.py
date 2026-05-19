@@ -1,6 +1,5 @@
 """ModelPreprocessorEval and ModelPreprocessorInference for data loading and model initialisation."""
 import pickle as pkl
-import types
 
 import torch
 import pandas as pd
@@ -8,21 +7,10 @@ import numpy as np
 
 from sklearn.model_selection import train_test_split
 
-# Legacy `dl.<name>` references resolve via this synthetic namespace pointing at the
-# new package locations, instead of importing the src/dataloader shim. This lets the
-# SDK run without src/ on sys.path.
-from varformer.data import datasets as _datasets
-from varformer.data import samplers as _samplers
+from varformer.data.datasets import MultiModalData, VarformerDataset, DrugTargetData
+from varformer.data.samplers import MultiModalDataLoader, SynchronizedMultiModalBatchSampler
 
-dl = types.SimpleNamespace(
-    MultiModalData=_datasets.MultiModalData,
-    MultiModalDataLoader=_samplers.MultiModalDataLoader,
-    VarformerDataset=_datasets.VarformerDataset,
-    DrugTargetData=_datasets.DrugTargetData,
-    SynchronizedMultiModalBatchSampler=_samplers.SynchronizedMultiModalBatchSampler,
-)
-
-from varformer.training.lightning_module import VarformerLightningModule as MultiModalLightningTargetIdentifier
+from varformer.training.lightning_module import VarformerLightningModule
 
 
 # Model preprocessing
@@ -107,7 +95,7 @@ class ModelPreprocessorEval:
         gc_features_dim = train_raw['gc'].shape[1]
         go_features_dim = train_raw['go'].shape[1]
 
-        model = MultiModalLightningTargetIdentifier(
+        model = VarformerLightningModule(
             config=config,
             num_features_gc=gc_features_dim,
             num_features_go=go_features_dim,
@@ -153,14 +141,14 @@ class ModelPreprocessorEval:
                 train_norm = {gene: train_norm[i] for i, gene in enumerate(train_genes)}
                 val_norm = {gene: val_norm[i] for i, gene in enumerate(val_genes)}
 
-                train_datasets[module_str] = dl.MultiModalData(
+                train_datasets[module_str] = MultiModalData(
                     data=train_norm,
                     labels=labels,
                     gene_names=train_genes,
                     dtype=torch_dtype
                 )
 
-                val_datasets[module_str] = dl.MultiModalData(
+                val_datasets[module_str] = MultiModalData(
                     data=val_norm,
                     labels=labels,
                     gene_names=val_genes,
@@ -169,7 +157,7 @@ class ModelPreprocessorEval:
 
                 for key, modalities in test_raw.items():
                     test_data = {gene: modalities[module_str].values[i] for i, gene in enumerate(test_genes[key])}
-                    test_datasets[key][module_str] = dl.MultiModalData(
+                    test_datasets[key][module_str] = MultiModalData(
                         data=test_data,
                         labels=test_labels,
                         gene_names=test_genes[key],
@@ -177,7 +165,7 @@ class ModelPreprocessorEval:
                         test_source=key
                     )
             else:
-                train_datasets[module_str] = dl.MultiModalData(
+                train_datasets[module_str] = MultiModalData(
                     data=None,
                     labels=None,
                     gene_names=train_genes,
@@ -186,7 +174,7 @@ class ModelPreprocessorEval:
                     max_variants=hparams['max_seq_len']
                 )
 
-                val_datasets[module_str] = dl.MultiModalData(
+                val_datasets[module_str] = MultiModalData(
                     data=None,
                     labels=None,
                     gene_names=val_genes,
@@ -196,7 +184,7 @@ class ModelPreprocessorEval:
                 )
 
                 for key, modalities in test_raw.items():
-                    test_datasets[key][module_str] = dl.MultiModalData(
+                    test_datasets[key][module_str] = MultiModalData(
                         data=None,
                         labels=None,
                         gene_names=test_genes[key],
@@ -216,13 +204,13 @@ class ModelPreprocessorEval:
         subset_labels_test = {gene: test_labels[gene] for gene in test_gene_names if gene in test_labels}
         subset_labels = {gene: labels[gene] for gene in test_gene_names if gene in labels}
 
-        train_loader = dl.MultiModalDataLoader(
+        train_loader = MultiModalDataLoader(
             datasets=train_datasets,
             batch_size=hparams['batch_size'],
             shuffle=True
         )
 
-        val_loader = dl.MultiModalDataLoader(
+        val_loader = MultiModalDataLoader(
             datasets=val_datasets,
             batch_size=hparams['batch_size'],
             shuffle=False
@@ -231,13 +219,13 @@ class ModelPreprocessorEval:
         test_loaders = {}
         for key in test_raw.keys():
             if len(next(iter(test_datasets[key].values()))) <= 1000:
-                test_loaders[key] = dl.MultiModalDataLoader(
+                test_loaders[key] = MultiModalDataLoader(
                     datasets=test_datasets[key],
                     batch_size=len(next(iter(test_datasets[key].values()))),
                     shuffle=False
                 )
             else:
-                test_loaders[key] = dl.MultiModalDataLoader(
+                test_loaders[key] = MultiModalDataLoader(
                     datasets=test_datasets[key],
                     batch_size=hparams['batch_size'],
                     shuffle=False
@@ -282,7 +270,7 @@ class ModelPreprocessorInference:
             missense_map = pkl.load(f)
         num_mutations = len(missense_map)
 
-        model = MultiModalLightningTargetIdentifier(
+        model = VarformerLightningModule(
             config=self.config,
             num_features_gc=gc_features_dim,
             num_features_go=go_features_dim,
@@ -326,7 +314,7 @@ class ModelPreprocessorInference:
         else:
             go_features_dim = train_raw['go'].shape[1]
 
-        model = MultiModalLightningTargetIdentifier(
+        model = VarformerLightningModule(
             config=config,
             num_features_gc=gc_features_dim,
             num_features_go=go_features_dim,
@@ -366,7 +354,7 @@ class ModelPreprocessorInference:
                 for gene in gene_names
             }
 
-            unlabeled_datasets[modality] = dl.MultiModalData(
+            unlabeled_datasets[modality] = MultiModalData(
                 data=data_dict,
                 labels={gene: 0 for gene in gene_names},
                 gene_names=gene_names,
@@ -374,7 +362,7 @@ class ModelPreprocessorInference:
             )
 
         # pvc modality
-        unlabeled_datasets['pvc'] = dl.MultiModalData(
+        unlabeled_datasets['pvc'] = MultiModalData(
             data=None,
             labels=None,
             gene_names=gene_names,
@@ -386,7 +374,7 @@ class ModelPreprocessorInference:
 
         dataset_size = len(gene_names)
 
-        unlabeled_loader = dl.MultiModalDataLoader(
+        unlabeled_loader = MultiModalDataLoader(
             datasets=unlabeled_datasets,
             batch_size=config['hyperparameters']['batch_size'],  # all at once
             shuffle=False
@@ -465,21 +453,21 @@ class ModelPreprocessorInference:
             # Labels are all 1 (positive/approved targets)
             labels = {gene: 1 for gene in available_genes}
 
-            gc_dataset = dl.MultiModalData(
+            gc_dataset = MultiModalData(
                 data=gc_data_dict,
                 labels=labels,
                 gene_names=available_genes,
                 dtype=dtype
             )
 
-            go_dataset = dl.MultiModalData(
+            go_dataset = MultiModalData(
                 data=go_data_dict,
                 labels=labels,
                 gene_names=available_genes,
                 dtype=dtype
             )
 
-            pvc_dataset = dl.MultiModalData(
+            pvc_dataset = MultiModalData(
                 data=None,
                 labels=None,
                 gene_names=available_genes,
@@ -492,7 +480,7 @@ class ModelPreprocessorInference:
             )
 
             # Create loader
-            test_loaders[test_name] = dl.MultiModalDataLoader(
+            test_loaders[test_name] = MultiModalDataLoader(
                 datasets={'gc': gc_dataset, 'go': go_dataset, 'pvc': pvc_dataset},
                 batch_size=min(32, len(available_genes)),
                 shuffle=False
