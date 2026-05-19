@@ -138,5 +138,4 @@ class VarformerEnsemble:
         Raises:
             KeyError: if ``test_set`` is not one of the three supported names.
         """
-        # Delegate to first instance for simplicity.
         return self._models[0].evaluate(test_set)

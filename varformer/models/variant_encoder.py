@@ -1,8 +1,4 @@
-"""VariantEncoder: transformer over per-gene variant sequences.
-
-Renamed from ShardedVarformer (src/models/varformer.py). Internal attribute names
-are preserved verbatim so legacy checkpoint state_dict keys continue to match.
-"""
+"""Transformer encoder over per-gene variant sequences."""
 from __future__ import annotations
 
 import math
@@ -14,9 +10,9 @@ from torch import nn
 class PositionalEncoder(nn.Module):
     """Sinusoidal positional encoder that accepts explicit position indices.
 
-    The PE tensor is not a registered buffer: it is generated on CPU/GPU at
-    construction time, stored as a plain attribute, and re-cast to the input
-    device inside forward(). This matches the original src/ behaviour exactly.
+    The PE tensor is stored as a plain attribute (not a registered buffer) so
+    that it does not appear in state_dict; forward() re-casts it to the
+    correct device on each call.
     """
 
     def __init__(self, max_seq_len: int, d_model: int, dropout: float):
@@ -31,12 +27,9 @@ class PositionalEncoder(nn.Module):
         periodicity = torch.exp(
             torch.arange(0, self.d_model, 2, dtype=torch.float) * (-math.log(10000.0) / self.d_model)
         )
-
         pe = torch.zeros(self.max_seq_len, self.d_model)
         pe[:, 0::2] = torch.sin(positions * periodicity)
         pe[:, 1::2] = torch.cos(positions * periodicity)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        pe = pe.to(device)
         return pe
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
@@ -50,9 +43,10 @@ class PositionalEncoder(nn.Module):
 class VariantEncoder(nn.Module):
     """Transformer encoder over the variant sequence for a gene.
 
-    Renamed from ShardedVarformer. All attribute names (mutation_embedding,
-    pathogenicity_projection, positional_encoder, dropout, variant_transformer)
-    are identical to the originals so checkpoint keys load without remapping.
+    Encodes each variant as the concatenation of a learned mutation embedding
+    and a projected pathogenicity scalar, then applies a stack of transformer
+    encoder layers conditioned on a sinusoidal positional encoding over the
+    variant's protein position.
     """
 
     def __init__(
@@ -73,7 +67,6 @@ class VariantEncoder(nn.Module):
         self.pathogenicity_projection = nn.Linear(1, d_model // 2)
 
         self.positional_encoder = PositionalEncoder(max_seq_len, d_model, dropout)
-        self.dropout = nn.Dropout(dropout)
 
         self.variant_transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(

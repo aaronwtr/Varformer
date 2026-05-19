@@ -1,9 +1,4 @@
-"""GeneVariantAttention: cross-attention from gene context to variant embeddings.
-
-Ported verbatim from src/models/target_identifier.py. Attribute names
-(query_layer, key_layer, value_layer, attn) are preserved so checkpoint
-state_dict keys continue to match.
-"""
+"""Gene-to-variant cross-attention layer."""
 from __future__ import annotations
 
 import torch

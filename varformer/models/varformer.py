@@ -1,15 +1,4 @@
-"""Varformer: multi-modal gene tractability model.
-
-Renamed from MultiModalTargetIdentifier (src/models/target_identifier.py).
-
-Deleted classes (no replacement — they were dead or superseded):
-  - BaseTargetIdentifier       (dead wrapper with unused classifier)
-  - VarformerTargetIdentifier  (useless extra wrapper; its .varformer attr
-                                caused the state_dict double-prefix)
-  - MultiModalTargetIdentifierV1 (legacy architecture)
-
-Metrics (Accuracy, AUROC, ...) have been moved to VarformerLightningModule.
-"""
+"""Varformer: multi-modal gene tractability model architecture."""
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -77,7 +66,6 @@ class Varformer(nn.Module):
         self.use_pvc = use_pvc
         self.config = config
         self.hyperparams = self.config["hyperparameters"]
-        self.dropout = nn.Dropout(float(self.hyperparams["dropout"]))
 
         # 1. GC projection branch
         gc_width = int(self.hyperparams["gc_width"])
@@ -101,9 +89,8 @@ class Varformer(nn.Module):
         gene_feature_dim = gc_width + go_width
 
         if self.use_pvc:
-            # Attribute name `self.varformer` is kept so checkpoint keys like
-            # model.varformer.mutation_embedding.weight continue to match
-            # (after the load_legacy_checkpoint wrapper-prefix collapse).
+            # Attribute name `self.varformer` is required for state_dict key compatibility
+            # (model.varformer.mutation_embedding.weight, etc.).
             self.varformer = VariantEncoder(
                 max_seq_len=max_seq_len,
                 num_muts=num_mutations,
@@ -131,8 +118,7 @@ class Varformer(nn.Module):
         # 4. Classification head
         cls_head_layers = []
         depth_cls_head = int(self.hyperparams["depth_cls_head"])
-        inp_dim_classifier = gene_feature_dim + attention_dim
-        current_dim = inp_dim_classifier
+        current_dim = gene_feature_dim + attention_dim
         for _ in range(depth_cls_head):
             hidden_dim = current_dim // 2
             cls_head_layers += [
