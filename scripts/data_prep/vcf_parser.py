@@ -1,7 +1,7 @@
-"""VCF processor for population exome data.
+"""Preprocess raw GH VCF parts: keep PASS rows with consequence-of-interest, write per-part TSVs.
 
-This file was originally a script (top-level executable code); it is preserved
-verbatim here so it can be imported or run as a module.
+Run as a script from ``scripts/data_prep/`` after setting ``IN_DIR`` / ``OUT_DIR``
+to point at the raw and processed GH part directories on the cluster.
 """
 import pandas as pd
 import numpy as np
