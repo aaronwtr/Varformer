@@ -20,7 +20,8 @@ def merge_am_data(
     1. Explicit ``am_path_iso`` / ``am_path_can`` keyword arguments.
     2. ``config['paths']['AM_PATH_ISO']`` / ``config['paths']['AM_PATH_CAN']``
        (any mapping that supports key access, e.g. a ``varformer.config.Config``).
-    3. Relative fall-back ``../data/alphamissense/...`` for backwards-compat.
+    3. Relative fall-back ``../data/alphamissense/...`` when neither explicit
+       paths nor a config are provided.
 
     Args:
         pop_df: Population exome DataFrame (columns: CHROM, POS, REF, ALT,
