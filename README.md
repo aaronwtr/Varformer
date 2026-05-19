@@ -1,8 +1,25 @@
+<div align="center">
+
 # Varformer
 
-A multimodal transformer framework for **exome-wide prioritisation of population-informed drug targets**. Varformer integrates gene-centric multiomics features with population-scale genetic variation through a cross-modal attention mechanism that autonomously learns representations from raw, variable-length sets of missense variants, addressing both label sparsity and population-specific genetic architecture in target discovery.
+**Exome-wide prioritisation of population-informed drug targets.**
+
+[![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/release/python-390/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/aaronwtr/Varformer/actions/workflows/ci.yml/badge.svg)](https://github.com/aaronwtr/Varformer/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/aaronwtr/Varformer/branch/main/graph/badge.svg)](https://codecov.io/gh/aaronwtr/Varformer)
+[![Paper](https://img.shields.io/badge/paper-preprint%20pending-lightgrey.svg)](#)
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-checkpoints%20pending-yellow)](#)
+
+</div>
+
+Varformer is a multimodal transformer framework that integrates gene-centric multiomics features with population-scale genetic variation. A cross-modal attention mechanism autonomously learns representations from raw, variable-length sets of missense variants, addressing both label sparsity and population-specific genetic architecture in target discovery.
 
 Trained across four ancestrally diverse populations: African (AFR), Admixed American (AMR), Non-Finnish European (NFE), and South Asian (SAS, via the Genes & Health cohort).
+
+<p align="center">
+  <img src="docs/figures/architecture.png" alt="Varformer architecture overview" width="780"/>
+</p>
 
 ## Installation
 
@@ -67,7 +84,7 @@ Following the design in the paper, Varformer is structured around two complement
 To train Varformer on a different population or cohort, the dataset has to be pre-processed into the same per-gene format used by the published populations:
 
 1. **Variants.** A pickle keyed by Ensembl gene ID, where each value is the gene's missense-variant table (columns: AlphaMissense pathogenicity score, protein position, mutation-type index). The mutation-type index is taken from the shared missense map in `data/<pop>/missense_mutation_map.pkl`.
-2. **Gene features.** Per-gene multiomics features (GC) and Gene Ontology features (GO), aligned to the same gene index, in the layout expected by `varformer/data/features/gc.py` and `varformer/data/features/go.py`.
+2. **Gene features.** Per-gene Open Targets tractability features and Gene Ontology features, aligned to the same gene index, in the layout expected by `varformer/data/features/gc.py` and `varformer/data/features/go.py`.
 3. **Labels.** Positive drug-target labels for PU training; unlabelled genes are inferred automatically.
 
 Register the new population by adding its label to the `Population` literal in `varformer/config.py` and adding its data paths under the appropriate profile in `configs/paths/{local,hpc}.yml`.
@@ -99,8 +116,31 @@ varformer/         # the importable package
   config.py        # Pydantic Config + Hyperparameters
 configs/           # default.yml + paths/{hpc,local}.yml
 scripts/           # run_training.py, run_inference.py launchers
+docs/figures/      # README assets
 checkpoints/       # trained model checkpoints (gitignored)
 ```
+
+## Data sources
+
+Varformer is trained on publicly available resources plus the access-controlled Genes & Health cohort. Users replicating or extending training need to obtain these datasets directly from their providers under the providers' respective terms.
+
+| Source | Role in Varformer | Access |
+|---|---|---|
+| [Open Targets](https://platform.opentargets.org/) | GC module — tractability features | Open, [terms](https://platform-docs.opentargets.org/terms-of-use) |
+| [Gene Ontology](https://geneontology.org/) | GC module — GO-derived features | Open, [CC BY 4.0](https://geneontology.org/docs/go-citation-policy/) |
+| [AlphaMissense](https://www.science.org/doi/10.1126/science.adg7492) | PVC module — per-variant pathogenicity score | Released under CC BY-NC-SA 4.0 — **non-commercial** |
+| [gnomAD v4.1](https://gnomad.broadinstitute.org/) | Population variant catalogues for NFE / AFR / AMR | Open, [licensing](https://gnomad.broadinstitute.org/policies) |
+| [Genes & Health](https://www.genesandhealth.org/) | South Asian (SAS) exome cohort | Access-controlled; apply via the G&H Data Access Committee |
+
+The downstream AlphaMissense licence (CC BY-NC-SA 4.0) limits commercial use of Varformer's per-variant features. If you intend to deploy Varformer in a commercial setting, obtain a separate AlphaMissense licence or substitute another missense-pathogenicity predictor.
+
+## Updates
+
+- **Pending** — Initial public release with the trained NFE, SAS, AFR, and AMR checkpoints on the Hugging Face Hub, coinciding with the paper.
+
+## Acknowledgements
+
+We thank the participants and operational team of the **Genes & Health** study for the South Asian exome data, and the **Open Targets**, **Gene Ontology Consortium**, **gnomAD / Broad Institute**, and **Google DeepMind (AlphaMissense)** consortia for making the underlying resources publicly available.
 
 ## Citation
 
@@ -116,7 +156,7 @@ checkpoints/       # trained model checkpoints (gitignored)
 
 ## License
 
-MIT — see `LICENSE`.
+MIT — see `LICENSE`. Note that Varformer's per-variant features depend on AlphaMissense scores, which are released under CC BY-NC-SA 4.0; downstream commercial use of the trained model therefore requires a separate AlphaMissense licence.
 
 ## Contact
 
