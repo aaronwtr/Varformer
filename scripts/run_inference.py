@@ -10,15 +10,13 @@ from varformer import Varformer
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--population", required=True, choices=["nfe", "sas", "afr", "amr"])
-    p.add_argument("--seed", default="best", help='int, "best", or "ensemble"')
+    p.add_argument("--seed", default="best", help='int or "best"')
     p.add_argument("--genes-file", required=True, help="text file, one Ensembl ID per line")
     p.add_argument("--out", default="-", help="JSON output path or '-' for stdout")
     p.add_argument("--return-attention", action="store_true")
     args = p.parse_args()
 
-    seed = args.seed
-    if seed not in ("best", "ensemble"):
-        seed = int(seed)
+    seed = args.seed if args.seed == "best" else int(args.seed)
 
     genes = Path(args.genes_file).read_text().splitlines()
     model = Varformer.from_pretrained(args.population, seed=seed)

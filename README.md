@@ -35,15 +35,6 @@ for gene_id, payload in predictions.items():
     print(gene_id, payload["prediction"], payload["classification"])
 ```
 
-### Ensemble inference
-
-Average predictions across all 5 seeds for a population:
-
-```python
-ensemble = Varformer.from_pretrained("nfe", seed="ensemble")
-preds = ensemble.predict(genes=[...])
-```
-
 ### Evaluation on labelled holdout
 
 ```python

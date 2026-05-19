@@ -224,20 +224,16 @@ class Varformer(nn.Module):
         Args:
             population: Population identifier.  One of ``"nfe"``, ``"sas"``,
                 ``"afr"``, ``"amr"``.
-            seed: Which model seed to load.  Accepts three forms:
+            seed: Which model seed to load.  Accepts two forms:
 
                 * ``int`` — loads the checkpoint for exactly that seed (e.g.
                   ``seed=42``).
                 * ``"best"`` — selects the seed whose checkpoint filename
                   encodes the highest ``val_spearman`` score.
-                * ``"ensemble"`` — loads **all** available checkpoints for the
-                  population and returns a ``VarformerEnsemble`` rather than a
-                  single ``Varformer`` instance.
 
         Returns:
             A ``Varformer`` nn.Module instance ready for ``predict()`` and
-            ``evaluate()`` calls, **unless** ``seed="ensemble"``, in which case
-            a ``VarformerEnsemble`` is returned.
+            ``evaluate()`` calls.
 
         Raises:
             FileNotFoundError: if no checkpoint matching the (population, seed)
@@ -246,15 +242,10 @@ class Varformer(nn.Module):
         Example:
             >>> model = Varformer.from_pretrained("nfe", seed=42)
             >>> predictions = model.predict(["ENSG00000141510"])
-            >>> ensemble = Varformer.from_pretrained("nfe", seed="ensemble")
-            >>> predictions = ensemble.predict(["ENSG00000141510"])
+            >>> best_model = Varformer.from_pretrained("nfe", seed="best")
         """
         from varformer.config import Config
         from varformer.checkpoints import find_checkpoint, best_seed
-
-        if seed == "ensemble":
-            from varformer.models.ensemble import VarformerEnsemble
-            return VarformerEnsemble.from_pretrained(population)
 
         config = Config.load()
         ckpt_root = config.paths.ckpt_root
