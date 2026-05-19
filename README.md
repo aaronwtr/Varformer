@@ -55,7 +55,7 @@ Trained weights will be released on the Hugging Face Hub alongside the paper; `V
 
 Following the design in the paper, Varformer is structured around two complementary modules whose representations are fused by cross-modal attention before classification:
 
-- **Gene Characterisation (GC) module** — captures gene-centric biology independent of the population. In the implementation this is split across two parallel MLP projections: one over a curated multiomics feature set (Open Targets tractability axes, protein–protein interaction context, gene essentiality, mouse-knockout phenotypes), and one over Gene Ontology-derived features. Their outputs are concatenated into a single gene-level representation `z_gene`.
+- **Gene Characterisation (GC) module** — captures gene-centric biology independent of the population. In the implementation this is split across two parallel MLP projections: one over the Open Targets tractability features, and one over Gene Ontology-derived features. Their outputs are concatenated into a single gene-level representation `z_gene`.
 - **Population Variant Characterisation (PVC) module** — encodes the variable-length set of missense variants observed in a population for each gene. Each variant is represented by its AlphaMissense pathogenicity score, its protein position, and its mutation-type index. A small transformer encoder (`VariantEncoder`) produces contextualised variant embeddings.
 
 `z_gene` then attends over the per-variant embeddings (`GeneVariantAttention`), producing a single variant-informed embedding `z_var`. The classification head concatenates `z_gene` with `z_var` and predicts a clinical-success score.
