@@ -1,17 +1,17 @@
 """Pydantic config models for Varformer.
 
-Replaces the ad-hoc YAML dict access via `cluster_config_*.yml`. Single source of truth:
-- `configs/default.yml` for hyperparameters
-- `configs/paths/{hpc,local}.yml` for path roots
+Single source of truth:
+  - ``configs/default.yml`` — hyperparameters
+  - ``configs/paths/{hpc,local}.yml`` — path roots
 
-Path resolution:
-- `data_root`, `ckpt_root` are top-level in the paths YAML.
-- Per-file paths (OT_PATH, etc.) are *derived* in this module.
-- Profile selected by VARFORMER_PROFILE env var (default 'local').
+Path resolution: ``data_root`` and ``ckpt_root`` are top-level in the paths YAML;
+per-file paths (``OT_PATH``, ``MISSENSE_MAP``, ...) are derived in this module.
+The active profile is selected by the ``VARFORMER_PROFILE`` env var (default
+``"local"``).
 
-Backwards-compat:
-- Config['hyperparameters']['d_model'] still works (legacy code uses dict access).
-- Config['paths']['CKPT_PATH'] still resolves to the derived legacy path key.
+Both ``Config`` and its nested models support dict-style key access
+(``config['hyperparameters']['d_model']``, ``config['paths']['MISSENSE_MAP']``)
+in addition to attribute access.
 """
 from __future__ import annotations
 
@@ -45,7 +45,6 @@ class Hyperparameters(BaseModel):
     use_pvc: bool = True
 
     # architecture
-    varformer_usage: bool = True
     gc_width: int = 32
     go_width: int = 512
     max_seq_len: int = 1024
@@ -55,7 +54,6 @@ class Hyperparameters(BaseModel):
     gv_attn_dim: int = 256
     nhead: int = 8
     depth_cls_head: int = 4
-    reduction: Optional[str] = None
     dropout: float = 0.3
     threshold: float = 0.5
 
@@ -71,10 +69,9 @@ class Hyperparameters(BaseModel):
     return_attn: bool = True
     num_workers: int = 0
     seed: int = 57
-    multiseed: bool = True
     mode: Literal["eval", "inference"] = "inference"
 
-    # Backwards-compat: legacy code uses dict access.
+    # Dict-style access so callers can use ``config['hyperparameters']['d_model']``.
     def __getitem__(self, key: str) -> Any:
         return getattr(self, key)
 
@@ -95,47 +92,39 @@ class Paths(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     @property
-    def legacy(self) -> dict[str, str]:
-        """Map old config keys (DATA_DIR, OT_PATH, ...) to derived paths.
+    def as_dict(self) -> dict[str, str]:
+        """Return paths as a dict keyed by the derived path identifiers.
 
-        All values are strings to match the existing legacy access pattern,
-        which often appends to paths via f-string concatenation.
+        All values are strings — callers often concatenate or append to paths
+        via f-string formatting, which is awkward with ``pathlib.Path``.
         """
         d = self.data_root
         return {
             "DATA_DIR": str(d),
             "FEATURES_DIR": str(d / "features"),
             "GH_CSQ": str(d / "sas" / "gh_parts" / "processed_gh_data" / "all_csqs_non_filtered.pkl"),
-            "ALL_GH": str(d / "processed_pop_data" / "sas_exomes_filtered.pkl"),
             "POP_DATA": str(d / "processed_pop_data") + "/",
             "GNOMAD_DATA": str(d / "gnomad_data") + "/",
             "VAR_MAP": str(d / "sas" / "gh_parts" / "processed_gh_data" / "variant_to_rs_dict.pkl"),
             "CKPT_PATH": str(self.ckpt_root) + "/",
             "TEST_LABELS_FILE": str(d / "test_data" / "full_test_labels_per_source.pkl"),
-            "GENOME_PATH": str(d / "hg38.fasta"),
             "CITELINE_LABELS": str(d / "labels" / "citeline_manual_labels.pkl"),
             "MISSENSE_MAP": str(d / "sas" / "missense_mutation_map.pkl"),
             "GENE_VAR_MAP": str(d / "sas" / "gene_var_map.pkl"),
-            "GENE_VAR_LOC_MAP": str(d / "sas" / "gene_loc_var_map.pkl"),
-            "VARFORMER_PREDICT_OUTPUT": str(d / "output") + "/",
-            "AM_PATH": str(d / "alphamissense") + "/",
             "AM_PATH_ISO": str(d / "alphamissense" / "AlphaMissense_isoforms_hg38.tsv"),
             "AM_PATH_CAN": str(d / "alphamissense" / "AlphaMissense_hg38.tsv"),
             "OT_PATH": str(d / "targetPrioritisation" / "processed" / "merged_opentargets_data.pkl"),
             "PROTEIN_ATLAS_FEATURES": str(d / "hpa" / "proteinatlas.tsv"),
             "TEST_GENES_PATH": str(d / "test_data" / "holdout_genes.xlsx"),
-            "ADULT_ACTIONABLE_GENES_PATH": str(d / "test_data" / "ACI-overview-adult.tsv"),
-            "PEDIATRIC_ACTIONABLE_GENES_PATH": str(d / "test_data" / "ACI-overview-pediatric.tsv"),
             "TISSUE_EXPRESSION_HPA": str(d / "hpa" / "normal_tissue.tsv"),
-            "TISSUE_EXPRESSION_DESC_PATH": str(d / "hpa" / "rna_single_cell_cluster_description.tsv"),
             "TISSUE_EXPRESSION_GTEX": str(d / "gtex" / "GTEx_Analysis_v10_RNASeQCv2.4.2_gene_median_tpm.gct.gz"),
         }
 
     def __getitem__(self, key: str) -> str:
-        return self.legacy[key]
+        return self.as_dict[key]
 
     def __contains__(self, key: str) -> bool:
-        return key in self.legacy
+        return key in self.as_dict
 
 
 class Config(BaseModel):
