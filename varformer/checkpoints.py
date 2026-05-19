@@ -1,4 +1,4 @@
-"""Checkpoint utilities, including legacy state_dict loader."""
+"""Checkpoint utilities: loading published checkpoints and discovering them on disk."""
 from __future__ import annotations
 
 import re
@@ -14,13 +14,15 @@ _WRAPPER_PREFIX = "model.varformer.varformer."
 _WRAPPER_NEW_PREFIX = "model.varformer."
 
 
-def _remap_legacy_state_dict(state_dict: dict[str, Any]) -> dict[str, Any]:
-    """Transform a pre-refactor Lightning state_dict into the new shape.
+def _remap_state_dict(state_dict: dict[str, Any]) -> dict[str, Any]:
+    """Transform a published-checkpoint state_dict into the current model shape.
 
-    1. Drop metric keys (now owned by VarformerLightningModule).
-    2. Drop dead BaseTargetIdentifier classifier keys.
-    3. Collapse the redundant VarformerTargetIdentifier wrapper:
-       model.varformer.varformer.X -> model.varformer.X
+    1. Drop metric keys — metrics are owned by the LightningModule now,
+       not the inner model.
+    2. Drop classifier weight keys that originate from a previously-wrapping
+       module; this branch of the model is no longer instantiated.
+    3. Collapse a redundant attribute prefix:
+       ``model.varformer.varformer.X`` -> ``model.varformer.X``.
     """
     out: dict[str, Any] = {}
     for k, v in state_dict.items():
@@ -34,15 +36,15 @@ def _remap_legacy_state_dict(state_dict: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def load_legacy_checkpoint(ckpt_path: str | Path) -> dict:
-    """Load a pre-refactor Lightning checkpoint and remap state_dict.
+def load_checkpoint(ckpt_path: str | Path) -> dict:
+    """Load a Lightning checkpoint, remapping state_dict keys for compatibility.
 
-    Returns the full Lightning checkpoint dict, with cleaned state_dict.
-    Callers should do: lm.load_state_dict(ckpt['state_dict'], strict=False)
+    Returns the full Lightning checkpoint dict.  Callers should do:
+    ``lm.load_state_dict(ckpt['state_dict'], strict=False)``.
     """
     ckpt = torch.load(ckpt_path, map_location="cpu")
     if "state_dict" in ckpt:
-        ckpt["state_dict"] = _remap_legacy_state_dict(ckpt["state_dict"])
+        ckpt["state_dict"] = _remap_state_dict(ckpt["state_dict"])
     return ckpt
 
 

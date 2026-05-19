@@ -1,7 +1,7 @@
 import re
 import torch
 from pathlib import Path
-from varformer.checkpoints import _remap_legacy_state_dict, find_checkpoint, best_seed
+from varformer.checkpoints import _remap_state_dict, find_checkpoint, best_seed
 
 
 def test_strip_metric_keys():
@@ -15,7 +15,7 @@ def test_strip_metric_keys():
         "model.auprc.thresholds": torch.tensor([0.0]),
         "model.spearman.preds": torch.zeros(10),
     }
-    out = _remap_legacy_state_dict(state_dict)
+    out = _remap_state_dict(state_dict)
     assert "model.gc_projection.0.weight" in out
     assert not any(k.startswith("model.acc.") for k in out)
     assert not any(k.startswith("model.auroc.") for k in out)
@@ -32,7 +32,7 @@ def test_strip_dead_classifier():
         "model.varformer.classifier.bias": torch.zeros(1),
         "model.varformer.varformer.variant_transformer.layers.0.norm1.weight": torch.zeros(256),
     }
-    out = _remap_legacy_state_dict(state_dict)
+    out = _remap_state_dict(state_dict)
     assert "model.varformer.classifier.weight" not in out
     assert "model.varformer.classifier.bias" not in out
     # The wrapper-renamed key should still be there
@@ -45,7 +45,7 @@ def test_collapse_wrapper_prefix():
         "model.varformer.varformer.mutation_embedding.weight": torch.zeros(400, 128),
         "model.varformer.varformer.positional_encoder.pe": torch.zeros(1024, 256),
     }
-    out = _remap_legacy_state_dict(state_dict)
+    out = _remap_state_dict(state_dict)
     assert "model.varformer.variant_transformer.layers.0.norm1.weight" in out
     assert "model.varformer.mutation_embedding.weight" in out
     assert "model.varformer.positional_encoder.pe" in out
@@ -61,7 +61,7 @@ def test_does_not_touch_unrelated_keys():
         "model.gene_variant_attention.query_layer.weight": torch.zeros(32, 24),
         "model.classification_head.0.weight": torch.zeros(28, 56),
     }
-    out = _remap_legacy_state_dict(state_dict)
+    out = _remap_state_dict(state_dict)
     assert out == state_dict  # unchanged
 
 
@@ -74,7 +74,7 @@ def test_real_checkpoint_remap():
         import pytest
         pytest.skip("Real checkpoint not available locally")
     raw = torch.load(cands[0], map_location="cpu")
-    cleaned = _remap_legacy_state_dict(raw["state_dict"])
+    cleaned = _remap_state_dict(raw["state_dict"])
     assert len(cleaned) > 0
     assert not any(re.match(r"^model\.(acc|auroc|recall|precision|f1|auprc|spearman)\.", k) for k in cleaned)
     assert not any(k.startswith("model.varformer.classifier.") for k in cleaned)
