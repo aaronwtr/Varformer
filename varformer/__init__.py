@@ -1,6 +1,7 @@
 """Varformer — gene tractability prediction from population genetic variants.
 
-See docs/superpowers/specs/2026-05-15-varformer-refactor-design.md (local).
+See README.md for usage examples and benchmark/README.md for the regression
+benchmark protocol.
 """
 __version__ = "0.2.0"
 
