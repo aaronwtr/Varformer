@@ -45,7 +45,7 @@ def evaluate_subset(model, test_set: str) -> dict:
             "return_attn": True,
             "mode": "inference",
         },
-        "paths": config.paths.legacy,
+        "paths": config.paths.as_dict,
     }
 
     from varformer.data.pipeline import ModuleDataProcessor

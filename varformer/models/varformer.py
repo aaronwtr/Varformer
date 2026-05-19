@@ -219,7 +219,7 @@ class Varformer(nn.Module):
 
         Resolves the checkpoint path from the configured checkpoint root
         (``Config.paths.ckpt_root``), builds the model with data-derived
-        dimensions, and loads the weights via ``load_legacy_checkpoint``.
+        dimensions, and loads the weights via ``load_checkpoint``.
 
         Args:
             population: Population identifier.  One of ``"nfe"``, ``"sas"``,
@@ -309,7 +309,7 @@ class Varformer(nn.Module):
         import pickle
         import pandas as pd
 
-        from varformer.checkpoints import load_legacy_checkpoint
+        from varformer.checkpoints import load_checkpoint
         from varformer.training.lightning_module import VarformerLightningModule
         from varformer.data.pipeline import ModuleDataProcessor
         from varformer.data.loaders import ModelPreprocessorInference
@@ -323,7 +323,7 @@ class Varformer(nn.Module):
                 "return_attn": True,
                 "mode": "inference",
             },
-            "paths": config.paths.legacy,
+            "paths": config.paths.as_dict,
         }
 
         # Run the data pipeline (same call shape the benchmark uses) to derive dims.
@@ -349,7 +349,7 @@ class Varformer(nn.Module):
             class_prior=None,
             use_pvc=cfg["hyperparameters"].get("use_pvc", True),
         )
-        raw_ckpt = load_legacy_checkpoint(ckpt_path)
+        raw_ckpt = load_checkpoint(ckpt_path)
         lm.load_state_dict(raw_ckpt["state_dict"], strict=False)
 
         # Build test_loaders the way the reference path did; cache so predict_subset reuses them.
