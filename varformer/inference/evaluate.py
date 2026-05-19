@@ -51,7 +51,7 @@ def evaluate_subset(model, test_set: str) -> dict:
     from varformer.data.pipeline import ModuleDataProcessor
     from varformer.data.loaders import ModelPreprocessorInference
 
-    data = ModuleDataProcessor(gc=True, go=True, pvc=True, psc=False, config=cfg).process()
+    data = ModuleDataProcessor(gc=True, go=True, pvc=True, config=cfg).process()
     splits = data if isinstance(data, list) else [data]
     first = splits[0]
 

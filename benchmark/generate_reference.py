@@ -1,9 +1,10 @@
-"""Run inference on the frozen gene list with each checkpoint and save reference outputs.
+"""Frozen reference generator — kept for audit; no longer runnable.
 
-Run ONCE at the start of the refactor; never re-run.
-Imports from src/ code (pre-refactor semantics — frozen at Phase 0).
-WARNING: src/ has been deleted; this script is intentionally frozen and cannot be
-re-run. It exists only for audit purposes. Reference outputs are in benchmark/reference/.
+This script produced the reference predictions in ``benchmark/reference/`` using the
+pre-package code layout (``src/`` directory).  That layout has since been removed,
+so the imports below will fail.  Do not attempt to run this — to regenerate the
+reference, use the SDK (``Varformer.from_pretrained(...).predict(...)``) and compare
+against the existing reference tensors via ``benchmark/compare.py``.
 """
 import argparse
 import pickle
@@ -50,7 +51,7 @@ def generate_for_population(population: str) -> None:
     config["hyperparameters"]["return_attn"] = True
 
     print(f"[{population}] loading data...")
-    data = ModuleDataProcessor(gc=True, go=True, pvc=True, psc=False, config=config).process()
+    data = ModuleDataProcessor(gc=True, go=True, pvc=True, config=config).process()
     input_genes = _load_input_genes(population)
 
     # process() in mode='inference' returns a LIST of split dicts; each split has

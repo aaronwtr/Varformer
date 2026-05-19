@@ -1,7 +1,6 @@
 """Multi-modal data pipeline for gene characterisation, ontology, and variant features."""
 import random
 
-import yaml
 import pandas as pd
 
 from varformer.data.features.gc import GeneCharacterisationPreprocessor
@@ -11,18 +10,17 @@ from tabulate import tabulate
 
 
 class ModuleDataProcessor:
-    def __init__(self, gc, go, pvc, psc, config=None):
-        assert any([gc, go, pvc, psc]), "Select at least one module to train the teacher model."
+    def __init__(self, gc, go, pvc, config=None):
+        assert any([gc, go, pvc]), "Select at least one feature modality (gc, go, or pvc)."
         self.gc = gc
         self.go = go
         self.pvc = pvc
-        self.psc = psc
 
         if config is None:
-            with open("cluster_config.yml", 'r') as stream:
-                self.config = yaml.safe_load(stream)
-        else:
-            self.config = config
+            raise ValueError(
+                "ModuleDataProcessor requires an explicit config; use varformer.config.Config.load()."
+            )
+        self.config = config
 
     def process(self):
         data = {'gc': None, 'go': None, 'pvc': None}

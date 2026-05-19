@@ -159,7 +159,7 @@ class VarformerTrainer:
                 "paths": self.config.paths,
             }
             data = ModuleDataProcessor(
-                gc=True, go=True, pvc=cfg["hyperparameters"]["use_pvc"], psc=False, config=cfg
+                gc=True, go=True, pvc=cfg["hyperparameters"]["use_pvc"], config=cfg
             ).process()
             ckpt_path = train_model(data)
             if ckpt_path is not None:

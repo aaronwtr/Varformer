@@ -301,10 +301,10 @@ class Varformer(nn.Module):
     def _build_and_load(cls, config, population, ckpt_path):
         """Build the LightningModule from data-derived dims, load checkpoint.
 
-        Builds a legacy-shaped cfg dict from the Config object so downstream code that
-        does cfg['hyperparameters']['X'] / cfg['paths']['Y'] keeps working unchanged.
+        Builds a dict-shaped cfg view from the Config object so downstream code that
+        does ``cfg['hyperparameters']['X']`` / ``cfg['paths']['Y']`` keeps working.
         Returns the inner nn.Module instance carrying the LightningModule and config as
-        non-module attributes (object.__setattr__ to avoid cycle with nn.Module child registry).
+        non-module attributes (``object.__setattr__`` to bypass nn.Module's child registry).
         """
         import pickle
         import pandas as pd
@@ -314,8 +314,8 @@ class Varformer(nn.Module):
         from varformer.data.pipeline import ModuleDataProcessor
         from varformer.data.loaders import ModelPreprocessorInference
 
-        # Build a legacy-shaped cfg dict from the Config object so downstream code that
-        # does cfg['hyperparameters']['X'] / cfg['paths']['Y'] keeps working unchanged.
+        # Build a dict-shaped cfg view (``cfg['hyperparameters']['X']``, ``cfg['paths']['Y']``)
+        # for downstream code that expects mapping access rather than Pydantic attribute access.
         cfg = {
             "hyperparameters": {
                 **config.hyperparameters.model_dump(),
@@ -327,7 +327,7 @@ class Varformer(nn.Module):
         }
 
         # Run the data pipeline (same call shape the benchmark uses) to derive dims.
-        data = ModuleDataProcessor(gc=True, go=True, pvc=True, psc=False, config=cfg).process()
+        data = ModuleDataProcessor(gc=True, go=True, pvc=True, config=cfg).process()
         splits = data if isinstance(data, list) else [data]
         first = splits[0]
         num_features_gc = first["train"]["gc"].shape[1] - (1 if "target" in first["train"]["gc"].columns else 0)
