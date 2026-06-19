@@ -18,7 +18,7 @@ Varformer is a multimodal transformer framework that integrates gene-centric mul
 Trained across four ancestrally diverse populations: African (AFR), Admixed American (AMR), Non-Finnish European (NFE), and South Asian (SAS, via the Genes & Health cohort).
 
 <p align="center">
-  <img src="docs/figures/overview_figure.pdf" alt="Varformer architecture overview" width="780"/>
+  <img src="docs/figures/overview_figure.png" alt="Varformer architecture overview" width="780"/>
 </p>
 
 ## Installation
