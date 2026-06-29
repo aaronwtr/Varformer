@@ -96,7 +96,11 @@ class VarformerLightningModule(pl.LightningModule):
                 logits, probas, bin_preds, z_var = self.model(model_input, mask)
 
             labels = pvc_labels
-            eps = 1e-8
+            # eps cushions log(probas) and log(1 - probas) against sigmoid
+            # saturation.  1e-6 is conservative under fp16 mixed precision
+            # (well above the smallest representable fp16 subnormal) while
+            # being negligible compared to any real probability.
+            eps = 1e-6
 
             if step_type == "train":
                 # Varformer uses nnPU (non-negative PU) loss; pusb must be enabled.

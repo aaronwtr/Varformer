@@ -1,13 +1,14 @@
 # Default hyperparameters for Varformer.
 # Population, seed, and use_pvc are runtime args, NOT config keys.
-# (`mode` is provisionally kept here for backward-compat; will go away in Phase 5.)
 hyperparameters:
   # training & optimization
   optimizer: AdamW
   pusb: True
   precision: "16-mixed"
   epochs: 100
-  gradient_clip_val: null
+  gradient_clip_val: 1.0   # standard transformer stabilizer; without it the
+                           # mutation_embedding norm grows unboundedly and the
+                           # cross-attention layers overflow under fp16 AMP.
   batch_size: 128
   grad_accum: null
   lr_start: 1e-4
@@ -18,7 +19,6 @@ hyperparameters:
   use_pvc: True
 
   # architecture
-  varformer_usage: True
   gc_width: 32
   go_width: 512
   max_seq_len: 1024
@@ -28,7 +28,6 @@ hyperparameters:
   gv_attn_dim: 256
   nhead: 8
   depth_cls_head: 4
-  reduction: null
   dropout: 0.3
   threshold: 0.5
 
@@ -44,5 +43,4 @@ hyperparameters:
   return_attn: True
   num_workers: 0
   seed: 57
-  multiseed: True
   mode: "inference"
