@@ -13,11 +13,18 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.utilities.model_summary import ModelSummary
 
 from varformer.data.loaders import ModelPreprocessorEval
-from varformer.training.callbacks import BestThresholdCallback
+from varformer.training.callbacks import BestThresholdCallback, NaNDiagnosticsCallback
 
 
 def train_model(data):
     """Train a Varformer model for one (population, seed) configuration."""
+    # TF32 matmul precision on Ampere+ GPUs — affects training dynamics and is
+    # required to reproduce the published checkpoints. Scoped here (not at module
+    # level) so it only applies when a training process actually starts; the
+    # inference path never reaches this function.
+    if torch.cuda.is_available():
+        torch.set_float32_matmul_precision('medium')
+
     config = data['config']
 
     # Initialize wandb run
@@ -56,6 +63,10 @@ def train_model(data):
         mode='max'
     )
 
+    nan_diagnostics_callback = NaNDiagnosticsCallback(
+        stop_on_nan=bool(config['hyperparameters'].get('stop_on_nan', True)),
+    )
+
     set_seed(config['hyperparameters']['seed'])
 
     # Build trainer kwargs, adding conditional options only when needed.
@@ -65,7 +76,7 @@ def train_model(data):
         enable_progress_bar=True,
         precision=config['hyperparameters']['precision'],
         logger=WandbLogger(wandb.run),
-        callbacks=[lr_monitor, checkpoint_callback, best_threshold_callback],
+        callbacks=[lr_monitor, checkpoint_callback, best_threshold_callback, nan_diagnostics_callback],
         gradient_clip_val=config['hyperparameters']['gradient_clip_val'],
         deterministic=True,
     )
