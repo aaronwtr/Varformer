@@ -298,15 +298,9 @@ class VarformerLightningModule(pl.LightningModule):
                 self.parameters(), lr=float(self.hyperparams["lr_start"]), weight_decay=weight_decay
             )
         elif self.hyperparams["optimizer"] == "AdamW":
-            # foreach=False forces the scalar (for-loop) implementation.
-            # The default foreach/fused kernel groups all parameters by
-            # (device, dtype) and crashes if any tensor has a mismatched
-            # dtype — which bf16-mixed autocast can trigger.  The scalar
-            # loop handles each parameter independently and is robust to
-            # mixed precision.  Negligible perf difference at 8.4M params.
             optimizer = torch.optim.AdamW(
                 self.parameters(), lr=float(self.hyperparams["lr_start"]),
-                weight_decay=weight_decay, foreach=False,
+                weight_decay=weight_decay,
             )
         else:
             raise ValueError(f"Optimizer {self.hyperparams['optimizer']} not recognized.")
