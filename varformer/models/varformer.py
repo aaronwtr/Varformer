@@ -321,6 +321,11 @@ class Varformer(nn.Module):
                 # stay bit-exact, so we disable the cap regardless of what the
                 # YAML default sets it to for training.
                 "mutation_embedding_max_norm": None,
+                # precision controls data tensor dtype in the loader (bf16-mixed
+                # casts to bfloat16; anything else stays fp32).  The published
+                # benchmark reference was generated with fp32 data, so the
+                # inference path forces fp32 regardless of the training default.
+                "precision": "16-mixed",
             },
             "paths": config.paths.as_dict,
         }
