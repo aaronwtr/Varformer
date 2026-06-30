@@ -42,6 +42,7 @@ class Hyperparameters(BaseModel):
     scheduler: str = "CosineAnnealingLR"
     T0: int = 200
     weight_decay: float = 3e-4
+    mutation_embedding_max_norm: Optional[float] = None
     use_pvc: bool = True
 
     # architecture
