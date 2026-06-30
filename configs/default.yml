@@ -4,7 +4,12 @@ hyperparameters:
   # training & optimization
   optimizer: AdamW
   pusb: True
-  precision: "16-mixed"
+  precision: "bf16-mixed"   # bf16 has the same exponent range as fp32, which
+                            # eliminates the activation/gradient overflow we hit
+                            # under fp16-mixed (epoch ~6–14 cascading NaN in
+                            # cross-attention and classifier-head). A100s
+                            # support bf16 natively.
+
   epochs: 100
   gradient_clip_val: 1.0   # standard transformer stabilizer; without it the
                            # mutation_embedding norm grows unboundedly and the
