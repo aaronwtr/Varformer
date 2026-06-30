@@ -91,8 +91,6 @@ class Varformer(nn.Module):
         if self.use_pvc:
             # Attribute name `self.varformer` is required for state_dict key compatibility
             # (model.varformer.mutation_embedding.weight, etc.).
-            mm_max_norm = self.hyperparams.get("mutation_embedding_max_norm", None)
-            mm_max_norm = float(mm_max_norm) if mm_max_norm is not None else None
             self.varformer = VariantEncoder(
                 max_seq_len=max_seq_len,
                 num_muts=num_mutations,
@@ -101,7 +99,6 @@ class Varformer(nn.Module):
                 dim_feedforward=int(self.hyperparams["dim_feedforward"]),
                 nhead=int(self.hyperparams["nhead"]),
                 num_encoder_layers=int(self.hyperparams["num_encoder_layers"]),
-                mutation_embedding_max_norm=mm_max_norm,
             )
 
             variant_feature_dim = int(self.hyperparams["d_model"])
@@ -316,10 +313,10 @@ class Varformer(nn.Module):
                 "population": population,
                 "return_attn": True,
                 "mode": "inference",
-                # max_norm renormalises Embedding.weight in-place on every
-                # forward pass.  Inference of the published checkpoints must
-                # stay bit-exact, so we disable the cap regardless of what the
-                # YAML default sets it to for training.
+                # Embedding norm capping is a training-only callback
+                # (EmbeddingNormClipCallback); setting None here is a no-op
+                # (the callback is never created for inference) but documents
+                # the intent.
                 "mutation_embedding_max_norm": None,
                 # precision controls data tensor dtype in the loader (bf16-mixed
                 # casts to bfloat16; anything else stays fp32).  The published
