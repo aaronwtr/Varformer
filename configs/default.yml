@@ -16,6 +16,13 @@ hyperparameters:
   scheduler: "CosineAnnealingLR"
   T0: 200
   weight_decay: 3e-4
+  mutation_embedding_max_norm: 20.0   # per-vector L2 cap on the mutation
+                                      # embedding lookup, applied each forward
+                                      # pass. Well above the init norm
+                                      # (~sqrt(d_model/2) ≈ 11) so it does not
+                                      # alter early training, but prevents the
+                                      # runaway that overflows the cross-
+                                      # attention layer under fp16 AMP.
   use_pvc: True
 
   # architecture

@@ -44,6 +44,8 @@ def evaluate_subset(model, test_set: str) -> dict:
             "population": population,
             "return_attn": True,
             "mode": "inference",
+            # Disable embedding renormalisation for inference; see _build_and_load.
+            "mutation_embedding_max_norm": None,
         },
         "paths": config.paths.as_dict,
     }
