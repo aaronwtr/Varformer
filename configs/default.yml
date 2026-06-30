@@ -4,11 +4,14 @@ hyperparameters:
   # training & optimization
   optimizer: AdamW
   pusb: True
-  precision: "bf16-mixed"   # bf16 has the same exponent range as fp32, which
-                            # eliminates the activation/gradient overflow we hit
-                            # under fp16-mixed (epoch ~6–14 cascading NaN in
-                            # cross-attention and classifier-head). A100s
-                            # support bf16 natively.
+  precision: "16-mixed"     # fp16-mixed.  bf16-mixed was tried (Run 8) but
+                            # its 8-bit mantissa prevented the model from
+                            # learning at all (val_spearman collapsed to ~0.1
+                            # and classifications went all-zero).  Under fp16
+                            # the model converges to paper-range metrics
+                            # (test_pfam ~0.58 at peak epoch 11) but is
+                            # numerically delicate — see the gradient clip,
+                            # eps, and EmbeddingNormClipCallback below.
 
   epochs: 100
   gradient_clip_val: 1.0   # standard transformer stabilizer; without it the

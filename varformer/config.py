@@ -32,7 +32,7 @@ class Hyperparameters(BaseModel):
     # training & optimization
     optimizer: str = "AdamW"
     pusb: bool = True
-    precision: str = "bf16-mixed"
+    precision: str = "16-mixed"
     epochs: int = 100
     gradient_clip_val: Optional[float] = None
     batch_size: int = 128
