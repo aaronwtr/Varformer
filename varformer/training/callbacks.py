@@ -128,6 +128,40 @@ class NaNDiagnosticsCallback(Callback):
             trainer.should_stop = True
 
 
+class EmbeddingNormClipCallback(Callback):
+    """Clamp mutation-embedding vector norms after each optimizer step.
+
+    Replaces ``nn.Embedding(max_norm=...)`` which does in-place renormalisation
+    during ``forward()`` — under bf16 autocast that silently casts the master
+    weight from fp32 to bf16, crashing the fused AdamW kernel when it
+    encounters mixed parameter dtypes.
+
+    This callback achieves the same per-vector L2 cap but operates on the
+    fp32 master weight tensor *after* the optimizer step, outside any autocast
+    context, so the dtype stays homogeneous throughout the training loop.
+
+    Args:
+        max_norm: Maximum L2 norm per embedding vector.  Vectors exceeding
+            this norm are scaled down; vectors within it are left unchanged.
+    """
+
+    def __init__(self, max_norm: float):
+        super().__init__()
+        self.max_norm = max_norm
+
+    def on_before_zero_grad(self, trainer, pl_module, optimizer):
+        """Clamp embedding norms after optimizer.step(), before zero_grad()."""
+        encoder = pl_module.model.varformer
+        if encoder is None:
+            return
+        with torch.no_grad():
+            # renorm_ rescales each row (dim=0) so its L2 norm (p=2) does not
+            # exceed max_norm.  Equivalent to what nn.Embedding(max_norm=...)
+            # does internally, but safe under mixed-precision because we
+            # operate on the fp32 master weight outside autocast.
+            encoder.mutation_embedding.weight.data.renorm_(2, 0, self.max_norm)
+
+
 class BestThresholdCallback(Callback):
     """Tracks the classification threshold from the epoch with the best val_spearman score."""
 
