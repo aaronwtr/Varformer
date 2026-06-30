@@ -209,7 +209,7 @@ class VarformerLightningModule(pl.LightningModule):
                 labels = labels.unsqueeze(0)
         if step_type in ["train", "val"]:
             self.log(f"{step_type}_loss", loss, batch_size=labels.shape[0])
-            self.log(f"{step_type}_acc", self.acc(bin_preds, labels), batch_size=labels.shape[0])
+            self.log(f"{step_type}_acc", self.acc(bin_preds, labels.long()), batch_size=labels.shape[0])
             self.log(f"{step_type}_auroc", self.auroc(probas, labels.int()), batch_size=labels.shape[0])
             spearman_val = self.spearman(probas, labels.float())
             self.log(f"{step_type}_spearman", spearman_val, batch_size=labels.shape[0])
@@ -218,7 +218,7 @@ class VarformerLightningModule(pl.LightningModule):
             self.log(f"{step_type}_f1", self.f1(bin_preds, labels.long()), batch_size=labels.shape[0])
             self.log(f"{step_type}_auprc", self.auprc(probas, labels.long()), batch_size=labels.shape[0])
         else:
-            self.log(f"{step_type}_acc_{test_source}", self.acc(bin_preds, labels), batch_size=labels.shape[0])
+            self.log(f"{step_type}_acc_{test_source}", self.acc(bin_preds, labels.long()), batch_size=labels.shape[0])
             self.log(f"{step_type}_auroc_{test_source}", self.auroc(bin_preds, labels.int()), batch_size=labels.shape[0])
             self.log(f"{step_type}_spearman_{test_source}", self.spearman(probas, labels.float()), batch_size=labels.shape[0])
             self.log(f"{step_type}_recall_{test_source}", self.recall(bin_preds, labels.long()), batch_size=labels.shape[0])
