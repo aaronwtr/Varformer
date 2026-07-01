@@ -22,42 +22,64 @@ def _is_bad(x) -> bool:
 
 
 class NaNDiagnosticsCallback(Callback):
-    """Watch for NaN/Inf in losses, gradients, and weights during training.
+    """Detect *genuine* training divergence and dump a one-time diagnostic.
 
-    On the first NaN or Inf observed, dumps a one-time diagnostic block to
-    stdout and to the active logger (epoch, global step, per-tensor weight
-    and grad norms, and which monitored metrics were affected) so a
-    post-mortem doesn't depend on memorising the run.  Subsequent NaN events
-    in the same run are counted but not re-dumped.
+    Genuine, unrecoverable divergence means the model parameters or the
+    training loss have become non-finite.  Only that stops training.
+
+    A non-finite **gradient** in ``on_after_backward`` is NOT divergence under
+    fp16-mixed AMP: the ``GradScaler`` scales the loss up (typically x2**16),
+    so gradients routinely overflow fp16's 65504 ceiling on some steps.  The
+    scaler detects this, *skips* that optimizer step, and lowers the scale —
+    a normal, self-healing event.  We therefore only record the first such
+    overflow as a diagnostic note and never stop on it.  (bf16-mixed uses no
+    scaler and does not overflow this way, so this hook stays quiet there.)
 
     Args:
         stop_on_nan: When True (default), call ``trainer.should_stop = True``
-            after the first NaN dump so the bad run terminates with the
-            diagnostic intact rather than continuing into a NaN floor that
-            poisons the best-checkpoint and ``BestThresholdCallback`` state.
+            after the first genuine-divergence dump so the bad run terminates
+            with the diagnostic intact rather than continuing into a NaN floor
+            that poisons the best-checkpoint and ``BestThresholdCallback`` state.
     """
 
     def __init__(self, stop_on_nan: bool = True):
         super().__init__()
         self.stop_on_nan = stop_on_nan
         self._first_nan_logged = False
+        self._grad_overflow_logged = False
         self._nan_event_count = 0
 
     def on_after_backward(self, trainer, pl_module):
-        if self._first_nan_logged:
+        # Diagnostic only — a non-finite gradient here is an expected,
+        # scaler-handled fp16 event, not a divergence.  Record where the first
+        # overflow originates once, then stay quiet; never stop training.
+        if self._grad_overflow_logged:
             return
-
-        bad_grad_norms = {}
         for name, p in pl_module.named_parameters():
             if p.grad is None:
                 continue
-            gnorm = p.grad.detach().float().norm().item()
-            if not math.isfinite(gnorm):
-                bad_grad_norms[name] = gnorm
-        if bad_grad_norms:
-            self._dump(trainer, pl_module, source="backward", details={
-                "non_finite_grad_norms": bad_grad_norms,
-            })
+            if not torch.isfinite(p.grad.detach()).all():
+                self._grad_overflow_logged = True
+                print(
+                    f"[NaNDiagnostics] Scaled-gradient overflow first seen at "
+                    f"epoch {trainer.current_epoch}, step {trainer.global_step} "
+                    f"(origin: {name}).  Handled by the fp16 GradScaler "
+                    f"(step skipped, scale lowered) — not fatal."
+                )
+                return
+
+    def on_before_zero_grad(self, trainer, pl_module, optimizer):
+        # Genuine divergence: a model PARAMETER is non-finite after the
+        # optimizer step.  If the scaler skipped the step the params are
+        # unchanged and finite, so this never false-positives on overflow.
+        if self._first_nan_logged:
+            return
+        for name, p in pl_module.named_parameters():
+            if not torch.isfinite(p.detach()).all():
+                self._dump(trainer, pl_module, source="parameters", details={
+                    "first_nonfinite_param": name,
+                })
+                return
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if self._first_nan_logged:
