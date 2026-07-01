@@ -73,8 +73,13 @@ class NaNDiagnosticsCallback(Callback):
         if trainer.sanity_checking or self._first_nan_logged:
             return
 
+        # Only watch metrics whose NaN reliably signals a real training divergence.
+        # val_auprc / val_threshold can be NaN as edge-case artefacts of specific
+        # validation batches (constant predictions, single-class batches, etc.)
+        # without the model itself being broken — treating those as fatal would
+        # spuriously kill otherwise-healthy runs.
         bad = {}
-        for key in ("val_loss", "val_auprc", "val_threshold", "val_spearman"):
+        for key in ("val_loss", "val_spearman"):
             v = trainer.callback_metrics.get(key)
             if _is_bad(v):
                 bad[key] = float(v) if v is not None else None
