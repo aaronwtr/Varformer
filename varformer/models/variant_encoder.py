@@ -58,16 +58,23 @@ class VariantEncoder(nn.Module):
         dim_feedforward: int,
         nhead: int = 8,
         num_encoder_layers: int = 2,
+        mutation_embedding_max_norm: float = None,
     ):
         super().__init__()
         self.d_model = d_model
         self.max_seq_len = max_seq_len
 
-        # Plain embedding — no max_norm here.  Norm capping is handled by
-        # ``EmbeddingNormClipCallback`` which operates on the fp32 master
-        # weight *after* the optimizer step, avoiding the dtype conflict
-        # that nn.Embedding(max_norm=...) causes under bf16 autocast.
-        self.mutation_embedding = nn.Embedding(num_muts, d_model // 2)
+        # ``mutation_embedding_max_norm`` renormalises each embedding vector
+        # whose L2 norm exceeds the cap.  ``None`` (SDK / inference default)
+        # is a plain ``nn.Embedding`` for bit-exact parity with the published
+        # checkpoints; a finite value (training default 20.0) prevents the
+        # embedding-norm runaway that overflows the cross-attention layer
+        # under fp16 mixed precision.  Note: only safe under fp16 — under
+        # bf16 the in-place renormalisation runs inside autocast and casts
+        # the master weight to bf16 (see git history for details).
+        self.mutation_embedding = nn.Embedding(
+            num_muts, d_model // 2, max_norm=mutation_embedding_max_norm
+        )
         self.pathogenicity_projection = nn.Linear(1, d_model // 2)
 
         self.positional_encoder = PositionalEncoder(max_seq_len, d_model, dropout)

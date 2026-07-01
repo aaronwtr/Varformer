@@ -13,7 +13,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.utilities.model_summary import ModelSummary
 
 from varformer.data.loaders import ModelPreprocessorEval
-from varformer.training.callbacks import BestThresholdCallback, EmbeddingNormClipCallback, NaNDiagnosticsCallback
+from varformer.training.callbacks import BestThresholdCallback, NaNDiagnosticsCallback
 
 
 def train_model(data):
@@ -68,12 +68,6 @@ def train_model(data):
     )
 
     callbacks = [lr_monitor, checkpoint_callback, best_threshold_callback, nan_diagnostics_callback]
-
-    # Embedding norm capping — training-only.  Replaces nn.Embedding(max_norm=...)
-    # which caused a dtype conflict under bf16 autocast.
-    mm_max_norm = config['hyperparameters'].get('mutation_embedding_max_norm')
-    if mm_max_norm is not None:
-        callbacks.append(EmbeddingNormClipCallback(max_norm=float(mm_max_norm)))
 
     set_seed(config['hyperparameters']['seed'])
 
