@@ -24,7 +24,7 @@ jobs:
         run: uv python install 3.9
 
       - name: Sync dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra dev   # dev extra provides pytest + pytest-cov
 
       - name: Run tests with coverage
         run: |
