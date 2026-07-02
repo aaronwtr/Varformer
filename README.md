@@ -147,7 +147,7 @@ The downstream AlphaMissense licence (CC BY-NC-SA 4.0) limits commercial use of 
 
 ## Acknowledgements
 
-We thank the participants and operational team of the **Genes & Health** study for the South Asian exome data, and the **Open Targets**, **Gene Ontology Consortium**, **gnomAD / Broad Institute**, and **Google DeepMind (AlphaMissense)** consortia for making the underlying resources publicly available.
+We thank the participants and operational team of the **Genes & Health** study for the South Asian exome data, and the **Open Targets**, **Gene Ontology Consortium**, **gnomAD / Broad Institute**, and **Google DeepMind (AlphaMissense)** teams for making the underlying resources publicly available.
 
 ## Citation
 
