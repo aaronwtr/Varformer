@@ -258,8 +258,9 @@ src/models/archive/
 /data/gnomad_data/gnomad.exomes.v4.1.sites.chrY.vcf.bgz
 /data/gnomad_data/gnomad.exomes.v4.1.allele_number_all_sites.tsv.bgz
 /data/targetPrioritisation/part-00140-be56a120-41f3-4c08-9a1b-660f19de8f20-c000.snappy.parquet
-/benchmark/DrugnomeAI-release/drugnome_ai/output/supervised-learning/models/iteration_2/RandomForestClassifier_8.model
-/benchmark/DrugnomeAI-release/drugnome_ai/output/supervised-learning/models/iteration_2/RandomForestClassifier_8.model
+
+# Regression benchmark — local-only, not pushed to public github
+/benchmark/
 
 # HPO tuning — local-only, not pushed to public github
 varformer/training/tune.py
@@ -284,9 +285,6 @@ src/tune_*.log
 sn-article.log
 texput.log
 line255.txt
-
-# Benchmark reference predictions ARE tracked (override the *.pkl rule above)
-!benchmark/reference/**/*.pkl
 
 # README and docs figures ARE tracked (override the *.png rule above)
 !docs/figures/*.png
