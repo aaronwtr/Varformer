@@ -126,20 +126,6 @@ class VarformerLightningModule(pl.LightningModule):
                 loss_unlabeled_component = self.pi * pos_mean_log_1 - unlabeled_mean_log_1
                 loss = loss_positive + torch.relu(loss_unlabeled_component)
 
-                self._log_nnpu_diagnostics(
-                    probas=probas,
-                    logits=logits,
-                    pos_mask=pos_mask,
-                    unlabeled_mask=unlabeled_mask,
-                    pos_mean_log=pos_mean_log,
-                    pos_mean_log_1=pos_mean_log_1,
-                    unlabeled_mean_log_1=unlabeled_mean_log_1,
-                    loss_positive=loss_positive,
-                    loss_unlabeled_component=loss_unlabeled_component,
-                    loss=loss,
-                    batch_size=labels.shape[0],
-                )
-
                 self._log(labels, step_type, loss, bin_preds, probas)
 
             elif step_type == "val":
@@ -233,55 +219,6 @@ class VarformerLightningModule(pl.LightningModule):
                     f"{step_type}_{test_source}_probas": probas.to(dtype=torch.float32).detach().cpu().numpy(),
                     f"{step_type}_{test_source}_labels": labels.to(dtype=torch.float32).detach().cpu().numpy(),
                 })
-
-    def _log_nnpu_diagnostics(
-        self,
-        *,
-        probas,
-        logits,
-        pos_mask,
-        unlabeled_mask,
-        pos_mean_log,
-        pos_mean_log_1,
-        unlabeled_mean_log_1,
-        loss_positive,
-        loss_unlabeled_component,
-        loss,
-        batch_size: int,
-    ):
-        """Log per-term scalars from the nnPU loss so NaN/Inf onset is locatable.
-
-        Wandb traces show *where* the divergence starts (which intermediate
-        first becomes non-finite), and the ranges of ``probas``/``logits`` tell
-        us whether the underlying cause is a sigmoid saturating, an empty
-        masked subset, or upstream gradient explosion. Cheap to compute and
-        only adds scalar columns.
-        """
-        def _safe(x):
-            return x.detach().float() if isinstance(x, torch.Tensor) else torch.tensor(float(x))
-
-        def _isbad(x) -> float:
-            t = _safe(x)
-            return float((torch.isnan(t) | torch.isinf(t)).any().item())
-
-        # Per-term non-finite flags (0.0 / 1.0).
-        self.log("diag_nan_pos_mean_log",        _isbad(pos_mean_log),        batch_size=batch_size)
-        self.log("diag_nan_pos_mean_log_1",      _isbad(pos_mean_log_1),      batch_size=batch_size)
-        self.log("diag_nan_unl_mean_log_1",      _isbad(unlabeled_mean_log_1),batch_size=batch_size)
-        self.log("diag_nan_loss_positive",       _isbad(loss_positive),       batch_size=batch_size)
-        self.log("diag_nan_loss_unl_component",  _isbad(loss_unlabeled_component), batch_size=batch_size)
-        self.log("diag_nan_total_loss",          _isbad(loss),                batch_size=batch_size)
-
-        # Activation extremes (early-warning for sigmoid saturation).
-        with torch.no_grad():
-            self.log("diag_probas_min",  probas.detach().float().min().item(),  batch_size=batch_size)
-            self.log("diag_probas_max",  probas.detach().float().max().item(),  batch_size=batch_size)
-            self.log("diag_logits_absmax", logits.detach().float().abs().max().item(), batch_size=batch_size)
-
-        # Mask occupancy — empty masks fall back to constant 0 tensors, which is
-        # an instability vector worth seeing in wandb.
-        self.log("diag_n_pos",  float(pos_mask.sum().item()),       batch_size=batch_size)
-        self.log("diag_n_unl",  float(unlabeled_mask.sum().item()), batch_size=batch_size)
 
     def configure_optimizers(self):
         weight_decay = float(self.hyperparams.get("weight_decay", 0))

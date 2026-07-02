@@ -316,15 +316,15 @@ class Varformer(nn.Module):
                 "population": population,
                 "return_attn": True,
                 "mode": "inference",
-                # Embedding norm capping is a training-only callback
-                # (EmbeddingNormClipCallback); setting None here is a no-op
-                # (the callback is never created for inference) but documents
-                # the intent.
+                # Disable the embedding norm cap for inference: max_norm
+                # renormalises Embedding.weight in-place on the forward pass,
+                # which must not happen for bit-exact parity with the published
+                # checkpoints.
                 "mutation_embedding_max_norm": None,
-                # precision controls data tensor dtype in the loader (bf16-mixed
-                # casts to bfloat16; anything else stays fp32).  The published
-                # benchmark reference was generated with fp32 data, so the
-                # inference path forces fp32 regardless of the training default.
+                # precision selects the loader's data-tensor dtype (bf16-mixed
+                # casts to bfloat16; anything else stays fp32).  The benchmark
+                # reference was generated with fp32 data, so inference forces
+                # fp32 regardless of the training default.
                 "precision": "16-mixed",
             },
             "paths": config.paths.as_dict,
