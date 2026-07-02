@@ -7,7 +7,6 @@
 [![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/release/python-390/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/aaronwtr/Varformer/actions/workflows/ci.yml/badge.svg)](https://github.com/aaronwtr/Varformer/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/aaronwtr/Varformer/branch/main/graph/badge.svg)](https://codecov.io/gh/aaronwtr/Varformer)
 [![Paper](https://img.shields.io/badge/paper-preprint%20pending-lightgrey.svg)](#)
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-checkpoints%20pending-yellow)](#)
 
