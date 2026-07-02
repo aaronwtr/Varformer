@@ -2,7 +2,7 @@
 
 # Varformer
 
-**A multimodal transformer to learn population-informed gene representations for drug target ID and prioritization.**
+**A multimodal transformer to learn population-informed gene representations for drug target ID.**
 
 [![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/release/python-390/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
