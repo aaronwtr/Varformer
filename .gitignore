@@ -292,3 +292,8 @@ line255.txt
 !docs/figures/*.png
 !docs/figures/*.jpg
 !docs/figures/*.svg
+
+# Coverage artifacts (pytest-cov)
+.coverage
+coverage.xml
+htmlcov/
