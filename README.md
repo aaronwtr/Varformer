@@ -13,7 +13,7 @@
 
 </div>
 
-Varformer is a multimodal transformer framework that integrates gene-centric multiomics features with population-scale genetic variation. A cross-modal attention mechanism autonomously learns representations from raw, variable-length sets of missense variants, addressing both label sparsity and population-specific genetic architecture in target discovery.
+**Varformer** predicts the clinical-trial success of drug targets by combining gene-level biological features with population-scale genetic variation. Instead of collapsing a gene's variants into summary statistics, a cross-modal attention mechanism learns directly from the raw, variable-length set of missense variants observed in a population — tackling the label sparsity and population-specific genetic architecture that make target discovery hard.
 
 Trained across four ancestrally diverse populations: African (AFR), Admixed American (AMR), Non-Finnish European (NFE), and South Asian (SAS, via the Genes & Health cohort).
 
@@ -59,14 +59,14 @@ The `seed` argument accepts an integer (load that specific seed) or `"best"` (pi
 
 ### Available checkpoints
 
-| Code label | Cohort 
-|---|---
-| `nfe` | Non-Finnish European (gnomAD) 
-| `sas` | South Asian — Genes & Health (Bangladeshi + Pakistani), N=44,288 
-| `afr` | African (gnomAD) 
-| `amr` | Admixed American (gnomAD)
+| Code label | Cohort |
+|---|---|
+| `nfe` | Non-Finnish European (gnomAD) |
+| `sas` | South Asian — Genes & Health (Bangladeshi + Pakistani), N=44,288 |
+| `afr` | African (gnomAD) |
+| `amr` | Admixed American (gnomAD) |
 
-Trained weights will be released on the Hugging Face Hub alongside the paper; `Varformer.from_pretrained(...)` will resolve the requested `(population, seed)` to the corresponding Hub repository and cache the checkpoint locally on first use. Until the public release the call expects checkpoints on disk at `checkpoints/<label>/seed{N}-epoch=*-val_spearman=*.ckpt`.
+Trained weights will be released on the Hugging Face Hub alongside the paper — `from_pretrained` will fetch and cache the requested `(population, seed)` on first use. Until then it reads checkpoints from disk at `checkpoints/<label>/seed{N}-epoch=*-val_spearman=*.ckpt`.
 
 ## Model
 
