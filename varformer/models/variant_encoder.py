@@ -65,13 +65,10 @@ class VariantEncoder(nn.Module):
         self.max_seq_len = max_seq_len
 
         # ``mutation_embedding_max_norm`` renormalises each embedding vector
-        # whose L2 norm exceeds the cap.  ``None`` (SDK / inference default)
-        # is a plain ``nn.Embedding`` for bit-exact parity with the published
-        # checkpoints; a finite value (training default 20.0) prevents the
-        # embedding-norm runaway that overflows the cross-attention layer
-        # under fp16 mixed precision.  Note: only safe under fp16 — under
-        # bf16 the in-place renormalisation runs inside autocast and casts
-        # the master weight to bf16 (see git history for details).
+        # whose L2 norm exceeds the cap.  ``None`` (inference default) is a plain
+        # ``nn.Embedding`` for bit-exact parity with the published checkpoints;
+        # a finite value (training default 20.0) prevents the embedding-norm
+        # runaway that overflows the cross-attention layer under fp16.
         self.mutation_embedding = nn.Embedding(
             num_muts, d_model // 2, max_norm=mutation_embedding_max_norm
         )
