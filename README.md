@@ -106,11 +106,11 @@ checkpoint_paths = trainer.fit(seeds=[7, 42, 85])
 
 ### Using a different pathogenicity predictor
 
-The variant branch treats pathogenicity as an opaque per-variant scalar (`nn.Linear(1, ...)`), so AlphaMissense is not required when training your own model — you can substitute any missense-pathogenicity predictor by putting its score in the pathogenicity column of the variant table. This is the route for anyone who cannot use AlphaMissense for licensing reasons (it is released under the non-commercial CC BY-NC-SA 4.0) or whose variants fall outside its coverage.
+The variant branch treats pathogenicity as an opaque per-variant scalar (`nn.Linear(1, ...)`), so AlphaMissense is not required when training your own model. You can substitute any missense-pathogenicity predictor by putting its score in the pathogenicity column of the variant table. This is the route for anyone who cannot use AlphaMissense for licensing reasons (it is released under the non-commercial CC BY-NC-SA 4.0) or whose variants fall outside its coverage.
 
-**[ESM-1v](https://github.com/facebookresearch/esm) is the recommended alternative**: it is MIT-licensed (commercial use permitted), computed on demand directly from the protein sequence (so it needs no precomputed table and covers any transcript or organism), and its per-variant log-likelihood-ratio drops straight into the scalar slot. Other options include EVE, REVEL, and PolyPhen-2/SIFT.
+**[ESM-1v](https://github.com/facebookresearch/esm) is the recommended alternative**: it is MIT-licensed (commercial use permitted), computed on demand directly from the protein sequence (so it needs no precomputed table and covers any transcript or organism), and its per-variant log-likelihood ratio drops straight into the scalar slot. Other options include EVE, REVEL, and PolyPhen-2/SIFT.
 
-The only constraint is consistency: the predictor used to train a model must also be used at inference time, because pathogenicity scores from different predictors are not calibrated to one another. For the same reason, the **published checkpoints require AlphaMissense scores** — they were trained on them, so feeding a different predictor's scores to a released model produces out-of-distribution inputs and unreliable predictions.
+The only constraint is consistency: the predictor used to train a model must also be used at inference time, because pathogenicity scores from different predictors are not calibrated to one another. For the same reason, the **published checkpoints require AlphaMissense scores** as they were trained on them, so feeding a different predictor's scores to a released model produces out-of-distribution inputs and unreliable predictions.
 
 ## Repository layout
 
@@ -168,4 +168,4 @@ MIT — see `LICENSE`. Note that Varformer's per-variant features depend on Alph
 
 ## Contact
 
-A. Wenteler — <a.wenteler@qmul.ac.uk>
+Aaron Wenteler — <aaronwenteler@gmail.com>
