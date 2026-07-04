@@ -44,9 +44,6 @@ def evaluate_subset(model, test_set: str) -> dict:
             "population": population,
             "return_attn": True,
             "mode": "inference",
-            # Embedding norm capping is a training-only callback; None here
-            # is a no-op but documents intent.  Force fp32 data tensors for
-            # inference via precision override below.
             "mutation_embedding_max_norm": None,
             "precision": "16-mixed",
         },

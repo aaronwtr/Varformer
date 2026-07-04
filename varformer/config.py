@@ -151,7 +151,13 @@ class Config(BaseModel):
             hp_dict.update(hyperparams_override)
         hp = Hyperparameters(**hp_dict)
 
-        with (CONFIGS / "paths" / f"{profile}.yml").open() as f:
+        # A real ``<profile>.yml`` holds machine-specific roots and is not
+        # tracked; fall back to the tracked ``<profile>.example.yml`` template so
+        # a fresh checkout runs without setup.
+        paths_file = CONFIGS / "paths" / f"{profile}.yml"
+        if not paths_file.exists():
+            paths_file = CONFIGS / "paths" / f"{profile}.example.yml"
+        with paths_file.open() as f:
             paths_dict = yaml.safe_load(f)
         paths = Paths(
             data_root=Path(paths_dict["data_root"]),

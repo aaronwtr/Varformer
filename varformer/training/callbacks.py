@@ -22,24 +22,17 @@ def _is_bad(x) -> bool:
 
 
 class NaNDiagnosticsCallback(Callback):
-    """Detect *genuine* training divergence and dump a one-time diagnostic.
+    """Stop training on genuine divergence and dump a one-time diagnostic.
 
-    Genuine, unrecoverable divergence means the model parameters or the
-    training loss have become non-finite.  Only that stops training.
-
-    A non-finite **gradient** in ``on_after_backward`` is NOT divergence under
-    fp16-mixed AMP: the ``GradScaler`` scales the loss up (typically x2**16),
-    so gradients routinely overflow fp16's 65504 ceiling on some steps.  The
-    scaler detects this, *skips* that optimizer step, and lowers the scale —
-    a normal, self-healing event.  We therefore only record the first such
-    overflow as a diagnostic note and never stop on it.  (bf16-mixed uses no
-    scaler and does not overflow this way, so this hook stays quiet there.)
+    Divergence means a model parameter or the training loss has become
+    non-finite.  A non-finite *gradient* is not divergence: under fp16-mixed
+    AMP the GradScaler skips such a step and lowers the scale, so gradient
+    overflow is recorded as a diagnostic note and training continues.
 
     Args:
-        stop_on_nan: When True (default), call ``trainer.should_stop = True``
-            after the first genuine-divergence dump so the bad run terminates
-            with the diagnostic intact rather than continuing into a NaN floor
-            that poisons the best-checkpoint and ``BestThresholdCallback`` state.
+        stop_on_nan: When True (default), set ``trainer.should_stop`` after the
+            first divergence so the run ends with the diagnostic intact rather
+            than continuing into a non-finite floor.
     """
 
     def __init__(self, stop_on_nan: bool = True):
@@ -50,9 +43,6 @@ class NaNDiagnosticsCallback(Callback):
         self._nan_event_count = 0
 
     def on_after_backward(self, trainer, pl_module):
-        # Diagnostic only — a non-finite gradient here is an expected,
-        # scaler-handled fp16 event, not a divergence.  Record where the first
-        # overflow originates once, then stay quiet; never stop training.
         if self._grad_overflow_logged:
             return
         for name, p in pl_module.named_parameters():

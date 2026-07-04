@@ -49,7 +49,6 @@ class VarformerLightningModule(pl.LightningModule):
         self.pi = class_prior
         self.val_step_probas = []
 
-        # Metrics (moved from nn.Module into the LightningModule)
         threshold = float(self.hyperparams["threshold"])
         self.acc = Accuracy(task="binary", threshold=threshold)
         self.auroc = AUROC(task="binary")
@@ -96,14 +95,9 @@ class VarformerLightningModule(pl.LightningModule):
                 logits, probas, bin_preds, z_var = self.model(model_input, mask)
 
             labels = pvc_labels
-            # eps cushions log(probas) and log(1 - probas) against sigmoid
-            # saturation.  1e-6 is conservative under fp16 mixed precision
-            # (well above the smallest representable fp16 subnormal) while
-            # being negligible compared to any real probability.
-            eps = 1e-6
+            eps = 1e-6  # numerical floor for the log terms in the nnPU loss
 
             if step_type == "train":
-                # Varformer uses nnPU (non-negative PU) loss; pusb must be enabled.
                 if not self.hyperparams.get("pusb", False):
                     raise NotImplementedError(
                         "Varformer training requires hyperparameters.pusb=True (nnPU loss)."

@@ -15,14 +15,13 @@ _WRAPPER_NEW_PREFIX = "model.varformer."
 
 
 def _remap_state_dict(state_dict: dict[str, Any]) -> dict[str, Any]:
-    """Transform a published-checkpoint state_dict into the current model shape.
+    """Remap a saved state_dict onto the current model's parameter names.
 
-    1. Drop metric keys — metrics are owned by the LightningModule now,
-       not the inner model.
-    2. Drop classifier weight keys that originate from a previously-wrapping
-       module; this branch of the model is no longer instantiated.
-    3. Collapse a redundant attribute prefix:
-       ``model.varformer.varformer.X`` -> ``model.varformer.X``.
+    1. Drop metric keys (``model.acc.*``, ``model.auroc.*``, ...): metrics live
+       on the LightningModule, not the model.
+    2. Drop ``model.varformer.classifier.*`` keys, which have no counterpart in
+       the current model.
+    3. Rename ``model.varformer.varformer.X`` -> ``model.varformer.X``.
     """
     out: dict[str, Any] = {}
     for k, v in state_dict.items():

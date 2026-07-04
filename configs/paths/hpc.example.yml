@@ -1,0 +1,4 @@
+# Cluster path roots (selected when VARFORMER_PROFILE=hpc).
+# Copy to hpc.yml and set your cluster's data + checkpoint roots.
+data_root: /path/to/shared/data
+ckpt_root: /path/to/checkpoints

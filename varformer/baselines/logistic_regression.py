@@ -1,7 +1,4 @@
-"""Logistic Regression baseline for Varformer paper.
-
-Moved from src/training.py (logistic_regression) in Phase 5.
-"""
+"""Logistic-regression baseline: a linear model over the same GC/GO/PVC features."""
 import os
 import datetime
 import pickle as pkl
@@ -17,7 +14,7 @@ from sklearn.metrics import (
 from scipy.stats import spearmanr
 
 from varformer.data.pipeline import ModuleDataProcessor
-from paper.baselines.preprocessor import LogisticRegressionPreprocessor
+from varformer.baselines.preprocessor import LogisticRegressionPreprocessor
 
 
 def logistic_regression(**modules):
@@ -157,12 +154,7 @@ def logistic_regression(**modules):
 
 
 if __name__ == "__main__":
-    import argparse
-    from utils import utils as _utils
+    from varformer.config import Config
 
-    parser = argparse.ArgumentParser(description="Run logistic regression baseline.")
-    parser.add_argument("--config", type=str, required=True, help="Path to the configuration file.")
-    args = parser.parse_args()
-
-    config = _utils.load_config(args.config)
+    config = Config.load()
     logistic_regression(pvc=True, go=True, gc=True, config=config)

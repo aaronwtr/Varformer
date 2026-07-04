@@ -1,7 +1,4 @@
-"""Logistic Regression Preprocessor for the Varformer paper baselines.
-
-Moved from src/preprocessing.py (LogisticRegressionPreprocessor) in Phase 5.
-"""
+"""Feature preprocessing for the logistic-regression baseline."""
 import numpy as np
 
 from sklearn.model_selection import train_test_split

@@ -1,4 +1,4 @@
-"""Varformer: multi-modal gene tractability model architecture."""
+"""Varformer: multimodal architecture for drug-target prioritisation."""
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -6,20 +6,20 @@ from typing import Any, Optional
 import torch
 from torch import nn
 
-from varformer.models.attention import GeneVariantAttention
+from varformer.models.g2v_attention import GeneVariantAttention
 from varformer.models.variant_encoder import VariantEncoder
 
 
 class Varformer(nn.Module):
-    """Multi-modal gene tractability predictor.
+    """Multimodal model for drug-target identification and prioritisation.
 
     Combines three input branches — genome-context (GC) features, gene-ontology
-    (GO) features, and a per-variant transformer (PVC) — to predict the
-    binary drug-target tractability of a gene.  The PVC branch encodes a
-    padded sequence of population variants through a transformer encoder and
-    then attends over those variant embeddings conditioned on the gene-level
-    representation (GeneVariantAttention).  All three branches are fused and
-    passed through a classification head.
+    (GO) features, and a per-variant transformer (PVC) — to score a gene for
+    clinical-trial success.  The PVC branch encodes a padded sequence of
+    population variants through a transformer encoder and then attends over
+    those variant embeddings conditioned on the gene-level representation
+    (GeneVariantAttention).  All three branches are fused and passed through a
+    classification head.
 
     Most users should construct instances via the class-method factory rather
     than calling ``__init__`` directly:
@@ -162,12 +162,12 @@ class Varformer(nn.Module):
             A tuple whose length depends on ``config["hyperparameters"]["return_attn"]``:
 
             * ``return_attn=True``:
-              ``(logits, probabilities, binary_predictions, z_var, attn_weights)``
+              ``(logits, scores, binary_predictions, z_var, attn_weights)``
             * ``return_attn=False``:
-              ``(logits, probabilities, binary_predictions, z_var)``
+              ``(logits, scores, binary_predictions, z_var)``
 
-            Where ``logits`` are raw pre-sigmoid scores of shape ``[B]``,
-            ``probabilities`` are sigmoid-activated scores in ``[0, 1]``,
+            Where ``logits`` are raw pre-sigmoid values of shape ``[B]``,
+            ``scores`` are sigmoid-activated values in ``[0, 1]``,
             ``binary_predictions`` are thresholded 0/1 floats,
             ``z_var`` is the attended variant embedding of shape ``[B, attention_dim]``
             (or ``None`` when ``use_pvc=False``), and ``attn_weights`` is the
@@ -184,16 +184,10 @@ class Varformer(nn.Module):
         z_gene = torch.cat([z_gc, z_go], dim=-1)
 
         if self.use_pvc:
-            pvc_input = {
-                "pathogenicity": x["pvc"]["pathogenicity"].to(device),
-                "position": x["pvc"]["position"].to(device),
-                "mutation": x["pvc"]["mutation"].to(device),
-            }
-
             z_pvc = self.varformer(
-                pvc_input["pathogenicity"],
-                pvc_input["position"],
-                pvc_input["mutation"],
+                x["pvc"]["pathogenicity"].to(device),
+                x["pvc"]["position"].to(device),
+                x["pvc"]["mutation"].to(device),
                 mask,
             )
             z_var, variant_attn_weights = self.gene_variant_attention(z_gene, z_pvc)
@@ -204,13 +198,13 @@ class Varformer(nn.Module):
             concatenated_features = z_gene
 
         logits = self.classification_head(concatenated_features).squeeze()
-        probabilities = torch.sigmoid(logits)
-        binary_predictions = (probabilities > float(self.hyperparams["threshold"])).float()
+        scores = torch.sigmoid(logits)
+        binary_predictions = (scores > float(self.hyperparams["threshold"])).float()
 
         if self.hyperparams["return_attn"]:
-            return logits, probabilities, binary_predictions, z_var, variant_attn_weights
+            return logits, scores, binary_predictions, z_var, variant_attn_weights
         else:
-            return logits, probabilities, binary_predictions, z_var
+            return logits, scores, binary_predictions, z_var
 
     # ------------------------------------------------------------------
     # Public SDK class methods
@@ -293,12 +287,11 @@ class Varformer(nn.Module):
 
     @classmethod
     def _build_and_load(cls, config, population, ckpt_path):
-        """Build the LightningModule from data-derived dims, load checkpoint.
+        """Build the LightningModule with data-derived dimensions and load a checkpoint.
 
-        Builds a dict-shaped cfg view from the Config object so downstream code that
-        does ``cfg['hyperparameters']['X']`` / ``cfg['paths']['Y']`` keeps working.
-        Returns the inner nn.Module instance carrying the LightningModule and config as
-        non-module attributes (``object.__setattr__`` to bypass nn.Module's child registry).
+        Returns the inner ``Varformer`` nn.Module, with the LightningModule and
+        config attached as plain attributes (see the ``object.__setattr__``
+        block below).
         """
         import pickle
         import pandas as pd
@@ -308,29 +301,21 @@ class Varformer(nn.Module):
         from varformer.data.pipeline import ModuleDataProcessor
         from varformer.data.loaders import ModelPreprocessorInference
 
-        # Build a dict-shaped cfg view (``cfg['hyperparameters']['X']``, ``cfg['paths']['Y']``)
-        # for downstream code that expects mapping access rather than Pydantic attribute access.
+        # Downstream code uses mapping access (cfg['hyperparameters']['X'],
+        # cfg['paths']['Y']); build that dict view from the Config object.
         cfg = {
             "hyperparameters": {
                 **config.hyperparameters.model_dump(),
                 "population": population,
                 "return_attn": True,
                 "mode": "inference",
-                # Disable the embedding norm cap for inference: max_norm
-                # renormalises Embedding.weight in-place on the forward pass,
-                # which must not happen for bit-exact parity with the published
-                # checkpoints.
                 "mutation_embedding_max_norm": None,
-                # precision selects the loader's data-tensor dtype (bf16-mixed
-                # casts to bfloat16; anything else stays fp32).  The benchmark
-                # reference was generated with fp32 data, so inference forces
-                # fp32 regardless of the training default.
                 "precision": "16-mixed",
             },
             "paths": config.paths.as_dict,
         }
 
-        # Run the data pipeline (same call shape the benchmark uses) to derive dims.
+        # Run the data pipeline to derive the model's input dimensions.
         data = ModuleDataProcessor(gc=True, go=True, pvc=True, config=cfg).process()
         splits = data if isinstance(data, list) else [data]
         first = splits[0]
@@ -356,7 +341,7 @@ class Varformer(nn.Module):
         raw_ckpt = load_checkpoint(ckpt_path)
         lm.load_state_dict(raw_ckpt["state_dict"], strict=False)
 
-        # Build test_loaders the way the reference path did; cache so predict_subset reuses them.
+        # Cache the test loaders so predict_subset can reuse them.
         consolidated_data = {
             "gc": pd.concat([first["train"]["gc"], first["test_data"]["gc"]]),
             "go": pd.concat([first["train"]["go"], first["test_data"]["go"]]),
@@ -371,8 +356,17 @@ class Varformer(nn.Module):
         )
 
         instance = lm.model
-        # object.__setattr__ to bypass nn.Module's child-registry hook; setting _lightning_module
-        # the normal way creates a cycle (lm.model == instance) and breaks .apply()/.to() recursion.
+        # We attach the LightningModule and some bookkeeping onto the returned
+        # Varformer instance so the SDK (predict/evaluate) can reach them later.
+        #
+        # nn.Module overrides __setattr__ so that assigning any nn.Module-valued
+        # attribute auto-registers it as a submodule.  ``lm`` is a LightningModule
+        # (an nn.Module) whose ``lm.model`` *is* this same instance.  A normal
+        # ``instance._lightning_module = lm`` would therefore register lm as a
+        # child of instance, creating an instance -> lm -> instance reference
+        # cycle that makes recursive traversals (.to(), .apply(), .state_dict())
+        # infinite-loop.  ``object.__setattr__`` stores the values as plain
+        # Python attributes, bypassing that registration, so no cycle forms.
         object.__setattr__(instance, "_population", population)
         object.__setattr__(instance, "_lightning_module", lm)
         object.__setattr__(instance, "_config", config)
@@ -413,7 +407,6 @@ class Varformer(nn.Module):
 
         Delegates to ``varformer.inference.predict.predict_subset``, which
         reuses the data loaders and Lightning module cached at load time.
-        Output is bit-exact with the benchmark reference predictions.
 
         Args:
             genes: List of Ensembl gene IDs (e.g. ``"ENSG00000141510"``) to
@@ -426,8 +419,8 @@ class Varformer(nn.Module):
             A dict mapping each recognised gene ID to a payload dict with the
             following keys:
 
-            * ``"prediction"`` (``float`` in ``[0, 1]``) — sigmoid probability
-              of tractability.
+            * ``"prediction"`` (``float`` in ``[0, 1]``) — the model's
+              sigmoid score for the gene.
             * ``"classification"`` (``int``, ``0`` or ``1``) — binarised
               prediction using the trained decision threshold.
             * ``"z_var"`` (``numpy.ndarray`` of shape ``(d_model,)``) — attended

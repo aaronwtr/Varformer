@@ -1,5 +1,0 @@
-# HPC (Apocrita) path roots.
-# - data_root: Globus-managed shared data area on /gpfs
-# - ckpt_root: trained checkpoints in user's home (survives scratch wipes)
-data_root: /gpfs/scratch/bty174/globus/genomic-drug-targeting/data
-ckpt_root: /data/home/bty174/genomic-drug-targeting/src/checkpoints

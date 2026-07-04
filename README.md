@@ -38,7 +38,7 @@ from varformer import Varformer
 # Load the best-scoring checkpoint for a population.
 model = Varformer.from_pretrained("nfe", seed="best")
 
-# Predict tractability for a list of Ensembl gene IDs.
+# Score a list of Ensembl gene IDs for clinical-trial success.
 predictions = model.predict(
     genes=["ENSG00000141510", "ENSG00000139618"],
     return_attention=False,
@@ -49,7 +49,7 @@ for gene_id, payload in predictions.items():
 
 Each `payload` dict contains:
 
-- `prediction` — sigmoid probability of clinical-trial success in `[0, 1]`.
+- `prediction` — the model's sigmoid score for clinical-trial success in `[0, 1]`.
 - `classification` — binary 0/1 from the trained decision threshold.
 - `z_var` — the variant-informed gene embedding (NumPy array).
 - `attn_weights` — per-variant attention scores (only when `return_attention=True`).
@@ -119,10 +119,10 @@ varformer/         # the importable package
   training/        # VarformerLightningModule, training loop, callbacks
   inference/       # predict + evaluate entry points
   data/            # features/, parsers/, datasets, samplers, pipeline, loaders, splits
+  baselines/       # logistic-regression and random comparison baselines
   utils/           # seeding, aa_codes
   config.py        # Pydantic Config + Hyperparameters
-configs/           # default.yml + paths/{hpc,local}.yml
-scripts/           # run_training.py, run_inference.py launchers
+configs/           # default.yml + paths/{local,hpc}.example.yml
 docs/figures/      # README assets
 checkpoints/       # trained model checkpoints (gitignored)
 ```

@@ -8,11 +8,10 @@ from torch import nn
 
 
 class PositionalEncoder(nn.Module):
-    """Sinusoidal positional encoder that accepts explicit position indices.
+    """Sinusoidal positional encoder indexed by explicit protein positions.
 
-    The PE tensor is stored as a plain attribute (not a registered buffer) so
-    that it does not appear in state_dict; forward() re-casts it to the
-    correct device on each call.
+    ``forward(x, positions)`` adds the sinusoidal encoding for each variant's
+    protein position to its embedding, then applies dropout.
     """
 
     def __init__(self, max_seq_len: int, d_model: int, dropout: float):
@@ -44,9 +43,10 @@ class VariantEncoder(nn.Module):
     """Transformer encoder over the variant sequence for a gene.
 
     Encodes each variant as the concatenation of a learned mutation embedding
-    and a projected pathogenicity scalar, then applies a stack of transformer
-    encoder layers conditioned on a sinusoidal positional encoding over the
-    variant's protein position.
+    and a learned pathogenicity embedding (a representation derived from the
+    variant's continuous pathogenicity score), then applies a stack of
+    transformer encoder layers conditioned on a sinusoidal positional encoding
+    over the variant's protein position.
     """
 
     def __init__(
@@ -64,11 +64,8 @@ class VariantEncoder(nn.Module):
         self.d_model = d_model
         self.max_seq_len = max_seq_len
 
-        # ``mutation_embedding_max_norm`` renormalises each embedding vector
-        # whose L2 norm exceeds the cap.  ``None`` (inference default) is a plain
-        # ``nn.Embedding`` for bit-exact parity with the published checkpoints;
-        # a finite value (training default 20.0) prevents the embedding-norm
-        # runaway that overflows the cross-attention layer under fp16.
+        # mutation_embedding_max_norm caps each embedding vector's L2 norm;
+        # None leaves the embedding unconstrained.
         self.mutation_embedding = nn.Embedding(
             num_muts, d_model // 2, max_norm=mutation_embedding_max_norm
         )
