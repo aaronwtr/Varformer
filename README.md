@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src="docs/figures/varformer_logo.png" alt="Varformer logo" width="130"/>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/varformer_logo_dark.png">
+  <img src="docs/figures/varformer_logo.png" alt="Varformer logo" width="130">
+</picture>
 
 # Varformer
 
