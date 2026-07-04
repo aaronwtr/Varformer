@@ -1,3 +1,8 @@
+# Local-only working directories (never tracked)
+.idea/
+/data/
+/src/
+
 *.parquet
 
 *.fasta
@@ -258,5 +263,50 @@ src/models/archive/
 /data/gnomad_data/gnomad.exomes.v4.1.sites.chrY.vcf.bgz
 /data/gnomad_data/gnomad.exomes.v4.1.allele_number_all_sites.tsv.bgz
 /data/targetPrioritisation/part-00140-be56a120-41f3-4c08-9a1b-660f19de8f20-c000.snappy.parquet
-/benchmark/DrugnomeAI-release/drugnome_ai/output/supervised-learning/models/iteration_2/RandomForestClassifier_8.model
-/benchmark/DrugnomeAI-release/drugnome_ai/output/supervised-learning/models/iteration_2/RandomForestClassifier_8.model
+
+# Regression benchmark — local-only, not pushed to public github
+/benchmark/
+
+# Run scripts / infra launchers — local-only
+/scripts/
+
+# Paper sources + local-only baselines/scratch (the LR baseline lives in
+# varformer/baselines/); everything under paper/ stays local
+/paper/
+
+# HPO tuning — local-only, not pushed to public github
+varformer/training/tune.py
+
+# Machine-specific path profiles — tracked as *.example.yml templates only
+configs/paths/local.yml
+configs/paths/hpc.yml
+
+# Brainstorming specs and design docs — local only, never pushed
+docs/superpowers/
+
+# Local refactor scratch
+_archive/
+
+# Generated / log files that shouldn't be tracked
+src/Varformer.egg-info/
+varformer.egg-info/
+*.egg-info/
+src/train_error.log
+src/train_output.log
+src/tune_error.log
+src/train_*.log
+src/tune_*.log
+*.log
+sn-article.log
+texput.log
+line255.txt
+
+# README and docs figures ARE tracked (override the *.png rule above)
+!docs/figures/*.png
+!docs/figures/*.jpg
+!docs/figures/*.svg
+
+# Coverage artifacts (pytest-cov)
+.coverage
+coverage.xml
+htmlcov/

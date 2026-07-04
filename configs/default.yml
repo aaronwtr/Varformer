@@ -1,0 +1,54 @@
+# Default hyperparameters for Varformer.
+# Population, seed, and use_pvc are runtime args, NOT config keys.
+hyperparameters:
+  # training & optimization
+  optimizer: AdamW
+  pusb: True
+  precision: "16-mixed"    # fp16 mixed precision (uses a GradScaler).
+  epochs: 100
+  gradient_clip_val: 1.0   # bounds gradient norm; without it the mutation
+                           # embedding grows unboundedly and the cross-attention
+                           # layers overflow under fp16.
+  batch_size: 128
+  grad_accum: null
+  lr_start: 1e-4
+  lr_end: 1e-5
+  scheduler: "CosineAnnealingLR"
+  T0: 200
+  weight_decay: 3e-4
+  mutation_embedding_max_norm: 20.0   # per-vector L2 cap on the mutation
+                                      # embedding (null to disable). Above the
+                                      # init norm (~sqrt(d_model/2) ≈ 11) so it
+                                      # is a no-op early in training but caps
+                                      # later growth that would overflow the
+                                      # cross-attention layer under fp16.
+  stop_on_nan: True        # stop training if a model parameter or the loss
+                           # becomes non-finite.
+  use_pvc: True
+
+  # architecture
+  gc_width: 32
+  go_width: 512
+  max_seq_len: 1024
+  num_encoder_layers: 3
+  d_model: 256
+  dim_feedforward: 4096
+  gv_attn_dim: 256
+  nhead: 8
+  depth_cls_head: 4
+  dropout: 0.3
+  threshold: 0.5
+
+  # logistic regression baseline
+  C: 1
+  penalty: "l2"
+  solver: "liblinear"
+  max_iter: 1000
+  class_weight: "balanced"
+
+  # misc
+  wandb: True
+  return_attn: True
+  num_workers: 0
+  seed: 57
+  mode: "inference"
