@@ -1,9 +1,8 @@
-"""Varformer — gene tractability prediction from population genetic variants.
+"""Varformer — drug-target identification and prioritisation from population genetic variants.
 
-See README.md for usage examples and benchmark/README.md for the regression
-benchmark protocol.
+See README.md for usage examples.
 """
-__version__ = "0.2.0"
+__version__ = "1.0.0"
 
 from varformer.models.varformer import Varformer
 from varformer.training.train import VarformerTrainer

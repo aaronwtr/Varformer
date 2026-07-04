@@ -17,15 +17,13 @@ hyperparameters:
   T0: 200
   weight_decay: 3e-4
   mutation_embedding_max_norm: 20.0   # per-vector L2 cap on the mutation
-                                      # embedding.  Above the init norm
-                                      # (~sqrt(d_model/2) ≈ 11) so it is a no-op
-                                      # early on, but caps the runaway that would
-                                      # otherwise overflow the cross-attention
-                                      # layer.  Disabled (None) on the inference
-                                      # path for bit-exact parity.
+                                      # embedding (null to disable). Above the
+                                      # init norm (~sqrt(d_model/2) ≈ 11) so it
+                                      # is a no-op early in training but caps
+                                      # later growth that would overflow the
+                                      # cross-attention layer under fp16.
   stop_on_nan: True        # stop training if a model parameter or the loss
-                           # becomes non-finite (genuine divergence).  Scaler-
-                           # handled fp16 gradient overflow is NOT affected.
+                           # becomes non-finite.
   use_pvc: True
 
   # architecture

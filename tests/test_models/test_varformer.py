@@ -1,4 +1,4 @@
-"""Tests for Varformer (renamed from MultiModalTargetIdentifier)."""
+"""Tests for the Varformer model."""
 import pytest
 import torch
 from varformer.models.varformer import Varformer
@@ -6,7 +6,7 @@ from varformer.models.varformer import Varformer
 
 @pytest.fixture
 def tiny_config(tiny_hyperparams):
-    """Minimal config dict that mimics legacy dict access."""
+    """Minimal config dict supporting mapping-style access."""
     return {"hyperparameters": tiny_hyperparams}
 
 

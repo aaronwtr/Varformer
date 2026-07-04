@@ -1,7 +1,4 @@
-"""Random baseline for Varformer paper.
-
-Moved from src/training.py (random) in Phase 5.
-"""
+"""Random baseline: assigns uniform-random scores, for lower-bound comparison."""
 import wandb
 import numpy as np
 
@@ -78,12 +75,7 @@ def random(**modules):
 
 
 if __name__ == "__main__":
-    import argparse
-    from utils import utils as _utils
+    from varformer.config import Config
 
-    parser = argparse.ArgumentParser(description="Run random baseline.")
-    parser.add_argument("--config", type=str, required=True, help="Path to the configuration file.")
-    args = parser.parse_args()
-
-    config = _utils.load_config(args.config)
+    config = Config.load()
     random(pvc=True, go=True, gc=True, config=config)

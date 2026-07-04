@@ -10,10 +10,18 @@ def test_load_default_local():
     assert c.hyperparameters.optimizer == "AdamW"
 
 
-def test_load_hpc():
+def test_load_hpc_profile():
+    # The hpc profile resolves (to hpc.yml if present, else hpc.example.yml)
+    # and yields both path roots.
     c = Config.load(profile="hpc")
-    assert "/gpfs/scratch" in str(c.paths.data_root)
-    assert "/data/home" in str(c.paths.ckpt_root)
+    assert c.paths.data_root is not None
+    assert c.paths.ckpt_root is not None
+
+
+def test_missing_profile_falls_back_to_example():
+    # A profile with no real <profile>.yml uses the tracked <profile>.example.yml.
+    c = Config.load(profile="local")
+    assert c.paths.data_root is not None
 
 
 def test_hyperparams_override():
@@ -23,16 +31,14 @@ def test_hyperparams_override():
     assert c.hyperparameters.d_model == 256  # untouched
 
 
-def test_legacy_dict_access_hyperparameters():
+def test_dict_access_hyperparameters():
     c = Config.load(profile="local")
-    # Legacy code does config['hyperparameters']['d_model']
     assert c["hyperparameters"]["d_model"] == 256
     assert c["hyperparameters"]["max_seq_len"] == 1024
 
 
-def test_legacy_dict_access_paths():
+def test_dict_access_paths():
     c = Config.load(profile="local")
-    # Legacy code does config['paths']['CKPT_PATH']
     assert "checkpoints" in c["paths"]["CKPT_PATH"]
     assert "features" in c["paths"]["FEATURES_DIR"]
     assert "missense_mutation_map.pkl" in c["paths"]["MISSENSE_MAP"]

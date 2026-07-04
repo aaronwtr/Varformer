@@ -1,7 +1,7 @@
 """Tests for GeneVariantAttention."""
 import torch
 import pytest
-from varformer.models.attention import GeneVariantAttention
+from varformer.models.g2v_attention import GeneVariantAttention
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-"""Tests for VariantEncoder (renamed from ShardedVarformer)."""
+"""Tests for the VariantEncoder."""
 import torch
 import pytest
 from varformer.models.variant_encoder import VariantEncoder, PositionalEncoder
@@ -49,7 +49,7 @@ def test_mask_zeros_out_padding(tiny_ve):
 
 
 def test_attribute_names_for_checkpoint(tiny_ve):
-    """Attribute names must match checkpoint state_dict keys verbatim."""
+    """Attribute names must match the checkpoint state_dict keys."""
     state = dict(tiny_ve.named_parameters())
     assert any(k.startswith("mutation_embedding.") for k in state)
     assert any(k.startswith("pathogenicity_projection.") for k in state)

@@ -1,8 +1,7 @@
 """Run subset predictions for genes from a pre-loaded Varformer instance.
 
 ``predict_subset`` drives the SDK's ``Varformer.predict()`` method.  It reuses
-the Lightning module and test-data loaders cached at model-load time, so outputs
-are bit-exact with the benchmark reference predictions.
+the Lightning module and test-data loaders cached at model-load time.
 """
 import torch
 
@@ -14,10 +13,8 @@ from varformer.training.lightning_module import VarformerLightningModule
 def predict_subset(model, genes, return_attention=False):
     """Run inference for the SDK's predict() method.
 
-    Uses the LightningModule and config cached on ``model`` by
-    ``Varformer._build_and_load`` and mirrors the data pipeline used in
-    ``benchmark/generate_reference.py:generate_for_population`` so that outputs
-    are bit-exact with the benchmark reference.
+    Uses the LightningModule and data loaders cached on ``model`` by
+    ``Varformer._build_and_load``.
 
     Args:
         model:            A ``Varformer`` nn.Module instance with ``_lightning_module``,

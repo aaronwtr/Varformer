@@ -18,16 +18,11 @@ from varformer.training.callbacks import BestThresholdCallback, NaNDiagnosticsCa
 
 def train_model(data):
     """Train a Varformer model for one (population, seed) configuration."""
-    # TF32 matmul precision on Ampere+ GPUs — affects training dynamics and is
-    # required to reproduce the published checkpoints. Scoped here (not at module
-    # level) so it only applies when a training process actually starts; the
-    # inference path never reaches this function.
     if torch.cuda.is_available():
         torch.set_float32_matmul_precision('medium')
 
     config = data['config']
 
-    # Initialize wandb run
     run = wandb.init(
         project="drug-target-prediction",
         config=config['hyperparameters'],
