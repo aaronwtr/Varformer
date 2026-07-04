@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/figures/varformer_logo.png" alt="Varformer logo" width="130"/>
+
 # Varformer
 
 **A multimodal transformer to learn population-informed gene representations for drug target ID.**
