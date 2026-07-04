@@ -153,7 +153,7 @@ We thank the participants and operational team of the **Genes & Health** study f
 
 ```bibtex
 @article{wenteler2026varformer,
-  title   = {Varformer: Varformer: a multimodal transformer for population-scale drug target prioritization},
+  title   = {Varformer: a multimodal transformer for population-scale drug target prioritization},
   author  = {Wenteler, Aaron and Neduva, V. and Cabrera, Claudia P. and Wei, W.  and Barnes, Michael R.},
   year    = {2026},
   journal = {TBD},
