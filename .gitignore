@@ -3,6 +3,10 @@
 /data/
 /src/
 
+# Local-only scratch artefacts
+/feature_engineering.pdf
+/preprocessing.sh
+
 *.parquet
 
 *.fasta
