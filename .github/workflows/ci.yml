@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main, refactor/varformer-package]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: pytest (Python 3.9, CPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+
+      - name: Set up Python 3.9
+        run: uv python install 3.9
+
+      - name: Sync dependencies
+        run: uv sync --frozen --extra dev   # dev extra provides pytest + pytest-cov
+
+      - name: Run tests with coverage
+        run: |
+          uv run pytest tests/ \
+            --cov=varformer \
+            --cov-report=term-missing
+
+      # Codecov upload is intentionally omitted while the repo is private —
+      # the badge can't render publicly and Codecov needs the repo activated
+      # via the GitHub App. When the repo goes public, re-add:
+      #   - name: Upload coverage to Codecov
+      #     uses: codecov/codecov-action@v5
+      #     with:
+      #       fail_ci_if_error: false
+      #     env:
+      #       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      # and restore the codecov badge in README.md + the --cov-report=xml flag above.

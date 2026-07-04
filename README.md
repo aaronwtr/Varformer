@@ -1,69 +1,170 @@
-# Clinically Informed Genomic Drug Target Prediction
-## Project aim
-In this work, we develop a machine learning model that prioritizes drug targets on gene-level based on tractability. We define tractability as the likelihood of identifying a modulator that interacts effectively with the target/domain, similar to [https://pubmed.ncbi.nlm.nih.gov/34707284/](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6072525/#:~:text=Target%20tractability%20(a.k.a.%20ligandability),%2Fdomain%20(or%20pathway).(https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6072525/#:~:text=Target%20tractability%20(a.k.a.%20ligandability),%2Fdomain%20(or%20pathway).)) This prioritization is done by considering features that are informative of the success of a drug in clinical trials and learning their appropiate feature weights by using target associated clinical trial approval/withdrawal data as training data. Ground truth clinical trial data will not exist for all genes but by training on a subset of targets, we can develop a model that performs the tractability predictions for all genes. Some external validation sources will be needed to assess the accuracy of this method *(What data to use for this purpose?)*. The model will have a two main modules. The first module is a gene characterization module. In this module, we collect features that characterize a gene as idiosyncratically as possible. This module will be used to assess the target quality, i.e. how likely will this target react positively to drugs without hindering normal function? We further distinguish the gene characterization module in two submodules:
+<div align="center">
 
-1) Tissue type-agnostic gene characterization 
-2) Tissue type-specific gene characterization. 
+# Varformer
 
-This is done for practical reasons as the two datasets associated with these submodules will not be homogeneous. In particular, the tissue-type specific gene characterization will need additional identifiers to stratify different genes according to tissue type. The second module is a pathogenicity module. This module is able to probe what we call the impact of a target, i.e. is this target likely to be causally implicated in disease? This second module will also be separated into two submodules: 
+**A multimodal transformer to learn population-informed gene representations for drug target ID.**
 
-1) LoF and GoF variant (LoGoVa) pathogenicity inference 
-2) Missense variant (MiVa) pathogenicity inference
+[![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/release/python-390/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/aaronwtr/Varformer/actions/workflows/ci.yml/badge.svg)](https://github.com/aaronwtr/Varformer/actions/workflows/ci.yml)
+[![Paper](https://img.shields.io/badge/paper-preprint%20pending-lightgrey.svg)](#)
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-checkpoints%20pending-yellow)](#)
 
-The reason for the distinction between the two is that assessing pathogenicity of missense variants is not as straightforward as for LoF and GoF mutations. For LoF and GoF mutations there already exist great variant effect predictors (ClinVar, ANNOVAR, VEP) whereas there are few comprehensive variant effect predictors for missense mutations that can generalize well. Historically, missense variants have been mostly looked over in the drug discovery literature due to the difficulty in characterizing them. However, missense variants are important to incorporate into drug discovery pipelines as the vast majority of coding variants actually are missense variants (https://onlinelibrary.wiley.com/doi/10.1002/humu.24309). With recent advances in large language AI models, sequence-based pathogenicity prediction methods have shown to be able to characterize missense variants accurately as well as showing promise when it comes to generalizability [https://pubmed.ncbi.nlm.nih.gov/34707284/](https://pubmed.ncbi.nlm.nih.gov/34707284/) and [https://www.biorxiv.org/content/10.1101/2022.08.25.505311v1](https://www.biorxiv.org/content/10.1101/2022.08.25.505311v1). In the end, sequence-based missense pathogenicty prediction will help us to alleviate sparse and unreliable pathogenicity annotations in existing databases which in turn allows us to incorporate missense variant effects into our tractability assessments. To that end, we integrate a SOTA missense variant effect prediction model out of the Orengo Structural Biology lab at UCL into our tractability prediction model in order to include missense variant effects in prioritization. This missense variant pathogenicity prediction model is still in development so until it can be integrated, we use ESM-variants out of UCSF Ntrano's lab, which is a missense variant pathogenicity prediction model based on Meta AI's ESMFold. Altogether, the goal of this model is to prioritize the drug targets in the human coding genome that are both high quality, meaning they can be effectively drugged against (high tractability score), and also of high impact, meaning that the target is implicated in disease (high pathogenicity score). 
+</div>
 
-## Gene characterization module
-### Tissue type-agnostic gene characterization
-The first module will contain tissue type agnostic features that are correlated to tractability:
-| Data type                                                    |Description                                                                  |Source |
-|--------------------------------------------------------------|-----------------------------------------------------------------------------|-------|
-| <em>Tractability </em>                                       | <em> Calculate a tractability score (initial outline in iPad notes) (Binary) </em> | Use druggable genome? (read: [1](https://www.nature.com/articles/nrd892) and [2](https://www.frontiersin.org/articles/10.3389/fbinf.2022.958378/full)), use FDA approved targets as ground truth: [FDA data paper](https://www.nature.com/articles/d41573-022-00120-3) and [ProteinAtlas FDA approved drugs data](https://www.proteinatlas.org/humanproteome/tissue/druggable). [Updated 2022 FDA approvals can be added in](https://www.nature.com/articles/d41573-023-00001-3)| 
-| Target safety score, PPIs                                    | Number of PPIs as a measure for safety. (Continuous)| [STRING database](https://string-db.org/)      |
-| Target safety score, knockout models                         | Is target crucial for organism/tissue health? (Binary)| [Open Targets](https://platform.opentargets.org/target/ENSG00000141510)       |
-| Target safety score, chemical-gene interactions               | Quantification of the amount of adverse chemical-gene interactions for given gene targets (Continuous) | [CTD](http://ctdbase.org/downloads/;jsessionid=9CA1917FA3B152427402549E37F66000)|
-| Target conservation                                          | Metric indicating to which extent the particular target is conserved from an evolutionary perspective (Continuous)                                                                                                                | [Constraint data on Open Targets](https://platform.opentargets.org/target/ENSG00000141510)      |
+**Varformer** predicts the clinical-trial success of drug targets by combining gene-level biological features with population-scale genetic variation. Instead of collapsing a gene's variants into summary statistics, a cross-modal attention mechanism learns directly from the raw, variable-length set of missense variants observed in a population — tackling the label sparsity and population-specific genetic architecture that make target discovery hard.
 
-### Tissue type-specific gene characterization
-Tissue type-specific module extends the tissue type-agnostic module with features that are tissue type-specific. This brings along with it extra overhead because it needs data that has been resolved on a tissue type-specific resolution. 
-| Data type                                                    |Description                                                                  |Source |
-|--------------------------------------------------------------|-----------------------------------------------------------------------------|-------|
-| Target efficacy, chromatin accessibility and gene expression | Probe target efficacy by calculating the expression and chromatin accessibility of the target (Binary)| [Enformer](https://www.nature.com/articles/s41592-021-01252-x) or [OpenTargets](https://platform.opentargets.org/target/ENSG00000198911), or experimental: DNAse, Meuleman DHS, GTEx|
-| Stringency of gene regulatory sequences                      | Regulatory sequences play a big role in gene expression and so defects in stringent gene regulatory sequences can have pathogenic consequences. How to go about quantifying this (eQTLs)? (Continuous) | Check whether mutation is 1) in non-coding region, 2) significant (p-value in https://www.ebi.ac.uk/eqtl/Data_access/ ) | 
+Trained across four ancestrally diverse populations: African (AFR), Admixed American (AMR), Non-Finnish European (NFE), and South Asian (SAS, via the Genes & Health cohort).
 
-### Removed features
-| Data type                                                    |Description                                                                  |Source |
-|--------------------------------------------------------------|-----------------------------------------------------------------------------|-------|
-| Target safety score                                          | Calculate safety score for the target. Black-box indications as a measure for safety|Doesn't seem openly available via https://go.drugbank.com/. Alternative ways to access this data? |
+<p align="center">
+  <img src="docs/figures/overview_figure.png" alt="Varformer architecture overview" width="780"/>
+</p>
 
-This data will be used to build an ML model to that predicts <em>druggability (target variable)</em>. This means ground truth labels for druggability are needed. We can start building and training this model on pre-existing datasets without taking pathogenicity into account. 
+## Installation
 
-## Pathogenicity inference module  
-### LoGoVa pathogenicity inference
-For the LoGoVa module, we focus in particular on LoF and GoF variants and their pathogenicity. Do note that for this purpose we utilize the variant-level data out of our dataset, e.g. ELGH, and therefore we need to transform the variant-level predictions to the gene-level. The pathogenicity predictions for LoF and GoF variants can be obtained via ClinVar variant_summary.txt (https://ftp.ncbi.nlm.nih.gov/pub/clinvar/README.txt) or alternatively ANNOVAR could be used (https://annovar.openbioinformatics.org/en/latest/user-guide/download/). For a gene, we collect all variants
+```bash
+git clone https://github.com/aaronwtr/Varformer.git
+cd Varformer
+uv sync          # or: pip install -e .
+```
 
-### MiVa pathogenicity inference 
-When it comes to missense variants, inferring pathogenicity is a lot more difficult due to the often seemingly subtle nature of these type of variants. Regardless of their ambiguous pathogenicity, missense variants actually make up the largest fraction of occuring coding variants. Hence, incorporating them into our prediction model is important, provided we can effectively predict the variant effect of these missense mutations. In particular, predicting pathogenicity for missense variants is important to identify high impact targets, i.e. genes that are involved in severe disease phenotypes. With recent advances in large language and generative AI models, now seems like an ideal time to incorporate sequence-based missense pathogenicity predictions into the drug discovery pipeline. In the end, sequence-based missense pathogenicty prediction can alleviate sparse and unreliable pathogenicity annotations in existing databases as these models are already showing tremendous ability to generalize, e.g. [https://pubmed.ncbi.nlm.nih.gov/34707284/](https://pubmed.ncbi.nlm.nih.gov/34707284/) and [https://www.biorxiv.org/content/10.1101/2022.08.25.505311v1](https://www.biorxiv.org/content/10.1101/2022.08.25.505311v1). When successful, sequence-based pathogenicity will be an important measure in guiding drug target discovery because we want to maximize both the target quality, i.e. can the proposed target be succesfully targeted, and target impact, i.e. is this target associated with a diseased phenotype. As a prototype, https://huggingface.co/spaces/ntranoslab/esm_variants can be used to query over 400M missense variants on their expected pathogenicity.
+Requires Python 3.9 and a CUDA-capable GPU for inference at scale (CPU works for small batches).
 
-<b>{To be worked out in more detail in collaboration with W. Lin out of the [Orengo lab](https://www.ucl.ac.uk/orengo-group/welcome-christine-orengos-group) at UCL.}</b>
+## Inference on a published population
 
-## Feature Engineering
-[Feature engineering overview](feature_engineering.pdf)
+```python
+from varformer import Varformer
 
-## Potential Data Sources
+# Load the best-scoring checkpoint for a population.
+model = Varformer.from_pretrained("nfe", seed="best")
 
-- Genomic data
-  - East London Genes and Health (ELGH) contains around 50,000 whole exomes of primarily Bangladeshi and Pakistani populations. Also contains electronic health records. https://www.genesandhealth.org/research/scientific-data-downloads
-  - UK BioBank (UKBB) is a database that tracks the health of 500,000 participants, including genetic screens. Note that UKBB is not representative of general population. Skew towards population of Caucasian descent between the ages of 40-69.  https://www.ukbiobank.ac.uk/
-  - Born in Bradford is a consortium tracking the health of about 13,000 participants from Bradford. Data includes EHR and genomes. https://borninbradford.github.io/datadict/bib/bib_biobank/current_samples/
-  - deCODE is a research company that performed whole-genome sequencing experiments for about 2,500 individuals. Couldn't find open access to this dataset online. https://www.decode.com/
-  - PROMIS (Patient-Reported Outcomes Measurement Information System) is a set of person-centred measures that evaluates and monitors physical, mental, and social health in adults and children. It can be used with the general population and with individuals living with chronic conditions. Also performed genotyping but could not immediately find this data. https://www.healthmeasures.net/explore-measurement-systems/promis 
-  - ClinVar is a freely accessible, public archive of reports on the relationships among human variations and phenotypes, with supporting evidence. ClinVar thus facilitates access to and communication about the relationships asserted between human variation and observed health status, and the history of that interpretation. This resource can be used to assess e.g. haploinsufficiency. https://www.ncbi.nlm.nih.gov/clinvar/
-  - OMIM is a comprehensive, authoritative compendium of human genes and genetic phenotypes that is freely available and updated daily. The full-text, referenced overviews in OMIM contain information on all known mendelian disorders and over 16,000 genes. OMIM focuses on the relationship between phenotype and genotype. https://www.omim.org/
-  - The Genome Aggregation Database (gnomAD), originally launched in 2014 as the Exome Aggregation Consortium (ExAC), is a coalition of investigators seeking to aggregate and harmonize exome and genome sequencing data from a variety of large-scale sequencing projects, and to make summary data available for the wider scientific community. https://gnomad.broadinstitute.org/
-  - ANNOVAR is an efficient software tool to utilize update-to-date information to functionally annotate genetic variants detected from diverse genomes (including human genome hg18, hg19, hg38, as well as mouse, worm, fly, yeast and many others). https://annovar.openbioinformatics.org/en/latest/ 
+# Score a list of Ensembl gene IDs for clinical-trial success.
+predictions = model.predict(
+    genes=["ENSG00000141510", "ENSG00000139618"],
+    return_attention=False,
+)
+for gene_id, payload in predictions.items():
+    print(gene_id, payload["prediction"], payload["classification"])
+```
 
-- Clinical trial status data for drug targets 
-  - DrugBank aggregates clinical trial status data for particular targets in a structured fashion, e.g. https://go.drugbank.com/drugs/DB00001. Not immediately clear whether this data is also queryable in this structured way via API. 
-  - ClinicalTrials.gov has an API that is queryable. However, organisation seems unstructured compared to DrugBank. https://clinicaltrials.gov/api/gui
-  - DGIdb has a druggability assessment tool and drug-gene interaction search engine. The database is queryable through API. https://www.dgidb.org/api
-  - Open Targets Genetics is a comprehensive tool highlighting variant-centric statistical evidence to allow both prioritisations of candidate causal variants at trait-associated loci and identification of potential drug targets. Accessible via GraphQL API. https://genetics-docs.opentargets.org/data-access/graphql-api
+Each `payload` dict contains:
+
+- `prediction` — the model's sigmoid score for clinical-trial success in `[0, 1]`.
+- `classification` — binary 0/1 from the trained decision threshold.
+- `z_var` — the variant-informed gene embedding (NumPy array).
+- `attn_weights` — per-variant attention scores (only when `return_attention=True`).
+
+The `seed` argument accepts an integer (load that specific seed) or `"best"` (pick the highest-scoring checkpoint by `val_spearman`).
+
+### Available checkpoints
+
+| Code label | Cohort |
+|---|---|
+| `nfe` | Non-Finnish European (gnomAD) |
+| `sas` | South Asian — Genes & Health (Bangladeshi + Pakistani), N=44,288 |
+| `afr` | African (gnomAD) |
+| `amr` | Admixed American (gnomAD) |
+
+Trained weights will be released on the Hugging Face Hub alongside the paper — `from_pretrained` will fetch and cache the requested `(population, seed)` on first use. Until then it reads checkpoints from disk at `checkpoints/<label>/seed{N}-epoch=*-val_spearman=*.ckpt`.
+
+## Model
+
+Following the design in the paper, Varformer is structured around two complementary modules whose representations are fused by cross-modal attention before classification:
+
+- **Gene Characterisation (GC) module** — captures gene-centric biology independent of the population. In the implementation this is split across two parallel MLP projections: one over the Open Targets tractability features, and one over Gene Ontology-derived features. Their outputs are concatenated into a single gene-level representation `z_gene`.
+- **Population Variant Characterisation (PVC) module** — encodes the variable-length set of missense variants observed in a population for each gene. Each variant is represented by its AlphaMissense pathogenicity score, its protein position, and its mutation-type index. A small transformer encoder (`VariantEncoder`) produces contextualised variant embeddings.
+
+`z_gene` then attends over the per-variant embeddings (`GeneVariantAttention`), producing a single variant-informed embedding `z_var`. The classification head concatenates `z_gene` with `z_var` and predicts a clinical-success score.
+
+**Loss.** Drug-target labels are positive-only — clinical-trial failure is not a reliable negative signal — so Varformer treats the problem as positive-unlabelled (PU) learning. Training optimises the **non-negative risk estimator (nnPU)**, an unbiased classification-risk estimator that does not require explicit negatives. nnPU yields more stable learning than two-step PU methods under the extreme label sparsity that characterises drug-target identification.
+
+## Training on a new exome-seq dataset
+
+To train Varformer on a different population or cohort, the dataset has to be pre-processed into the same per-gene format used by the published populations:
+
+1. **Variants.** A pickle keyed by Ensembl gene ID, where each value is the gene's missense-variant table (columns: AlphaMissense pathogenicity score, protein position, mutation-type index). The mutation-type index is taken from the shared missense map in `data/<pop>/missense_mutation_map.pkl`.
+2. **Gene features.** Per-gene Open Targets tractability features and Gene Ontology features, aligned to the same gene index, in the layout expected by `varformer/data/features/gc.py` and `varformer/data/features/go.py`.
+3. **Labels.** Positive drug-target labels for PU training; unlabelled genes are inferred automatically.
+
+Register the new population by adding its label to the `Population` literal in `varformer/config.py` and adding its data paths under the appropriate profile in `configs/paths/{local,hpc}.yml`.
+
+Once the data is in place:
+
+```python
+from varformer import Varformer
+
+trainer = Varformer.trainer(
+    population="<your-label>",
+    config_overrides={"epochs": 50, "lr_start": 3e-5},
+    output_dir="./checkpoints/",
+)
+checkpoint_paths = trainer.fit(seeds=[7, 42, 85])
+```
+
+`config_overrides` accepts any field from `varformer.config.Hyperparameters`. Each seed produces an independent checkpoint under `output_dir/<your-label>/`.
+
+### Using a different pathogenicity predictor
+
+The variant branch treats pathogenicity as an opaque per-variant scalar (`nn.Linear(1, ...)`), so AlphaMissense is not required when training your own model. You can substitute any missense-pathogenicity predictor by putting its score in the pathogenicity column of the variant table. This is the route for anyone who cannot use AlphaMissense for licensing reasons (it is released under the non-commercial CC BY-NC-SA 4.0) or whose variants fall outside its coverage.
+
+**[ESM-1v](https://github.com/facebookresearch/esm) is the recommended alternative**: it is MIT-licensed (commercial use permitted), computed on demand directly from the protein sequence (so it needs no precomputed table and covers any transcript or organism), and its per-variant log-likelihood ratio drops straight into the scalar slot. Other options include EVE, REVEL, and PolyPhen-2/SIFT.
+
+The only constraint is consistency: the predictor used to train a model must also be used at inference time, because pathogenicity scores from different predictors are not calibrated to one another. For the same reason, the **published checkpoints require AlphaMissense scores** as they were trained on them, so feeding a different predictor's scores to a released model produces out-of-distribution inputs and unreliable predictions.
+
+## Repository layout
+
+```
+varformer/         # the importable package
+  models/          # VariantEncoder, GeneVariantAttention, Varformer
+  training/        # VarformerLightningModule, training loop, callbacks
+  inference/       # predict + evaluate entry points
+  data/            # features/, parsers/, datasets, samplers, pipeline, loaders, splits
+  baselines/       # logistic-regression and random comparison baselines
+  utils/           # seeding, aa_codes
+  config.py        # Pydantic Config + Hyperparameters
+configs/           # default.yml + paths/{local,hpc}.example.yml
+docs/figures/      # README assets
+checkpoints/       # trained model checkpoints (gitignored)
+```
+
+## Data sources
+
+Varformer is trained on publicly available resources plus the access-controlled Genes & Health cohort. Users replicating or extending training need to obtain these datasets directly from their providers under the providers' respective terms.
+
+| Source | Role in Varformer | Access |
+|---|---|---|
+| [Open Targets](https://platform.opentargets.org/) | GC module — tractability features | Open, [terms](https://platform-docs.opentargets.org/terms-of-use) |
+| [Gene Ontology](https://geneontology.org/) | GC module — GO-derived features | Open, [CC BY 4.0](https://geneontology.org/docs/go-citation-policy/) |
+| [AlphaMissense](https://www.science.org/doi/10.1126/science.adg7492) | PVC module — per-variant pathogenicity score | Released under CC BY-NC-SA 4.0 — **non-commercial** |
+| [gnomAD v4.1](https://gnomad.broadinstitute.org/) | Population variant catalogues for NFE / AFR / AMR | Open, [licensing](https://gnomad.broadinstitute.org/policies) |
+| [Genes & Health](https://www.genesandhealth.org/) | South Asian (SAS) exome cohort | Access-controlled; apply via the G&H Data Access Committee |
+
+The downstream AlphaMissense licence (CC BY-NC-SA 4.0) limits commercial use of Varformer's per-variant features. If you intend to deploy Varformer in a commercial setting, obtain a separate AlphaMissense licence or substitute another missense-pathogenicity predictor.
+
+## Updates
+
+- **Pending** — Initial public release with the trained NFE, SAS, AFR, and AMR checkpoints on the Hugging Face Hub, coinciding with the paper.
+
+## Acknowledgements
+
+We thank the participants and operational team of the **Genes & Health** study for the South Asian exome data, and the **Open Targets**, **Gene Ontology Consortium**, **gnomAD / Broad Institute**, and **Google DeepMind (AlphaMissense)** teams for making the underlying resources publicly available.
+
+## Citation
+
+```bibtex
+@article{wenteler2026varformer,
+  title   = {Varformer: A Multimodal Transformer Model for the Exome-Wide Prioritisation of Population-Informed Drug Targets},
+  author  = {Wenteler, Aaron and Cabrera, Claudia P. and Wei, W. and Neduva, V. and Barnes, Michael R.},
+  year    = {2026},
+  journal = {TBD},
+  url     = {https://github.com/aaronwtr/Varformer}
+}
+```
+
+## License
+
+MIT — see `LICENSE`. Note that Varformer's per-variant features depend on AlphaMissense scores, which are released under CC BY-NC-SA 4.0; downstream commercial use of the trained model therefore requires a separate AlphaMissense licence.
+
+## Contact
+
+Aaron Wenteler — <aaronwenteler@gmail.com>

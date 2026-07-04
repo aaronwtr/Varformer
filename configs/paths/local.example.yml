@@ -1,0 +1,4 @@
+# Local development path roots (relative to repo root).
+# Copy to local.yml and adjust if your data/checkpoints live elsewhere.
+data_root: ./data
+ckpt_root: ./checkpoints
