@@ -34,6 +34,7 @@ class GeneVariantAttention(nn.Module):
         self,
         gene_features: torch.Tensor,
         variant_embeddings: torch.Tensor,
+        key_padding_mask: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute gene-variant cross-attention.
 
@@ -51,7 +52,12 @@ class GeneVariantAttention(nn.Module):
         K = self.key_layer(variant_embeddings)            # [B, S, attention_dim]
         V = self.value_layer(variant_embeddings)          # [B, S, attention_dim]
 
-        attn_output, attn_weights = self.attn(Q, K, V)
+        attn_output, attn_weights = self.attn(
+            Q,
+            K,
+            V,
+            key_padding_mask=key_padding_mask,
+        )
 
         attn_output = attn_output.squeeze(1)   # [B, attention_dim]
         attn_weights = attn_weights.squeeze(1)  # [B, S]

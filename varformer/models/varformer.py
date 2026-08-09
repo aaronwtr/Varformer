@@ -176,6 +176,9 @@ class Varformer(nn.Module):
         """
         device = next(self.parameters()).device
 
+        if mask is not None:
+            mask = mask.to(device=device, dtype=torch.bool)
+
         x_gc = x["gc"][0].to(device)
         x_go = x["go"][0].to(device)
 
@@ -190,7 +193,11 @@ class Varformer(nn.Module):
                 x["pvc"]["mutation"].to(device),
                 mask,
             )
-            z_var, variant_attn_weights = self.gene_variant_attention(z_gene, z_pvc)
+            z_var, variant_attn_weights = self.gene_variant_attention(
+                z_gene,
+                z_pvc,
+                key_padding_mask=mask,
+            )
             concatenated_features = torch.cat([z_gene, z_var], dim=-1)
         else:
             z_var = None
