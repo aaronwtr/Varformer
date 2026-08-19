@@ -196,7 +196,9 @@ class Varformer(nn.Module):
             z_var, variant_attn_weights = self.gene_variant_attention(
                 z_gene,
                 z_pvc,
-                key_padding_mask=mask,
+                key_padding_mask=(
+                    mask if self.hyperparams.get("mask_cross_attention_padding", True) else None
+                ),
             )
             concatenated_features = torch.cat([z_gene, z_var], dim=-1)
         else:

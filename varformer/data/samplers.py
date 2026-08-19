@@ -4,7 +4,6 @@ import torch
 from torch.utils.data import Dataset, BatchSampler, Sampler
 from typing import Dict, List, Iterator, Union, Iterable
 
-from varformer.data.datasets import MultiModalData
 
 
 class SynchronizedMultiModalBatchSampler(BatchSampler):

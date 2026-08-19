@@ -1,8 +1,12 @@
 """Pydantic config models for Varformer.
 
-Single source of truth:
+Configuration sources:
   - ``configs/default.yml`` — hyperparameters
   - ``configs/paths/{hpc,local}.yml`` — path roots
+
+Tracked defaults are also bundled under ``varformer/configs`` so configuration
+loading works from an installed wheel. A source checkout continues to prefer
+the top-level files, including untracked machine-specific path profiles.
 
 Path resolution: ``data_root`` and ``ckpt_root`` are top-level in the paths YAML;
 per-file paths (``OT_PATH``, ``MISSENSE_MAP``, ...) are derived in this module.
@@ -22,8 +26,9 @@ from typing import Any, Literal, Optional
 import yaml
 from pydantic import BaseModel
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-CONFIGS = REPO_ROOT / "configs"
+REPO_CONFIGS = Path(__file__).resolve().parents[1] / "configs"
+PACKAGE_CONFIGS = Path(__file__).resolve().parent / "configs"
+CONFIGS = REPO_CONFIGS if REPO_CONFIGS.is_dir() else PACKAGE_CONFIGS
 
 Population = Literal["sas", "nfe", "afr", "amr"]
 
@@ -31,6 +36,7 @@ Population = Literal["sas", "nfe", "afr", "amr"]
 class Hyperparameters(BaseModel):
     # training & optimization
     optimizer: str = "AdamW"
+    optimizer_foreach: Optional[bool] = None
     pusb: bool = True
     precision: str = "16-mixed"
     epochs: int = 100
@@ -45,6 +51,8 @@ class Hyperparameters(BaseModel):
     mutation_embedding_max_norm: Optional[float] = None
     stop_on_nan: bool = True
     use_pvc: bool = True
+    include_open_targets_labels: bool = True
+    mask_cross_attention_padding: bool = True
 
     # architecture
     gc_width: int = 32
@@ -110,11 +118,12 @@ class Paths(BaseModel):
             "VAR_MAP": str(d / "sas" / "gh_parts" / "processed_gh_data" / "variant_to_rs_dict.pkl"),
             "CKPT_PATH": str(self.ckpt_root) + "/",
             "TEST_LABELS_FILE": str(d / "test_data" / "full_test_labels_per_source.pkl"),
+            "FDA_LABELS": str(d / "FDA_approved_drug_targets_2023_Q3.xlsx"),
             "CITELINE_LABELS": str(d / "labels" / "citeline_manual_labels.pkl"),
             "MISSENSE_MAP": str(d / "sas" / "missense_mutation_map.pkl"),
             "GENE_VAR_MAP": str(d / "sas" / "gene_var_map.pkl"),
-            "AM_PATH_ISO": str(d / "alphamissense" / "AlphaMissense_isoforms_hg38.tsv"),
-            "AM_PATH_CAN": str(d / "alphamissense" / "AlphaMissense_hg38.tsv"),
+            "AM_PATH_ISO": str(d / "alphamissense" / "AlphaMissense_isoforms_hg38.tsv.gz"),
+            "AM_PATH_CAN": str(d / "alphamissense" / "AlphaMissense_hg38.tsv.gz"),
             "OT_PATH": str(d / "targetPrioritisation" / "processed" / "merged_opentargets_data.pkl"),
             "PROTEIN_ATLAS_FEATURES": str(d / "hpa" / "proteinatlas.tsv"),
             "TEST_GENES_PATH": str(d / "test_data" / "holdout_genes.xlsx"),

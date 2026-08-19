@@ -173,6 +173,7 @@ class BestThresholdCallback(Callback):
 
             # Store the best threshold as a hyperparameter in the model
             pl_module.hparams['best_threshold'] = current_threshold
+            pl_module.hyperparams['best_threshold'] = float(current_threshold)
 
             # Save it also in the model configuration for easy access
             pl_module.model.config['best_threshold'] = current_threshold

@@ -1,6 +1,5 @@
 """PyTorch Dataset classes for drug-target, variant, and multi-modal data."""
 import torch
-import numpy as np
 
 from torch.utils.data import Dataset
 from typing import Dict

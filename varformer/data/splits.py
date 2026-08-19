@@ -1,12 +1,23 @@
 """Label-loading helpers for drug-target splits."""
+from __future__ import annotations
+
 import pickle as pkl
+from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 
+from varformer.config import Config
 
-def load_fda_labels() -> pd.DataFrame:
-    """Load the FDA-approved drug-target Excel sheet."""
-    return pd.read_excel("../data/FDA_approved_drug_targets_2023_Q3.xlsx")
+
+def load_fda_labels(path: Optional[str | Path] = None) -> pd.DataFrame:
+    """Load the FDA-approved drug-target sheet.
+
+    By default the location is derived from the active configuration profile;
+    callers may pass an explicit path for a different data release.
+    """
+    labels_path = path or Config.load()["paths"]["FDA_LABELS"]
+    return pd.read_excel(labels_path)
 
 
 def load_combined_labels(ot_targets: pd.DataFrame, config: dict) -> pd.DataFrame:
@@ -28,6 +39,8 @@ def load_combined_labels(ot_targets: pd.DataFrame, config: dict) -> pd.DataFrame
     with open(config['paths']['CITELINE_LABELS'], "rb") as f:
         labels = pkl.load(f)
     labels = labels.drop(columns=["Gene"])
+    if not config["hyperparameters"].get("include_open_targets_labels", True):
+        return labels
     labels_ensembl = labels["Ensembl"].tolist()
     new_labels = pd.DataFrame(
         [

@@ -121,3 +121,38 @@ def test_probas_in_unit_interval(tiny_model):
     with torch.no_grad():
         _, probas, _, _, _ = tiny_model(x, mask)
     assert (probas >= 0).all() and (probas <= 1).all()
+
+
+def test_forward_backward_with_partially_padded_variants(tiny_model):
+    """Masked batches should train without attending to padding."""
+    x, mask = _make_batch()
+    mask[0, 4:] = True
+    mask[1, 7:] = True
+    mask[2, 2:] = True
+    mask = mask.float()  # forward is responsible for bool/device normalization
+    targets = torch.tensor([0.0, 1.0, 0.0, 1.0])
+
+    logits, _, _, z_var, attn_w = tiny_model(x, mask)
+    loss = torch.nn.functional.binary_cross_entropy_with_logits(logits, targets)
+    loss.backward()
+
+    gradients = [p.grad for p in tiny_model.parameters() if p.grad is not None]
+    bool_mask = mask.bool()
+    assert torch.isfinite(loss)
+    assert torch.isfinite(z_var).all()
+    assert gradients and all(torch.isfinite(gradient).all() for gradient in gradients)
+    assert torch.equal(attn_w[bool_mask], torch.zeros_like(attn_w[bool_mask]))
+
+
+def test_forward_with_fully_padded_gene_is_finite(tiny_model):
+    """A gene with no variants should fall back to a neutral PVC embedding."""
+    x, mask = _make_batch()
+    mask[0] = True
+
+    logits, scores, _, z_var, attn_w = tiny_model(x, mask)
+
+    assert torch.isfinite(logits).all()
+    assert torch.isfinite(scores).all()
+    assert torch.isfinite(z_var).all()
+    assert torch.equal(z_var[0], torch.zeros_like(z_var[0]))
+    assert torch.equal(attn_w[0], torch.zeros_like(attn_w[0]))

@@ -7,7 +7,6 @@ import torch
 
 from pytorch_lightning import Trainer
 
-from varformer.training.lightning_module import VarformerLightningModule
 
 
 def predict_subset(model, genes, return_attention=False):

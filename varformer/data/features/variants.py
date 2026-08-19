@@ -43,7 +43,7 @@ class PopulationVariantPreprocessor:
         else:
             with open(f'{features_dir}/var_pat_features.pkl', 'rb') as f:
                 self.var_pat_features = pkl.load(f)
-            with open(self.gcp.config['paths']['GENE_VAR_MAP'], 'rb') as f:
+            with open(f'{features_dir}/gene_loc_var_map.pkl', 'rb') as f:
                 self.var_gene_map = pkl.load(f)
 
         self.norm = False
@@ -82,7 +82,11 @@ class PopulationVariantPreprocessor:
         self.pop_data['ALT'] = self.pop_data['ALT'].str.split(',')
         self.pop_data = self.pop_data.explode('ALT')
         self.pop_data = self.pop_data[(self.pop_data['ALT'].str.len() == 1) & (self.pop_data['REF'].str.len() == 1)]
-        self.pop_data = self.pop_data[self.pop_data['Consequence'] == 'missense_variant']
+        self.pop_data = self.pop_data[
+            self.pop_data['Consequence'].str.contains(
+                r'(?:^|&)missense_variant(?:&|$)', regex=True, na=False
+            )
+        ]
 
         self.pop_data['Protein_position'] = self.pop_data['Protein_position'].astype(int)
         max_seq_len = config['hyperparameters']['max_seq_len']
@@ -99,7 +103,10 @@ class PopulationVariantPreprocessor:
         mutation_map = {'UNK': 0}
         mut_id = 1
 
-        all_aas = list(set(self.pop_data['AA_ref'].unique().tolist() + self.pop_data['AA_alt'].unique().tolist()))
+        all_aas = sorted(set(
+            self.pop_data['AA_ref'].dropna().unique().tolist()
+            + self.pop_data['AA_alt'].dropna().unique().tolist()
+        ))
 
         for ref in all_aas:
             for alt in all_aas:
@@ -141,10 +148,12 @@ class PopulationVariantPreprocessor:
 
         mutation_map = self.missense_mutation_map()
         data_dir = self.config['paths']['DATA_DIR']
+        with open(
+            f'{data_dir}/features/{self.population}/missense_mutation_map.pkl', 'wb'
+        ) as f:
+            pkl.dump(mutation_map, f)
 
         gene_map = {gene: i for i, gene in enumerate(self.pop_data['Gene'].unique())}
-        with open(self.config['paths']['VAR_MAP'], 'rb') as file:
-            variant_map = pkl.load(file)
         var_pat_features = {}
         gene_var_map = {}
         for index, row in tqdm(self.pop_data.iterrows(), total=self.pop_data.shape[0]):
@@ -219,9 +228,6 @@ def extract_pvc_features(gene, pvc_data, max_variants=100):
     # Extract each feature column
     pathogenicity = tensor[:, 0]
     positions = tensor[:, 1]
-    variant_ids = tensor[:, 2]
-    gene_ids = tensor[:, 3]
-
     # Statistical features (10 total)
     features = []
 

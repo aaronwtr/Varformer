@@ -1,0 +1,3 @@
+# Packaged fallback for local installations.
+data_root: ./data
+ckpt_root: ./checkpoints

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import pickle as pkl
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -66,12 +67,25 @@ class BaseFeatures:
 
     def filter_raw_exomes(self):
         """
-        Filters raw exome variant data for a specific population and saves the processed data.
-        """
-        path = f"{self.config['paths']['GNOMAD_DATA']}gnomad_exomes_{self.population}.parquet"
-        gh_data = pd.read_pickle(self.config['paths']['GH_CSQ'])
+        Load the normalized gnomAD extract for a population.
 
-        variants = pol.read_parquet(path)
+        Current extracts already contain the stable Varformer interchange
+        schema, so this path deliberately does not infer columns from the
+        Genes & Health data (which is SAS-specific).
+        """
+        root = Path(self.config['paths']['GNOMAD_DATA'])
+        candidates = [
+            root / f'gnomad_exomes_{self.population}.parquet',
+            root / 'v4.1' / f'gnomad_exomes_{self.population}.parquet',
+        ]
+        path = next((candidate for candidate in candidates if candidate.exists()), None)
+        if path is None:
+            raise FileNotFoundError(
+                f"No gnomAD extract found for {self.population}; checked {candidates}"
+            )
+
+        parquet_source = str(path / '*.parquet') if path.is_dir() else str(path)
+        variants = pol.read_parquet(parquet_source)
 
         rename_mapping = {
             'chrom': 'CHROM',
@@ -85,31 +99,18 @@ class BaseFeatures:
         if existing_renames:
             variants = variants.rename(existing_renames)
 
-        gh_columns = set(gh_data.columns.tolist())
-        columns = variants.columns
-
-        selected_columns = []
-        for col in columns:
-            if ('AF' or 'AC' or 'AN') in col:
-                continue
-            elif (col in gh_columns or
-                  any(gh_col in col or col in gh_col for gh_col in gh_columns)):
-                selected_columns.append(col)
-            else:
-                continue
-
-        if f'AF_{self.population}' not in selected_columns:
-            selected_columns.append(f'AF_{self.population}')
-
-        variants = variants.select(selected_columns)
-
         variants = variants.rename(
             {col: col.replace('vep_', '') for col in variants.columns if col.startswith('vep_')})
-        variants.head()
 
-        variants = variants.to_pandas()
-        with open(f"{self.config['paths']['POP_DATA']}{self.population}_exomes_filtered.pkl", "wb") as f:
-            pkl.dump(variants, f)
+        required = [
+            'CHROM', 'POS', 'REF', 'ALT', 'Gene', 'SYMBOL', 'Consequence',
+            'Protein_position', 'Amino_acids', 'HGVSp', 'CANONICAL',
+            'MANE_SELECT', 'population_AF', 'population_AC', 'population_AN',
+        ]
+        missing = [column for column in required if column not in variants.columns]
+        if missing:
+            raise ValueError(f"gnomAD extract is missing required columns: {missing}")
+        variants = variants.select(required)
 
         return variants
 

@@ -1,6 +1,6 @@
 """Train a Varformer model for one (population, seed) configuration."""
-import os
 import datetime
+from pathlib import Path
 import torch
 import wandb
 
@@ -16,12 +16,13 @@ from varformer.data.loaders import ModelPreprocessorEval
 from varformer.training.callbacks import BestThresholdCallback, NaNDiagnosticsCallback
 
 
-def train_model(data):
+def train_model(data, output_dir=None):
     """Train a Varformer model for one (population, seed) configuration."""
     if torch.cuda.is_available():
         torch.set_float32_matmul_precision('medium')
 
     config = data['config']
+    set_seed(config['hyperparameters']['seed'])
 
     run = wandb.init(
         project="drug-target-prediction",
@@ -39,14 +40,17 @@ def train_model(data):
     wandb.config.update({"total_params": total_params})
 
     # Setup training callbacks
-    current_date = datetime.datetime.now().strftime("%d-%m-%Y")
-    checkpoint_dir = f'checkpoints/{current_date}'
-    os.makedirs(checkpoint_dir, exist_ok=True)
+    if output_dir is None:
+        current_date = datetime.datetime.now().strftime("%d-%m-%Y")
+        checkpoint_dir = Path("checkpoints") / current_date
+    else:
+        checkpoint_dir = Path(output_dir) / config['hyperparameters']['population']
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     lr_monitor = LearningRateMonitor(logging_interval='step')
     checkpoint_callback = ModelCheckpoint(
         monitor='val_spearman',
-        dirpath=checkpoint_dir,
+        dirpath=str(checkpoint_dir),
         filename=f"seed{config['hyperparameters']['seed']}" + '-{epoch:02d}-{val_spearman:.2f}',
         save_top_k=1,
         mode='max',
@@ -157,6 +161,9 @@ class VarformerTrainer:
 
         paths: list = []
         for seed in seeds:
+            # Seed before preprocessing and model construction so the requested
+            # seed controls splits, initialization, and loader shuffling.
+            set_seed(int(seed))
             cfg = {
                 "hyperparameters": {
                     **self.config.hyperparameters.model_dump(),
@@ -169,7 +176,7 @@ class VarformerTrainer:
             data = ModuleDataProcessor(
                 gc=True, go=True, pvc=cfg["hyperparameters"]["use_pvc"], config=cfg
             ).process()
-            ckpt_path = train_model(data)
+            ckpt_path = train_model(data, output_dir=self.output_dir)
             if ckpt_path is not None:
                 paths.append(Path(ckpt_path))
         return paths

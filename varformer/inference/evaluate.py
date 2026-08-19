@@ -8,7 +8,6 @@ import torch
 
 from pytorch_lightning import Trainer
 
-from varformer.training.lightning_module import VarformerLightningModule
 
 
 def evaluate_subset(model, test_set: str) -> dict:
@@ -31,8 +30,6 @@ def evaluate_subset(model, test_set: str) -> dict:
         dict with keys like "auroc", "auprc", "spearman", "acc", etc.
     """
     import pandas as pd
-    import sys
-    from pathlib import Path
 
     lm = model._lightning_module
     config = model._config

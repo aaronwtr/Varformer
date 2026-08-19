@@ -3,9 +3,25 @@ name = "varformer"
 version = "1.0.0"
 description = "Drug-target identification and prioritisation from population genetic variants."
 authors = [{ name = "Aaron Wenteler" }]
-license = { text = "MIT" }
+maintainers = [{ name = "Aaron Wenteler", email = "a.wenteler@qmul.ac.uk" }]
+license = "MIT"
+license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = "==3.9.*"
+keywords = [
+    "drug discovery",
+    "drug target prioritization",
+    "population genetics",
+    "transformers",
+    "positive-unlabeled learning",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
 dependencies = [
     # === core ML stack — exact pins, do not relax (reproducibility) ===
     "torch==2.1.1",
@@ -48,6 +64,12 @@ dependencies = [
     "ipykernel>=6.30.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/aaronwtr/Varformer"
+Repository = "https://github.com/aaronwtr/Varformer"
+Issues = "https://github.com/aaronwtr/Varformer/issues"
+Changelog = "https://github.com/aaronwtr/Varformer/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
@@ -65,5 +87,8 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["varformer*"]
 exclude = ["benchmark*", "tests*", "paper*", "notebooks*", "scripts*", "src*"]
+
+[tool.setuptools.package-data]
+varformer = ["configs/*.yml", "configs/paths/*.yml"]
 
 [tool.pytest.ini_options]

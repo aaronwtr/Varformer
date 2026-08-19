@@ -72,3 +72,59 @@ def test_multi_head(tiny_gva):
     attn_out, attn_w = gva_mh(gene_feat, var_emb)
     assert attn_out.shape == (B, 32)
     assert attn_w.shape == (B, S)
+
+
+def test_padding_mask_excludes_padded_variants(tiny_gva):
+    """Masked variants must receive no cross-attention probability."""
+    B, S = 3, 8
+    gene_feat = torch.rand(B, 24)
+    var_emb = torch.rand(B, S, 32)
+    mask = torch.tensor([
+        [False, False, False, True, True, True, True, True],
+        [False, False, False, False, False, True, True, True],
+        [False, True, True, True, True, True, True, True],
+    ])
+
+    _, attn_w = tiny_gva(gene_feat, var_emb, key_padding_mask=mask)
+
+    assert torch.equal(attn_w[mask], torch.zeros_like(attn_w[mask]))
+    assert torch.allclose(attn_w.sum(dim=-1), torch.ones(B), atol=1e-5)
+
+
+def test_masked_attention_backward_is_finite(tiny_gva):
+    """The release-critical masked path must support finite gradients."""
+    B, S = 3, 8
+    gene_feat = torch.rand(B, 24, requires_grad=True)
+    var_emb = torch.rand(B, S, 32, requires_grad=True)
+    mask = torch.zeros(B, S, dtype=torch.bool)
+    mask[:, S // 2:] = True
+
+    attn_out, attn_w = tiny_gva(gene_feat, var_emb, key_padding_mask=mask)
+    (attn_out.square().mean() + attn_w.square().mean()).backward()
+
+    gradients = [
+        gene_feat.grad,
+        var_emb.grad,
+        *(parameter.grad for parameter in tiny_gva.parameters()),
+    ]
+    assert all(gradient is not None for gradient in gradients)
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)
+
+
+def test_fully_padded_row_returns_neutral_finite_result(tiny_gva):
+    """Genes without variants must not introduce NaNs into a batch."""
+    B, S = 2, 8
+    gene_feat = torch.rand(B, 24)
+    var_emb = torch.rand(B, S, 32)
+    mask = torch.tensor([
+        [True, True, True, True, True, True, True, True],
+        [False, False, False, True, True, True, True, True],
+    ])
+
+    attn_out, attn_w = tiny_gva(gene_feat, var_emb, key_padding_mask=mask)
+
+    assert torch.isfinite(attn_out).all()
+    assert torch.isfinite(attn_w).all()
+    assert torch.equal(attn_out[0], torch.zeros_like(attn_out[0]))
+    assert torch.equal(attn_w[0], torch.zeros_like(attn_w[0]))
+    assert torch.allclose(attn_w[1].sum(), torch.tensor(1.0), atol=1e-5)

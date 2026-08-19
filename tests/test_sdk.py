@@ -1,8 +1,8 @@
 """Shape/contract tests for the SDK surface. Real data tests happen in benchmark."""
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
-import pytest
 
 from varformer import Varformer, VarformerTrainer
 
@@ -34,4 +34,21 @@ def test_varformer_predict_shape(tiny_hyperparams):
     assert isinstance(result["ENSG1"]["classification"], int)
     assert hasattr(result["ENSG1"]["z_var"], "tolist")  # JSON-serializable
 
+
+def test_trainer_passes_output_directory_to_training(tmp_path):
+    """The SDK's output_dir must reach the checkpoint-producing function."""
+    trainer = VarformerTrainer(population="nfe", output_dir=tmp_path)
+    processed = {"synthetic": "data"}
+
+    with (
+        patch("varformer.data.pipeline.ModuleDataProcessor.process", return_value=processed),
+        patch(
+            "varformer.training.train.train_model",
+            return_value=str(tmp_path / "nfe" / "seed42.ckpt"),
+        ) as train,
+    ):
+        paths = trainer.fit(seeds=[42])
+
+    train.assert_called_once_with(processed, output_dir=tmp_path)
+    assert paths == [Path(tmp_path / "nfe" / "seed42.ckpt")]
 

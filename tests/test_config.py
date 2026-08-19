@@ -1,6 +1,16 @@
 """Tests for varformer.config — Pydantic Config + Hyperparameters + Paths."""
-import pytest
-from varformer.config import Config, Hyperparameters, Paths
+import yaml
+
+from varformer.config import CONFIGS, PACKAGE_CONFIGS, Config, Hyperparameters
+
+
+def test_packaged_defaults_match_source_defaults():
+    """Prevent the installed-wheel fallback from drifting from source config."""
+    with (CONFIGS / "default.yml").open() as source_file:
+        source = yaml.safe_load(source_file)
+    with (PACKAGE_CONFIGS / "default.yml").open() as packaged_file:
+        packaged = yaml.safe_load(packaged_file)
+    assert packaged == source
 
 
 def test_load_default_local():
@@ -25,9 +35,13 @@ def test_missing_profile_falls_back_to_example():
 
 
 def test_hyperparams_override():
-    c = Config.load(profile="local", hyperparams_override={"epochs": 5, "batch_size": 64})
+    c = Config.load(
+        profile="local",
+        hyperparams_override={"epochs": 5, "batch_size": 64, "optimizer_foreach": False},
+    )
     assert c.hyperparameters.epochs == 5
     assert c.hyperparameters.batch_size == 64
+    assert c.hyperparameters.optimizer_foreach is False
     assert c.hyperparameters.d_model == 256  # untouched
 
 
@@ -42,6 +56,7 @@ def test_dict_access_paths():
     assert "checkpoints" in c["paths"]["CKPT_PATH"]
     assert "features" in c["paths"]["FEATURES_DIR"]
     assert "missense_mutation_map.pkl" in c["paths"]["MISSENSE_MAP"]
+    assert c["paths"]["FDA_LABELS"].endswith("FDA_approved_drug_targets_2023_Q3.xlsx")
 
 
 def test_hyperparams_contains_and_get():

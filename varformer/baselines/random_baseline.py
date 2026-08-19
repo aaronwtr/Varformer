@@ -28,11 +28,9 @@ def random(**modules):
         group="random-baseline"
     )
 
-    # Extract test datasets and class prior
+    # Extract test datasets
     test_datasets = data['test_labels_per_source']
     all_test_labels = data['test_labels']
-    threshold = data['config']['hyperparameters']['threshold']
-    class_prior = data['class_prior']  # Probability of positive class
 
     # For each test dataset
     for dataset_name, gene_ids in test_datasets.items():
@@ -45,9 +43,7 @@ def random(**modules):
 
         random_probs = np.random.random(test_size)
 
-        threshold = np.percentile(random_probs, (1 - class_prior) * 100)
-
-        # Create binary predictions based on this threshold
+        # Create binary predictions at the fixed probability midpoint.
         random_preds = (random_probs >= 0.5).astype(int)
 
         # Calculate metrics

@@ -1,0 +1,3 @@
+# Packaged fallback for cluster installations.
+data_root: /path/to/shared/data
+ckpt_root: /path/to/checkpoints

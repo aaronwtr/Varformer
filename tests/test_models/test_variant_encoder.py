@@ -79,3 +79,53 @@ def test_deterministic_in_eval_mode(tiny_ve):
         out2 = tiny_ve(path, pos, mut, mask)
 
     assert torch.allclose(out1, out2)
+
+
+def test_padding_mask_survives_autocast(tiny_ve):
+    """Mixed precision must not trip the attn_mask dtype check.
+
+    Handed a bool padding mask, nn.TransformerEncoder materialises a float mask
+    in the pre-autocast dtype of ``src``; the query is then cast to bf16 and
+    scaled_dot_product_attention rejects the mismatch with "Expected attn_mask
+    dtype to be bool or to match query dtype". VariantEncoder builds the additive
+    mask itself to keep the two dtypes consistent.
+    """
+    tiny_ve.eval()
+    B, S = 3, 16
+    pathogenicity = torch.rand(B, S)
+    position = torch.randint(0, S, (B, S))
+    mutation = torch.randint(0, 50, (B, S))
+    mask = torch.zeros(B, S, dtype=torch.bool)
+    mask[:, 10:] = True
+
+    with torch.no_grad():
+        reference = tiny_ve(pathogenicity, position, mutation, mask)
+
+    with torch.no_grad(), torch.autocast("cpu", dtype=torch.bfloat16):
+        autocast_out = tiny_ve(pathogenicity, position, mutation, mask)
+
+    assert autocast_out.shape == reference.shape
+    assert torch.isfinite(autocast_out).all()
+    # bf16 has ~3 decimal digits; this is a dtype-compatibility check, not a
+    # numerical-equivalence one.
+    assert (reference - autocast_out.float()).abs().max() < 0.1
+
+
+def test_padded_positions_do_not_leak(tiny_ve):
+    """Changing the contents of masked positions must not move real ones."""
+    tiny_ve.eval()
+    B, S = 3, 16
+    pathogenicity = torch.rand(B, S)
+    position = torch.randint(0, S, (B, S))
+    mutation = torch.randint(0, 50, (B, S))
+    mask = torch.zeros(B, S, dtype=torch.bool)
+    mask[:, 10:] = True
+
+    perturbed = mutation.clone()
+    perturbed[:, 10:] = (perturbed[:, 10:] + 7) % 50
+
+    with torch.no_grad():
+        original = tiny_ve(pathogenicity, position, mutation, mask)
+        changed = tiny_ve(pathogenicity, position, perturbed, mask)
+
+    assert torch.equal(original[:, :10], changed[:, :10])

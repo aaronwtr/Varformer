@@ -1,0 +1,4 @@
+include CHANGELOG.md
+include CITATION.cff
+include SECURITY.md
+recursive-include varformer/configs *.yml

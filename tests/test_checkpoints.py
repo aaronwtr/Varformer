@@ -1,7 +1,7 @@
 import re
 import torch
 from pathlib import Path
-from varformer.checkpoints import _remap_state_dict, find_checkpoint, best_seed
+from varformer.checkpoints import _remap_state_dict
 
 
 def test_strip_metric_keys():

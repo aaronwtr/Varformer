@@ -38,6 +38,9 @@ def _remap_state_dict(state_dict: dict[str, Any]) -> dict[str, Any]:
 def load_checkpoint(ckpt_path: str | Path) -> dict:
     """Load a Lightning checkpoint, remapping state_dict keys for compatibility.
 
+    Lightning checkpoints are executable serialization formats. Only load a
+    checkpoint obtained from a trusted, checksum-verified source.
+
     Returns the full Lightning checkpoint dict.  Callers should do:
     ``lm.load_state_dict(ckpt['state_dict'], strict=False)``.
     """
