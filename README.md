@@ -5,10 +5,10 @@
   <img src="docs/figures/varformer_logo.png" alt="Varformer logo" width="130">
 </picture>
 
-# Varformer: A multimodal transformer to learn population-informed gene representations for drug target ID.
+# Varformer: a multimodal transformer for population-scale drug target prioritization
 
 [![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/release/python-390/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/aaronwtr/Varformer/actions/workflows/ci.yml/badge.svg)](https://github.com/aaronwtr/Varformer/actions/workflows/ci.yml)
 [![Paper](https://img.shields.io/badge/paper-preprint%20pending-lightgrey.svg)](#)
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-checkpoints%20pending-yellow)](#)
@@ -68,7 +68,7 @@ The `seed` argument accepts an integer (load that specific seed) or `"best"` (pi
 | `afr` | African (gnomAD) |
 | `amr` | Admixed American (gnomAD) |
 
-Trained weights will be released on the Hugging Face Hub alongside the paper — `from_pretrained` will fetch and cache the requested `(population, seed)` on first use. Until then it reads checkpoints from disk at `checkpoints/<label>/seed{N}-epoch=*-val_spearman=*.ckpt`.
+Trained weights will be released on the Hugging Face Hub alongside the paper. In this release candidate, `from_pretrained` resolves the requested `(population, seed)` from the configured local checkpoint root using the filename pattern `checkpoints/<label>/seed{N}-epoch=*-val_spearman=*.ckpt`; remote download support is not yet implemented.
 
 ## Model
 
@@ -154,12 +154,16 @@ We thank the participants and operational team of the **Genes & Health** study f
 
 ## Citation
 
+The paper citation will be added when the bioRxiv DOI is available. Until then,
+please cite the v1.0.0 software release; machine-readable metadata is provided in
+[`CITATION.cff`](CITATION.cff).
+
 ```bibtex
-@article{wenteler2026varformer,
+@software{wenteler2026varformer,
   title   = {Varformer: a multimodal transformer for population-scale drug target prioritization},
   author  = {Wenteler, Aaron and Neduva, V. and Cabrera, Claudia P. and Wei, W.  and Barnes, Michael R.},
   year    = {2026},
-  journal = {TBD},
+  version = {1.0.0},
   url     = {https://github.com/aaronwtr/Varformer}
 }
 ```

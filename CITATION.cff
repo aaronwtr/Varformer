@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: >-
+  If you use Varformer, please cite this software. The accompanying paper
+  citation will be added when its preprint DOI is available.
+title: "Varformer: a multimodal transformer for population-scale drug target prioritization"
+type: software
+version: 1.0.0
+license: MIT
+repository-code: "https://github.com/aaronwtr/Varformer"
+url: "https://github.com/aaronwtr/Varformer"
+authors:
+  - family-names: Wenteler
+    given-names: Aaron
+    email: a.wenteler@qmul.ac.uk
+  - family-names: Neduva
+    given-names: V.
+  - family-names: Cabrera
+    given-names: C. P.
+  - family-names: Wei
+    given-names: W.
+  - family-names: Barnes
+    given-names: M. R.
+keywords:
+  - drug target prioritization
+  - population genetics
+  - multimodal learning
+  - transformers
+  - positive-unlabeled learning

@@ -26,6 +26,9 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen --extra dev   # dev extra provides pytest + pytest-cov
 
+      - name: Run lint checks
+        run: uv run ruff check varformer tests
+
       - name: Run tests with coverage
         run: |
           uv run pytest tests/ \
