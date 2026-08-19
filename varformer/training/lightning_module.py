@@ -11,7 +11,13 @@ import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
 
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, StepLR, ExponentialLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import (
+    CosineAnnealingLR,
+    CosineAnnealingWarmRestarts,
+    StepLR,
+    ExponentialLR,
+    ReduceLROnPlateau,
+)
 from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef, Recall, Precision, F1Score, AveragePrecision
 
 from varformer.models.varformer import Varformer
@@ -50,6 +56,7 @@ class VarformerLightningModule(pl.LightningModule):
         self.val_step_probas = []
 
         threshold = float(self.hyperparams["threshold"])
+        self.register_buffer("decision_threshold", torch.tensor(threshold, dtype=torch.float32))
         self.acc = Accuracy(task="binary", threshold=threshold)
         self.auroc = AUROC(task="binary")
         self.recall = Recall(task="binary", threshold=threshold)
@@ -133,8 +140,7 @@ class VarformerLightningModule(pl.LightningModule):
                 self.val_step_probas.append(probas.detach().cpu())
 
             elif step_type == "test":
-                if "best_threshold" in self.hyperparams:
-                    bin_preds = (probas > self.hyperparams["best_threshold"]).float()
+                bin_preds = (probas > self.decision_threshold).float()
                 loss = None
                 self._log(labels, step_type, loss, bin_preds, probas, test_source=test_source)
                 return loss
@@ -146,6 +152,8 @@ class VarformerLightningModule(pl.LightningModule):
                         output[gene_name] = {
                             "prediction": probas[i].detach().cpu().item(),
                             "classification": bin_preds[i].detach().cpu().item(),
+                            "label": labels[i].detach().cpu().item(),
+                            "test_source": test_source,
                             "z_var": z_var[i].detach().cpu().to(torch.float32).numpy(),
                             "attn_weights": attn_weights[i].detach().cpu().to(torch.float32).numpy(),
                         }
@@ -154,6 +162,8 @@ class VarformerLightningModule(pl.LightningModule):
                         output[gene_name] = {
                             "prediction": probas[i].detach().cpu().item(),
                             "classification": bin_preds[i].detach().cpu().item(),
+                            "label": labels[i].detach().cpu().item(),
+                            "test_source": test_source,
                             "z_var": z_var[i].detach().cpu().to(torch.float32).numpy(),
                         }
                 return output
@@ -165,6 +175,7 @@ class VarformerLightningModule(pl.LightningModule):
         all_probs = torch.cat(self.val_step_probas, dim=0).to(torch.float32).numpy()
         new_threshold = np.quantile(all_probs, 1 - self.pi)
         self.model.hyperparams["threshold"] = new_threshold
+        self.decision_threshold.fill_(float(new_threshold))
         self.log("val_threshold", new_threshold)
 
     def training_step(self, batch, batch_idx):
@@ -199,7 +210,12 @@ class VarformerLightningModule(pl.LightningModule):
             self.log(f"{step_type}_auprc", self.auprc(probas, labels.long()), batch_size=labels.shape[0])
         else:
             self.log(f"{step_type}_acc_{test_source}", self.acc(bin_preds, labels.long()), batch_size=labels.shape[0])
-            self.log(f"{step_type}_auroc_{test_source}", self.auroc(bin_preds, labels.int()), batch_size=labels.shape[0])
+            # probas, not bin_preds: AUROC is a ranking metric and is meaningless
+            # over thresholded 0/1 calls. The train/val branch above always used
+            # probas, and the LR/DrugnomeAI baselines score with
+            # roc_auc_score(y, probs), so the previous form made the reported
+            # test AUROC non-comparable with both.
+            self.log(f"{step_type}_auroc_{test_source}", self.auroc(probas, labels.int()), batch_size=labels.shape[0])
             self.log(f"{step_type}_spearman_{test_source}", self.spearman(probas, labels.float()), batch_size=labels.shape[0])
             self.log(f"{step_type}_recall_{test_source}", self.recall(bin_preds, labels.long()), batch_size=labels.shape[0])
             self.log(f"{step_type}_precision_{test_source}", self.precision(bin_preds, labels.long()), batch_size=labels.shape[0])
@@ -229,16 +245,41 @@ class VarformerLightningModule(pl.LightningModule):
                 self.parameters(), lr=float(self.hyperparams["lr_start"]), weight_decay=weight_decay
             )
         elif self.hyperparams["optimizer"] == "AdamW":
+            adamw_kwargs = {}
+            optimizer_foreach = self.hyperparams.get("optimizer_foreach")
+            if optimizer_foreach is not None:
+                adamw_kwargs["foreach"] = optimizer_foreach
             optimizer = torch.optim.AdamW(
                 self.parameters(), lr=float(self.hyperparams["lr_start"]),
                 weight_decay=weight_decay,
+                **adamw_kwargs,
             )
         else:
             raise ValueError(f"Optimizer {self.hyperparams['optimizer']} not recognized.")
 
         if self.hyperparams["scheduler"] == "CosineAnnealingLR":
+            # NOTE (2026-08-19): despite the name, this is WARM RESTARTS, not a
+            # single cosine anneal. With T_mult unset (=1) and "interval": "step"
+            # below, LR sawtooths between lr_start and lr_end every T0 optimizer
+            # steps and the peak never decays. At T0=200 and 14646 train genes
+            # that is ~68.7/34.5/17.4 restarts for batch 64/128/256 -- an almost
+            # exact 2x halving that mirrors the historical "bs64 < bs128 < bs256"
+            # HPO result, so that finding is likely a restart-frequency artifact
+            # rather than a batch-size effect. Kept AS-IS so the pinned baseline
+            # (private_repro/PINNED_BASELINE.md) stays byte-reproducible; use
+            # "CosineAnnealingSingleCycle" below for the corrected behaviour.
             lr_scheduler = CosineAnnealingWarmRestarts(
                 optimizer, T_0=int(self.hyperparams["T0"]), eta_min=float(self.hyperparams["lr_end"])
+            )
+        elif self.hyperparams["scheduler"] == "CosineAnnealingSingleCycle":
+            # True single-cycle cosine anneal over the whole run: LR decays
+            # monotonically from lr_start to lr_end with no restarts, so the
+            # schedule is identical in shape regardless of batch size. T_max is
+            # derived from the actual total step count, which makes the schedule
+            # batch-size invariant and lets batch size be tested on its own terms.
+            total_steps = int(self.trainer.estimated_stepping_batches)
+            lr_scheduler = CosineAnnealingLR(
+                optimizer, T_max=total_steps, eta_min=float(self.hyperparams["lr_end"])
             )
         elif self.hyperparams["scheduler"] == "StepLR":
             lr_scheduler = StepLR(
@@ -258,4 +299,3 @@ class VarformerLightningModule(pl.LightningModule):
             raise ValueError(f"Scheduler {self.hyperparams['scheduler']} not recognized.")
 
         return [optimizer], [{"scheduler": lr_scheduler, "interval": "step"}]
-
