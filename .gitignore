@@ -1,7 +1,43 @@
 # Local-only working directories (never tracked)
 .idea/
+/.venv/
+/.vscode/
+/private_repro/
 /data/
 /src/
+/checkpoints/
+/logs/
+/wandb/
+
+# Private analysis notebooks and Jupyter state. Figure source data and final
+# exports may be released separately after governance/provenance review.
+*.ipynb
+.ipynb_checkpoints/
+
+# Credentials and machine-specific configuration
+.env
+.env.*
+!.env.example
+/configs/paths/local.yml
+/configs/paths/hpc.yml
+
+# Python, tests, coverage, and package builds
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+/build/
+/dist/
+/*.egg-info/
+
+# Model and experiment artifacts
+*.ckpt
+*.pt
+*.pth
+lightning_logs/
 
 # Local-only scratch artefacts
 /feature_engineering.pdf
@@ -54,8 +90,6 @@ data/alphafold/
 src/__pycache__/
 
 data/gnomad_feature_description.pdf
-
-*.pyc
 
 *.png
 
@@ -314,3 +348,8 @@ line255.txt
 .coverage
 coverage.xml
 htmlcov/
+
+# Agent tooling and private reproduction material
+.claude/
+.agents/
+figure_pipeline/
