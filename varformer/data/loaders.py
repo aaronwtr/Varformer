@@ -2,18 +2,45 @@
 import pickle as pkl
 
 import torch
-import pandas as pd
-import numpy as np
 
 from sklearn.model_selection import train_test_split
 
-from varformer.data.datasets import MultiModalData, VarformerDataset, DrugTargetData
-from varformer.data.samplers import MultiModalDataLoader, SynchronizedMultiModalBatchSampler
+from varformer.data.datasets import MultiModalData
+from varformer.data.samplers import MultiModalDataLoader
 
 from varformer.training.lightning_module import VarformerLightningModule
 
 
 # Model preprocessing
+def _rows_by_gene(frame, genes, label=""):
+    """{gene: feature_row} keyed BY GENE, never by row position.
+
+    Replaces `{gene: frame.values[i] for i, gene in enumerate(genes)}`, which is
+    only correct when the frame's row order happens to match `genes`. It did for
+    the train/val frames (built via `.loc[...]`, which preserves list order) but
+    NOT for the test frames, where ~98% of genes were being handed another
+    gene's GO vector -- 527 of the 547 input features.
+
+    The cause is simply that the GO frame's row order differs from the gene list
+    it was being zipped against -- NOT duplicate rows. Measured: pfam has 267
+    rows / 267 unique genes (no duplicates at all) yet was still 97.8%
+    misaligned. Duplicates exist only in pharos (4 rows across 2 genes) and are
+    handled below merely because they make a bare `.loc[gene]` return a
+    DataFrame instead of a Series; their duplicate rows are identical, so
+    keeping the first is lossless.
+    """
+    if frame.index.has_duplicates:
+        frame = frame[~frame.index.duplicated(keep="first")]
+    missing = [g for g in genes if g not in frame.index]
+    if missing:
+        raise KeyError(
+            f"{label or 'frame'}: {len(missing)} of {len(genes)} genes absent from the "
+            f"feature frame (e.g. {missing[:3]}). Positional indexing hid this by "
+            f"silently returning some other gene's row."
+        )
+    return {gene: frame.loc[gene].values for gene in genes}
+
+
 class ModelPreprocessorEval:
     def __init__(self, config, data):
         self.config = config
@@ -131,15 +158,21 @@ class ModelPreprocessorEval:
         train_datasets = {}
         val_datasets = {}
         test_datasets = {key: {} for key in test_raw.keys()}
-        scalers = {}
-
         for module_str, train_data in train_raw.items():
             if module_str != "pvc":
-                val_norm = val_raw[module_str].values
-                train_norm = train_data.values
-
-                train_norm = {gene: train_norm[i] for i, gene in enumerate(train_genes)}
-                val_norm = {gene: val_norm[i] for i, gene in enumerate(val_genes)}
+                # Index BY GENE, never by row position. The previous form paired
+                # gene names to frame rows positionally
+                #     {gene: frame.values[i] for i, gene in enumerate(genes)}
+                # which is only correct when the frame's row order happens to
+                # match `genes`. It did for the train/val frames (built via
+                # `.loc[train_genes]`, which preserves list order -- verified:
+                # 0/15098 train and 0/3775 val misaligned for both gc and go),
+                # but NOT for the test frames, which come from
+                # `data['test_data']` and carry their own row order. There, 98%
+                # of genes were receiving another gene's GO vector -- 527 of the
+                # 547 input features. See private_repro/HANDOFF.md.
+                train_norm = _rows_by_gene(train_data, train_genes, f"train/{module_str}")
+                val_norm = _rows_by_gene(val_raw[module_str], val_genes, f"val/{module_str}")
 
                 train_datasets[module_str] = MultiModalData(
                     data=train_norm,
@@ -156,7 +189,13 @@ class ModelPreprocessorEval:
                 )
 
                 for key, modalities in test_raw.items():
-                    test_data = {gene: modalities[module_str].values[i] for i, gene in enumerate(test_genes[key])}
+                    # THE BUG: this was `modalities[module_str].values[i]` paired
+                    # positionally with test_genes[key]. The test frames' row
+                    # order does not match that gene list, so ~98% of genes were
+                    # evaluated on another gene's GO features.
+                    test_data = _rows_by_gene(
+                        modalities[module_str], test_genes[key], f"test[{key}]/{module_str}"
+                    )
                     test_datasets[key][module_str] = MultiModalData(
                         data=test_data,
                         labels=test_labels,
@@ -197,12 +236,6 @@ class ModelPreprocessorEval:
                         max_variants=hparams['max_seq_len'],
                         test_source=key
                     )
-
-        #get from the test_datasets['pharos']['gc'] the gene names and the labels
-        test_gene_names = test_datasets['pharos']['gc'].gene_names
-        test_labels = test_datasets['pharos']['gc'].labels
-        subset_labels_test = {gene: test_labels[gene] for gene in test_gene_names if gene in test_labels}
-        subset_labels = {gene: labels[gene] for gene in test_gene_names if gene in labels}
 
         train_loader = MultiModalDataLoader(
             datasets=train_datasets,
@@ -270,18 +303,6 @@ class ModelPreprocessorInference:
             missense_map = pkl.load(f)
         num_mutations = len(missense_map)
 
-        model = VarformerLightningModule(
-            config=self.config,
-            num_features_gc=gc_features_dim,
-            num_features_go=go_features_dim,
-            num_mutations=num_mutations,
-            max_seq_len=self.config['hyperparameters']['max_seq_len'],
-            num_genes=len(self.gene_names),
-            num_samples_per_class=(len(self.gene_names), 0),  # all unlabeled = class 0
-            class_prior={0: 1.0, 1: 0.0}
-        )
-
-        accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'
         return unlabeled_loader, test_loaders, gc_features_dim, go_features_dim, len(self.gene_names), num_mutations
 
     def initialise_model(self, train_raw, val_raw, labels, test_labels, train_genes, val_genes, test_genes_dict,
