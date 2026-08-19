@@ -353,3 +353,8 @@ htmlcov/
 .claude/
 .agents/
 figure_pipeline/
+
+# Project docs kept local only (README.md is the sole tracked markdown)
+/CHANGELOG.md
+/RELEASE_CHECKLIST.md
+/SECURITY.md

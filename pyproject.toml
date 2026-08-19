@@ -68,7 +68,6 @@ dependencies = [
 Homepage = "https://github.com/aaronwtr/Varformer"
 Repository = "https://github.com/aaronwtr/Varformer"
 Issues = "https://github.com/aaronwtr/Varformer/issues"
-Changelog = "https://github.com/aaronwtr/Varformer/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
