@@ -39,6 +39,20 @@ class PositionalEncoder(nn.Module):
         return self.dropout(x)
 
 
+def _autocast_dtype(reference: torch.Tensor) -> torch.dtype:
+    """The dtype attention will compute in for ``reference``.
+
+    Returns the active autocast dtype when autocast is enabled for the tensor's
+    device, otherwise the tensor's own dtype. torch 2.1 exposes this per device
+    rather than through a single ``get_autocast_dtype``.
+    """
+    if reference.is_cuda and torch.is_autocast_enabled():
+        return torch.get_autocast_gpu_dtype()
+    if not reference.is_cuda and torch.is_autocast_cpu_enabled():
+        return torch.get_autocast_cpu_dtype()
+    return reference.dtype
+
+
 class VariantEncoder(nn.Module):
     """Transformer encoder over the variant sequence for a gene.
 
@@ -115,5 +129,20 @@ class VariantEncoder(nn.Module):
         var_token = var_token.permute(1, 0, 2)
         mask = mask.bool()
 
-        gene_embeddings = self.variant_transformer(var_token, src_key_padding_mask=mask)
+        # Build the additive padding mask ourselves rather than handing
+        # nn.TransformerEncoder a bool one. Given a bool mask it calls
+        # F._canonical_mask, which materialises a float mask in the dtype of
+        # ``src`` *before* autocast has cast anything. Under mixed precision the
+        # query is then bf16/fp16 while the mask is still fp32, and
+        # scaled_dot_product_attention rejects the pair with
+        # "Expected attn_mask dtype to be bool or to match query dtype".
+        # Constructing it in the dtype attention will actually compute in keeps
+        # the two consistent, and is a no-op outside autocast.
+        padding_mask = torch.zeros_like(
+            mask, dtype=_autocast_dtype(var_token)
+        ).masked_fill_(mask, float("-inf"))
+
+        gene_embeddings = self.variant_transformer(
+            var_token, src_key_padding_mask=padding_mask
+        )
         return gene_embeddings.permute(1, 0, 2)  # (B, S, E)
