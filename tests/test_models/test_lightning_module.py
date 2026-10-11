@@ -210,3 +210,38 @@ def test_prediction_export_without_pvc_uses_aligned_gene_ids(tiny_config):
     assert list(output) == ["ENSG1", "ENSG2"]
     assert output["ENSG1"]["label"] == 1
     assert "z_var" not in output["ENSG1"]
+
+
+def test_test_metrics_are_computed_once_over_the_complete_test_set(tiny_lm):
+    from scipy.stats import spearmanr
+
+    tiny_lm.log = Mock()
+    probabilities = (
+        torch.tensor([0.9, 0.2, 0.8, 0.1], dtype=torch.float16),
+        torch.tensor([0.4, 0.7, 0.3, 0.6], dtype=torch.float16),
+    )
+    labels = (
+        torch.tensor([1.0, 0.0, 1.0, 0.0]),
+        torch.tensor([0.0, 1.0, 0.0, 0.0]),
+    )
+    for batch_probs, batch_labels in zip(probabilities, labels):
+        tiny_lm._log(
+            batch_labels,
+            "test",
+            None,
+            (batch_probs > 0.5).float(),
+            batch_probs,
+            test_source="pfam",
+        )
+    assert tiny_lm.log.call_count == 0
+    tiny_lm.on_test_epoch_end()
+    logged = {call.args[0]: float(call.args[1]) for call in tiny_lm.log.call_args_list}
+    expected = spearmanr(
+        torch.cat(probabilities).float().numpy(), torch.cat(labels).numpy()
+    ).statistic
+    assert logged["test_spearman_pfam"] == pytest.approx(expected)
+    assert set(logged) == {
+        f"test_{name}_pfam"
+        for name in ("acc", "auroc", "spearman", "recall", "precision", "f1", "auprc")
+    }
+    assert tiny_lm._test_outputs == {}

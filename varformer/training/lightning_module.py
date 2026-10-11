@@ -19,6 +19,15 @@ from torch.optim.lr_scheduler import (
     ReduceLROnPlateau,
 )
 from torchmetrics import Accuracy, AUROC, SpearmanCorrCoef, Recall, Precision, F1Score, AveragePrecision
+from torchmetrics.functional import spearman_corrcoef
+from torchmetrics.functional.classification import (
+    binary_accuracy,
+    binary_auroc,
+    binary_average_precision,
+    binary_f1_score,
+    binary_precision,
+    binary_recall,
+)
 
 from varformer.models.varformer import Varformer
 
@@ -99,11 +108,9 @@ class VarformerLightningModule(pl.LightningModule):
         self.auprc = AveragePrecision(task="binary")
         self.f1 = F1Score(task="binary", threshold=threshold)
         self.spearman = SpearmanCorrCoef()
-        # The validation monitor must represent one correlation over every
-        # validation gene. Logging per-batch scalar values from a stateful
-        # metric causes Lightning to average running-prefix correlations and
-        # can select the wrong checkpoint.
+        # One correlation over all validation genes; the checkpoint monitor.
         self.val_spearman_epoch = SpearmanCorrCoef()
+        self._test_outputs = {}
 
     def forward(self, x, mask=None):
         return self.model(x, mask)
@@ -371,6 +378,24 @@ class VarformerLightningModule(pl.LightningModule):
         self.log("val_threshold", new_threshold)
         self.val_step_probas.clear()
 
+    def on_test_epoch_end(self):
+        # Each test metric is computed once over the complete test set.
+        for test_source, parts in self._test_outputs.items():
+            probas, bin_preds, labels = (torch.cat(values) for values in zip(*parts))
+            target = labels.long()
+            metrics = {
+                "acc": binary_accuracy(bin_preds, target),
+                "auroc": binary_auroc(probas, target),
+                "spearman": spearman_corrcoef(probas, labels),
+                "recall": binary_recall(bin_preds, target),
+                "precision": binary_precision(bin_preds, target),
+                "f1": binary_f1_score(bin_preds, target),
+                "auprc": binary_average_precision(probas, target),
+            }
+            for name, value in metrics.items():
+                self.log(f"test_{name}_{test_source}", value)
+        self._test_outputs.clear()
+
     def training_step(self, batch, batch_idx):
         return self._common_step(batch, batch_idx, "train")
 
@@ -396,10 +421,7 @@ class VarformerLightningModule(pl.LightningModule):
             self.log(f"{step_type}_acc", self.acc(bin_preds, labels.long()), batch_size=labels.shape[0])
             self.log(f"{step_type}_auroc", self.auroc(probas, labels.int()), batch_size=labels.shape[0])
             if step_type == "val":
-                # Mixed-precision training produces fp16 probabilities. Rank
-                # correlation in fp16 can collapse to 0/NaN because its rank
-                # accumulation exceeds the dtype's numerical range. Preserve
-                # model precision but accumulate the selection metric in fp32.
+                # Rank correlation is not stable in fp16.
                 self.val_spearman_epoch.update(
                     probas.to(torch.float32),
                     labels.to(torch.float32),
@@ -411,6 +433,7 @@ class VarformerLightningModule(pl.LightningModule):
                     on_epoch=True,
                 )
             else:
+                # Per-batch value, for monitoring only.
                 spearman_val = self.spearman(probas, labels.float())
                 self.log("train_spearman", spearman_val, batch_size=labels.shape[0])
             self.log(f"{step_type}_recall", self.recall(bin_preds, labels.long()), batch_size=labels.shape[0])
@@ -418,18 +441,11 @@ class VarformerLightningModule(pl.LightningModule):
             self.log(f"{step_type}_f1", self.f1(bin_preds, labels.long()), batch_size=labels.shape[0])
             self.log(f"{step_type}_auprc", self.auprc(probas, labels.long()), batch_size=labels.shape[0])
         else:
-            self.log(f"{step_type}_acc_{test_source}", self.acc(bin_preds, labels.long()), batch_size=labels.shape[0])
-            # probas, not bin_preds: AUROC is a ranking metric and is meaningless
-            # over thresholded 0/1 calls. The train/val branch above always used
-            # probas, and the LR/DrugnomeAI baselines score with
-            # roc_auc_score(y, probs), so the previous form made the reported
-            # test AUROC non-comparable with both.
-            self.log(f"{step_type}_auroc_{test_source}", self.auroc(probas, labels.int()), batch_size=labels.shape[0])
-            self.log(f"{step_type}_spearman_{test_source}", self.spearman(probas, labels.float()), batch_size=labels.shape[0])
-            self.log(f"{step_type}_recall_{test_source}", self.recall(bin_preds, labels.long()), batch_size=labels.shape[0])
-            self.log(f"{step_type}_precision_{test_source}", self.precision(bin_preds, labels.long()), batch_size=labels.shape[0])
-            self.log(f"{step_type}_f1_{test_source}", self.f1(bin_preds, labels.long()), batch_size=labels.shape[0])
-            self.log(f"{step_type}_auprc_{test_source}", self.auprc(probas, labels.long()), batch_size=labels.shape[0])
+            self._test_outputs.setdefault(test_source, []).append((
+                probas.detach().to(torch.float32).reshape(-1).cpu(),
+                bin_preds.detach().to(torch.float32).reshape(-1).cpu(),
+                labels.detach().to(torch.float32).reshape(-1).cpu(),
+            ))
 
             logger_type = self.logger.__class__.__name__
             if logger_type == "WandbLogger":
@@ -467,25 +483,12 @@ class VarformerLightningModule(pl.LightningModule):
             raise ValueError(f"Optimizer {self.hyperparams['optimizer']} not recognized.")
 
         if self.hyperparams["scheduler"] == "CosineAnnealingLR":
-            # NOTE (2026-08-19): despite the name, this is WARM RESTARTS, not a
-            # single cosine anneal. With T_mult unset (=1) and "interval": "step"
-            # below, LR sawtooths between lr_start and lr_end every T0 optimizer
-            # steps and the peak never decays. At T0=200 and 14646 train genes
-            # that is ~68.7/34.5/17.4 restarts for batch 64/128/256 -- an almost
-            # exact 2x halving that mirrors the historical "bs64 < bs128 < bs256"
-            # HPO result, so that finding is likely a restart-frequency artifact
-            # rather than a batch-size effect. Kept AS-IS so the pinned baseline
-            # (private_repro/PINNED_BASELINE.md) stays byte-reproducible; use
-            # "CosineAnnealingSingleCycle" below for the corrected behaviour.
+            # Warm restarts every T0 optimizer steps; the peak rate does not decay.
             lr_scheduler = CosineAnnealingWarmRestarts(
                 optimizer, T_0=int(self.hyperparams["T0"]), eta_min=float(self.hyperparams["lr_end"])
             )
         elif self.hyperparams["scheduler"] == "CosineAnnealingSingleCycle":
-            # True single-cycle cosine anneal over the whole run: LR decays
-            # monotonically from lr_start to lr_end with no restarts, so the
-            # schedule is identical in shape regardless of batch size. T_max is
-            # derived from the actual total step count, which makes the schedule
-            # batch-size invariant and lets batch size be tested on its own terms.
+            # One cosine cycle over the whole run, independent of batch size.
             total_steps = int(self.trainer.estimated_stepping_batches)
             lr_scheduler = CosineAnnealingLR(
                 optimizer, T_max=total_steps, eta_min=float(self.hyperparams["lr_end"])
