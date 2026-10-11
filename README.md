@@ -15,9 +15,9 @@
 
 </div>
 
-**Varformer** predicts the clinical-trial success of drug targets by combining gene-level biological features with population-scale genetic variation. Instead of collapsing a gene's variants into summary statistics, a cross-modal attention mechanism learns directly from the raw, variable-length set of missense variants observed in a population — tackling the label sparsity and population-specific genetic architecture that make target discovery hard.
+**Varformer** is a disease-agnostic model that ranks clinically promising targets from gene and population-genetic evidence. A cross-modal attention mechanism combines gene-level biological features with pathogenicity-ranked, masked sets of up to 1,024 missense variants observed in a population. The resulting output is a target-prioritization score associated with selected Phase III/approval labels, not a calibrated probability of programme or clinical-trial success.
 
-Trained across four ancestrally diverse populations: African (AFR), Admixed American (AMR), Non-Finnish European (NFE), and South Asian (SAS, via the Genes & Health cohort).
+The paper-era release contains separately trained models for four variant catalogues: African/African-American (AFR), Admixed American (AMR), Non-Finnish European (NFE), and South Asian (SAS, via the Genes & Health British Bangladeshi and Pakistani cohort).
 
 <p align="center">
   <img src="docs/figures/overview_figure.png" alt="Varformer architecture overview" width="780"/>
@@ -41,7 +41,7 @@ from varformer import Varformer
 # Load the best-scoring checkpoint for a population.
 model = Varformer.from_pretrained("nfe", seed="best")
 
-# Score a list of Ensembl gene IDs for clinical-trial success.
+# Rank a list of Ensembl gene IDs with the target-prioritization score.
 predictions = model.predict(
     genes=["ENSG00000141510", "ENSG00000139618"],
     return_attention=False,
@@ -52,12 +52,29 @@ for gene_id, payload in predictions.items():
 
 Each `payload` dict contains:
 
-- `prediction` — the model's sigmoid score for clinical-trial success in `[0, 1]`.
-- `classification` — binary 0/1 from the trained decision threshold.
+- `prediction` — the model's sigmoid target-prioritization score in `[0, 1]`; interpret its ordering, not its magnitude as a probability.
+- `classification` — binary 0/1 from the trained quantile threshold; a value of 0 is not a prediction of programme failure.
 - `z_var` — the variant-informed gene embedding (NumPy array).
 - `attn_weights` — per-variant attention scores (only when `return_attention=True`).
 
 The `seed` argument accepts an integer (load that specific seed) or `"best"` (pick the highest-scoring checkpoint by `val_spearman`).
+
+### Variant scores
+
+Models trained with the variant head (see [Training with the variant head](#training-with-the-variant-head)) also score individual missense variants:
+
+```python
+variant_scores = model.score_variants(genes=["ENSG00000130164"])
+payload = variant_scores["ENSG00000130164"]
+print(payload["variant_scores"])   # one score per retained variant
+```
+
+Each `payload` dict contains NumPy arrays with one entry per retained variant, in the model's token order (descending pathogenicity):
+
+- `variant_scores` — the variant-head score; higher values rank a variant higher.
+- `pathogenicity`, `position`, `mutation` — the token inputs, for alignment with the source variant table.
+
+The variant score ranks variants for research prioritization. It is not calibrated or validated for clinical variant classification.
 
 ### Available checkpoints
 
@@ -75,11 +92,11 @@ Trained weights will be released on the Hugging Face Hub alongside the paper. In
 Following the design in the paper, Varformer is structured around two complementary modules whose representations are fused by cross-modal attention before classification:
 
 - **Gene Characterisation (GC) module** — captures gene-centric biology independent of the population. In the implementation this is split across two parallel MLP projections: one over the Open Targets tractability features, and one over Gene Ontology-derived features. Their outputs are concatenated into a single gene-level representation `z_gene`.
-- **Population Variant Characterisation (PVC) module** — encodes the variable-length set of missense variants observed in a population for each gene. Each variant is represented by its AlphaMissense pathogenicity score, its protein position, and its mutation-type index. A small transformer encoder (`VariantEncoder`) produces contextualised variant embeddings.
+- **Population Variant Characterisation (PVC) module** — encodes a pathogenicity-ranked, masked set of up to 1,024 missense variants observed in a population for each gene. Each variant is represented by its AlphaMissense pathogenicity score, protein position modulo 1,024, and mutation-type index. A small transformer encoder (`VariantEncoder`) produces contextualised variant embeddings. Allele frequency is not an explicit PVC token field in the paper-era model.
 
-`z_gene` then attends over the per-variant embeddings (`GeneVariantAttention`), producing a single variant-informed embedding `z_var`. The classification head concatenates `z_gene` with `z_var` and predicts a clinical-success score.
+`z_gene` then attends over the per-variant embeddings (`GeneVariantAttention`), producing a single variant-informed embedding `z_var`. The classification head concatenates `z_gene` with `z_var` and produces a target-prioritization score.
 
-**Loss.** Drug-target labels are positive-only — clinical-trial failure is not a reliable negative signal — so Varformer treats the problem as positive-unlabelled (PU) learning. Training optimises the **non-negative risk estimator (nnPU)**, an unbiased classification-risk estimator that does not require explicit negatives. nnPU yields more stable learning than two-step PU methods under the extreme label sparsity that characterises drug-target identification.
+**Loss.** Targets associated with Phase III development or approval provide selected observed-positive labels; the remaining genes are unlabelled rather than confirmed failures. Training uses a clipped **non-negative positive-unlabelled (nnPU)** objective so that unlabelled genes need not be treated as explicit negatives. Interpreting the learned ordering as clinical promise requires label-selection assumptions and does not make the score a calibrated outcome probability.
 
 ## Training on a new exome-seq dataset
 
@@ -87,7 +104,7 @@ To train Varformer on a different population or cohort, the dataset has to be pr
 
 1. **Variants.** A pickle keyed by Ensembl gene ID, where each value is the gene's missense-variant table (columns: AlphaMissense pathogenicity score, protein position, mutation-type index). The mutation-type index is taken from the shared missense map in `data/<pop>/missense_mutation_map.pkl`.
 2. **Gene features.** Per-gene Open Targets tractability features and Gene Ontology features, aligned to the same gene index, in the layout expected by `varformer/data/features/gc.py` and `varformer/data/features/go.py`.
-3. **Labels.** Positive drug-target labels for PU training; unlabelled genes are inferred automatically.
+3. **Labels.** Observed-positive target labels for PU training; all other genes are treated as unlabelled rather than failed targets.
 
 Register the new population by adding its label to the `Population` literal in `varformer/config.py` and adding its data paths under the appropriate profile in `configs/paths/{local,hpc}.yml`.
 
@@ -106,13 +123,32 @@ checkpoint_paths = trainer.fit(seeds=[7, 42, 85])
 
 `config_overrides` accepts any field from `varformer.config.Hyperparameters`. Each seed produces an independent checkpoint under `output_dir/<your-label>/`.
 
+### Training with the variant head
+
+The variant head is a shared linear layer on the contextual variant tokens. It is trained jointly with the gene objective, `L = L_gene + variant_loss_weight * L_variant`, and is off by default. The variant scores in the paper use these settings:
+
+```python
+trainer = Varformer.trainer(
+    population="sas",
+    config_overrides={
+        "variant_head": True,
+        "variant_loss_weight": 0.1,
+        "variant_objective": "pooled_bce",
+        "variant_labels_path": "variant_labels.parquet",
+        "precision": "32-true",
+    },
+)
+```
+
+`variant_labels_path` points to a Parquet table with the columns `variant_id`, `label`, `observed` and `stratum`. In the paper, `label` is 1 when the maximum adjusted allele frequency across the gnomAD v4.1 AFR, AMR, NFE and SAS groups is below 10⁻³ and 0 otherwise; `observed` marks variants with a usable frequency; `stratum` is the substitution class (for example `C>T`). Variant labels on a fixed 15% of genes are withheld from the variant loss for evaluation.
+
 ### Using a different pathogenicity predictor
 
-The variant branch treats pathogenicity as an opaque per-variant scalar (`nn.Linear(1, ...)`), so AlphaMissense is not required when training your own model. You can substitute any missense-pathogenicity predictor by putting its score in the pathogenicity column of the variant table. This is the route for anyone who cannot use AlphaMissense for licensing reasons (it is released under the non-commercial CC BY-NC-SA 4.0) or whose variants fall outside its coverage.
+The variant branch treats pathogenicity as an opaque per-variant scalar (`nn.Linear(1, ...)`), so AlphaMissense is not required when training a new model. You can substitute another missense-pathogenicity predictor by putting its score in the pathogenicity column of the variant table. This is the route for anyone who cannot use AlphaMissense for licensing reasons (it is released under the non-commercial CC BY-NC-SA 4.0) or whose variants fall outside its coverage.
 
 **[ESM-1v](https://github.com/facebookresearch/esm) is the recommended alternative**: it is MIT-licensed (commercial use permitted), computed on demand directly from the protein sequence (so it needs no precomputed table and covers any transcript or organism), and its per-variant log-likelihood ratio drops straight into the scalar slot. Other options include EVE, REVEL, and PolyPhen-2/SIFT.
 
-The only constraint is consistency: the predictor used to train a model must also be used at inference time, because pathogenicity scores from different predictors are not calibrated to one another. For the same reason, the **published checkpoints require AlphaMissense scores** as they were trained on them, so feeding a different predictor's scores to a released model produces out-of-distribution inputs and unreliable predictions.
+The only constraint is consistency: the predictor used to train a model must also be used at inference time, because pathogenicity scores from different predictors are not calibrated to one another. For the same reason, the **paper-era checkpoints require AlphaMissense scores** because they were trained on them. Feeding a different predictor's scores to those checkpoints produces out-of-distribution inputs and unreliable predictions. Public release of the checkpoints remains subject to the licensing and governance gates below.
 
 ## Repository layout
 
@@ -126,9 +162,21 @@ varformer/         # the importable package
   utils/           # seeding, aa_codes
   config.py        # Pydantic Config + Hyperparameters
 configs/           # default.yml + paths/{local,hpc}.example.yml
+scores/            # gene and variant scores from the paper
 docs/figures/      # README assets
 checkpoints/       # trained model checkpoints (gitignored)
 ```
+
+## Scores from the paper
+
+| File | Content |
+|---|---|
+| `scores/gene_scores.tsv.gz` | Gene scores for AFR, AMR, NFE and SAS, averaged over five seeds (74,908 rows). |
+| `scores/gnh_variant_scores.tsv.gz` | Variant scores from the SAS model for missense variants observed in Genes & Health, averaged over five seeds (2,264,706 variant annotations, 1,299,645 GRCh38 variants, 15,725 genes). |
+
+Columns of `gene_scores.tsv.gz`: `population`, `gene_id` (Ensembl), `mean_prediction` (mean score over seeds), `mean_seed_rank_percentile` (mean of the within-seed rank percentiles), `seeds` (number of seeds) and `rank_percentile` (rank percentile of `mean_seed_rank_percentile` within the population).
+
+Columns of `gnh_variant_scores.tsv.gz`: `key` (`chrom_pos_ref_alt`, GRCh38), `variant_id` (`key` plus the amino-acid change), `gene` (Ensembl), `s_v` (variant score) and `gene_score` (gene score of the same model). The file contains no genotypes, allele counts, phenotypes or individual-level data.
 
 ## Data sources
 
@@ -137,7 +185,8 @@ Varformer is trained on publicly available resources plus the access-controlled 
 | Source | Role in Varformer | Access |
 |---|---|---|
 | [Open Targets](https://platform.opentargets.org/) | GC module — tractability features | Open, [terms](https://platform-docs.opentargets.org/terms-of-use) |
-| [Gene Ontology](https://geneontology.org/) | GC module — GO-derived features | Open, [CC BY 4.0](https://geneontology.org/docs/go-citation-policy/) |
+| [Human Protein Atlas v23](https://v23.proteinatlas.org/) | GC module — UniProt-derived GO terms, subcellular location and tissue protein expression | Open, [licence](https://www.proteinatlas.org/about/licence) |
+| [GTEx v10](https://gtexportal.org/) | GC module — tissue RNA expression | Open |
 | [AlphaMissense](https://www.science.org/doi/10.1126/science.adg7492) | PVC module — per-variant pathogenicity score | Released under CC BY-NC-SA 4.0 — **non-commercial** |
 | [gnomAD v4.1](https://gnomad.broadinstitute.org/) | Population variant catalogues for NFE / AFR / AMR | Open, [licensing](https://gnomad.broadinstitute.org/policies) |
 | [Genes & Health](https://www.genesandhealth.org/) | South Asian (SAS) exome cohort | Access-controlled; apply via the G&H Data Access Committee |
