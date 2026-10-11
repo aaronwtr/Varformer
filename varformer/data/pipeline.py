@@ -30,7 +30,24 @@ class ModuleDataProcessor:
             data['go'] = self.open_go_data(data['gc'])
         if self.pvc:
             data['pvc'] = self.open_pvc_data(data['gc'])
+            if self.config['hyperparameters'].get('shuffle_pvc_across_genes', False):
+                self._shuffle_pvc_across_genes(data['pvc'])
         return self.homogenize_data(data)
+
+    def _shuffle_pvc_across_genes(self, pvc):
+        """Assign each gene another gene's PVC tensor deterministically.
+
+        Labels stay attached to recipient genes. Sorting before permutation
+        makes the negative control reproducible across Python/hash versions.
+        """
+        genes = sorted(gene for gene in pvc.data if gene != 'labels')
+        rng = random.Random(int(self.config['hyperparameters']['seed']))
+        donors = genes.copy()
+        rng.shuffle(donors)
+        original = {gene: pvc.data[gene] for gene in genes}
+        for recipient, donor in zip(genes, donors):
+            pvc.data[recipient] = original[donor]
+        print(f"Shuffled PVC tensors across {len(genes)} genes (labels unchanged).")
 
     def open_gc_data(self):
         gcp = GeneCharacterisationPreprocessor(config=self.config)
@@ -67,6 +84,34 @@ class ModuleDataProcessor:
         all_test_ids = _data.all_test_ids
         data_ids = data.index.tolist()
         return list(set(all_test_ids[all_test_ids.index.isin(data_ids)].index.tolist()))
+
+    @staticmethod
+    def _constraint_filtered_negative_candidates(gc_data):
+        """Return legacy comparator candidates without requiring a model input.
+
+        ``geneticConstraint`` is part of the historical benchmark-construction
+        rule.  Sensitivity models may exclude it from ``gc_data.data``; in that
+        case the preprocessor-provided metadata series preserves the same gene
+        cohort while keeping the feature out of the model tensor.
+        """
+        negative_candidates = gc_data.data[gc_data.data["target"] == 0]
+        constraint = getattr(gc_data, "benchmark_genetic_constraint", None)
+        if constraint is None:
+            if "geneticConstraint" not in negative_candidates.columns:
+                raise ValueError(
+                    "Benchmark construction requires separate geneticConstraint metadata "
+                    "when that column is excluded from model inputs"
+                )
+            constraint = negative_candidates["geneticConstraint"]
+        else:
+            constraint = constraint.reindex(negative_candidates.index)
+            missing = constraint[constraint.isna()].index.tolist()
+            if missing:
+                raise ValueError(
+                    "Benchmark geneticConstraint metadata is missing genes: "
+                    f"{missing[:5]} (n={len(missing)})"
+                )
+        return negative_candidates.loc[constraint < -0.90]
 
     @staticmethod
     def _clean_test_data(combined_test_data):
@@ -182,9 +227,9 @@ class ModuleDataProcessor:
             assert class_prior is not None, "Class prior should be set!"
 
             if isinstance(feature_data, pd.DataFrame):
-                combined_genes = set(feature_data.index.tolist())
+                combined_genes = sorted(set(feature_data.index.tolist()))
             elif isinstance(feature_data, dict):
-                combined_genes = set(feature_data.keys())
+                combined_genes = sorted(set(feature_data.keys()))
             else:
                 raise ValueError("Unsupported data type for feature_data. Should be DataFrame for GC and GO. Should"
                                  "be dict for PVC.")
@@ -228,7 +273,11 @@ class ModuleDataProcessor:
             return {
                 "train": combined_train,
                 "labels": labels,
-                "genes": list(combined_genes),
+                # Stable ordering is essential: train_test_split applies the
+                # numeric random seed to positions. Passing a raw set made
+                # assignments depend on the process-randomized Python hash
+                # seed, so same-seed runs in separate jobs could diverge.
+                "genes": combined_genes,
                 "num_features": combined_features,
                 "config": config,
                 "test_data": combined_test_data,
@@ -294,8 +343,17 @@ class ModuleDataProcessor:
             # Select and distribute negative samples
             total_negs = num_pfam_neg + num_rcnt_neg + num_pharos_neg
 
-            negative_candidates = gc_data.data[gc_data.data['target'] == 0]
-            negative_candidates = negative_candidates[negative_candidates['geneticConstraint'] < -0.90]
+            negative_candidates = self._constraint_filtered_negative_candidates(gc_data)
+
+            # A comparator cannot simultaneously be a benchmark positive.  The
+            # historical sampler filtered on the primary advancement label but
+            # did not exclude positives from these separately constructed
+            # benchmark tasks.  That could yield duplicate gene rows with
+            # contradictory benchmark labels after concatenation.
+            benchmark_positive_genes = set(pfam_ensg + rcnt_ensg + pharos_ensg)
+            negative_candidates = negative_candidates.loc[
+                ~negative_candidates.index.isin(benchmark_positive_genes)
+            ]
 
             if total_negs >= len(negative_candidates):
                 negative_test_balance = negative_candidates

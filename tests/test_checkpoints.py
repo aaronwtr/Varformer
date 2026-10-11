@@ -66,7 +66,7 @@ def test_does_not_touch_unrelated_keys():
 
 
 def test_real_checkpoint_remap():
-    """Sanity-check on a real published checkpoint: cleaning must produce a non-empty state_dict
+    """Sanity-check on a real local checkpoint: cleaning must produce a non-empty state_dict
     with no metric or wrapper keys remaining."""
     ckpt_dir = Path(__file__).resolve().parents[1] / "src" / "checkpoints" / "nfe"
     cands = list(ckpt_dir.glob("seed42-epoch=*-val_spearman=*.ckpt"))

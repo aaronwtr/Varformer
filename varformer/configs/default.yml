@@ -14,7 +14,27 @@ hyperparameters:
   weight_decay: 3e-4
   mutation_embedding_max_norm: 20.0
   stop_on_nan: True
+  use_gc: True
+  use_go: True
   use_pvc: True
+  shuffle_pvc_across_genes: False
+  gc_exclude_features: []
+  position_encoding: "modulo"
+  variant_token_schema: "original"
+  variant_head: False
+  variant_loss_weight: 0.0
+  variant_token_ablate: []
+  variant_labels_path: null
+  variant_objective: "pooled_bce"
+  variant_pairs_per_gene: 256
+  variant_pairs_per_side: 96
+  variant_frequency_qc: False
+  min_callability_fraction: 0.8
+  af_log10_floor: -6.0
+  pu_class_prior: null
+  threshold_positive_fraction: null
+  evaluate_holdout_after_fit: True
+  run_name: null
   gc_width: 32
   go_width: 512
   max_seq_len: 1024

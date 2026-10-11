@@ -84,13 +84,16 @@ class VarformerDataset(Dataset):
 
 
 class MultiModalData(Dataset):
-    def __init__(self, data, labels, gene_names, dtype, variant_data=None, max_variants=None, test_source=False):
+    def __init__(self, data, labels, gene_names, dtype, variant_data=None, max_variants=None, test_source=False,
+                 variant_labels=None):
         self.data = data
         self.labels = labels
         self.gene_names = gene_names
         self.variant_data = variant_data
         self.max_variants = max_variants
         self.test_source = test_source
+        # {gene: (label array, observed array)} row-aligned with the gene's tokens.
+        self.variant_labels = variant_labels
         self.torch_dtype = dtype
         if isinstance(self.torch_dtype, str):
             self.torch_dtype = torch.bfloat16 if dtype == 'bf16-mixed' else torch.float32
@@ -125,21 +128,46 @@ class MultiModalData(Dataset):
             position = self.padding(variants_for_gene[:, 1])
             mut_feat = self.padding(variants_for_gene[:, 2])
             gene = self.padding(variants_for_gene[:, 3])
+            allele_frequency = self.padding(
+                variants_for_gene[:, 4] if variants_for_gene.shape[1] > 4
+                else torch.zeros(len(variants_for_gene), dtype=variants_for_gene.dtype)
+            )
+            relative_position = self.padding(
+                variants_for_gene[:, 5] if variants_for_gene.shape[1] > 5
+                else torch.zeros(len(variants_for_gene), dtype=variants_for_gene.dtype)
+            )
+            frequency_confidence = self.padding(
+                variants_for_gene[:, 6] if variants_for_gene.shape[1] > 6
+                else torch.zeros(len(variants_for_gene), dtype=variants_for_gene.dtype)
+            )
 
             # Create attention mask
             mask = torch.zeros(self.max_variants, dtype=torch.bool)
             mask[len(variants_for_gene):] = 1.0
 
-            return {
+            item = {
                 'pathogenicity': pat_feat.float(),
                 'position': position.int(),
                 'mutation': mut_feat.int(),
                 'gene': gene.int(),
+                'allele_frequency': allele_frequency.float(),
+                'relative_position': relative_position.float(),
+                'frequency_confidence': frequency_confidence.float(),
                 'mask': mask.float(),
                 'labels': gene_label,
                 'test_source': self.test_source,
                 'gene_name': gene_name
             }
+            if self.variant_labels is not None:
+                empty = (torch.zeros(0), torch.zeros(0, dtype=torch.bool),
+                         torch.zeros(0, dtype=torch.bool), torch.zeros(0, dtype=torch.long))
+                values, in_loss, probe, strata = self.variant_labels.get(gene_name, empty)
+                real = ~mask[:len(in_loss)] if len(in_loss) else torch.zeros(0, dtype=torch.bool)
+                item['variant_labels'] = self.padding(values.float())
+                item['variant_label_mask'] = self.padding(in_loss & real).bool()
+                item['variant_probe_mask'] = self.padding(probe & real).bool()
+                item['variant_strata'] = self.padding(strata).long()
+            return item
 
     def label_imbalance(self):
         return sum(list(self.labels.values())) / len(self.labels)

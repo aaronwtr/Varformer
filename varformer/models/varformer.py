@@ -14,12 +14,15 @@ class Varformer(nn.Module):
     """Multimodal model for drug-target identification and prioritisation.
 
     Combines three input branches — genome-context (GC) features, gene-ontology
-    (GO) features, and a per-variant transformer (PVC) — to score a gene for
-    clinical-trial success.  The PVC branch encodes a padded sequence of
+    (GO) features, and a per-variant transformer (PVC) — to produce a
+    target-prioritization score. The score is interpreted by its within-model
+    ordering, not as a calibrated probability of programme success. The PVC
+    branch encodes a padded sequence of
     population variants through a transformer encoder and then attends over
     those variant embeddings conditioned on the gene-level representation
-    (GeneVariantAttention).  All three branches are fused and passed through a
-    classification head.
+    (GeneVariantAttention).  Active branches are fused and passed through a
+    prioritisation head. Ablation runs may disable any branch, provided at
+    least one remains active.
 
     Most users should construct instances via the class-method factory rather
     than calling ``__init__`` directly:
@@ -55,6 +58,8 @@ class Varformer(nn.Module):
         max_seq_len: int,
         num_genes: int,
         use_pvc: bool = True,
+        use_gc: bool = True,
+        use_go: bool = True,
     ):
         super().__init__()
 
@@ -63,30 +68,40 @@ class Varformer(nn.Module):
         self.num_mutations = num_mutations
         self.max_seq_len = max_seq_len
         self.num_genes = num_genes
+        self.use_gc = use_gc
+        self.use_go = use_go
         self.use_pvc = use_pvc
+        if not any((use_gc, use_go, use_pvc)):
+            raise ValueError("At least one of GC, GO, or PVC must be active.")
         self.config = config
         self.hyperparams = self.config["hyperparameters"]
 
         # 1. GC projection branch
         gc_width = int(self.hyperparams["gc_width"])
-        self.gc_projection = nn.Sequential(
-            nn.Linear(self.num_features_gc, gc_width),
-            nn.LayerNorm(gc_width),
-            nn.ReLU(),
-            nn.Dropout(p=float(self.hyperparams["dropout"])),
+        self.gc_projection = (
+            nn.Sequential(
+                nn.Linear(self.num_features_gc, gc_width),
+                nn.LayerNorm(gc_width),
+                nn.ReLU(),
+                nn.Dropout(p=float(self.hyperparams["dropout"])),
+            )
+            if self.use_gc else None
         )
 
         # 2. GO projection branch
         go_width = int(self.hyperparams["go_width"])
-        self.go_projection = nn.Sequential(
-            nn.Linear(num_features_go, go_width),
-            nn.LayerNorm(go_width),
-            nn.ReLU(),
-            nn.Dropout(p=float(self.hyperparams["dropout"])),
+        self.go_projection = (
+            nn.Sequential(
+                nn.Linear(num_features_go, go_width),
+                nn.LayerNorm(go_width),
+                nn.ReLU(),
+                nn.Dropout(p=float(self.hyperparams["dropout"])),
+            )
+            if self.use_go else None
         )
 
         # 3. PVC branch (VariantEncoder + cross-attention) — optional
-        gene_feature_dim = gc_width + go_width
+        gene_feature_dim = (gc_width if self.use_gc else 0) + (go_width if self.use_go else 0)
 
         if self.use_pvc:
             # Attribute name `self.varformer` is required for state_dict key compatibility
@@ -102,20 +117,31 @@ class Varformer(nn.Module):
                 nhead=int(self.hyperparams["nhead"]),
                 num_encoder_layers=int(self.hyperparams["num_encoder_layers"]),
                 mutation_embedding_max_norm=mm_max_norm,
+                variant_token_schema=self.hyperparams.get("variant_token_schema", "original"),
+                token_ablate=tuple(self.hyperparams.get("variant_token_ablate", ()) or ()),
             )
 
             variant_feature_dim = int(self.hyperparams["d_model"])
             attention_dim = int(self.hyperparams["gv_attn_dim"])
 
-            self.gene_variant_attention = GeneVariantAttention(
-                gene_feature_dim=gene_feature_dim,
-                variant_feature_dim=variant_feature_dim,
-                attention_dim=attention_dim,
-                nhead=int(self.hyperparams["nhead"]),
-            )
+            if gene_feature_dim:
+                self.gene_variant_attention = GeneVariantAttention(
+                    gene_feature_dim=gene_feature_dim,
+                    variant_feature_dim=variant_feature_dim,
+                    attention_dim=attention_dim,
+                    nhead=int(self.hyperparams["nhead"]),
+                )
+                self.pvc_pool_projection = None
+            else:
+                # PVC-only control: no gene query is available, so use masked
+                # mean pooling followed by a learned projection to the same
+                # fusion width as the cross-attention branch.
+                self.gene_variant_attention = None
+                self.pvc_pool_projection = nn.Linear(variant_feature_dim, attention_dim)
         else:
             self.varformer = None
             self.gene_variant_attention = None
+            self.pvc_pool_projection = None
             attention_dim = 0
 
         # 4. Classification head
@@ -133,6 +159,13 @@ class Varformer(nn.Module):
             current_dim = hidden_dim
         cls_head_layers += [nn.Linear(current_dim, 1)]
         self.classification_head = nn.Sequential(*cls_head_layers)
+
+        # Allocated last so enabling it cannot perturb the shared RNG stream.
+        self.variant_head = (
+            nn.Linear(int(self.hyperparams["d_model"]), 1)
+            if self.use_pvc and bool(self.hyperparams.get("variant_head", False))
+            else None
+        )
 
     def forward(
         self,
@@ -179,28 +212,45 @@ class Varformer(nn.Module):
         if mask is not None:
             mask = mask.to(device=device, dtype=torch.bool)
 
-        x_gc = x["gc"][0].to(device)
-        x_go = x["go"][0].to(device)
+        gene_parts = []
+        if self.use_gc:
+            gene_parts.append(self.gc_projection(x["gc"][0].to(device)))
+        if self.use_go:
+            gene_parts.append(self.go_projection(x["go"][0].to(device)))
+        z_gene = torch.cat(gene_parts, dim=-1) if gene_parts else None
 
-        z_gc = self.gc_projection(x_gc)
-        z_go = self.go_projection(x_go)
-        z_gene = torch.cat([z_gc, z_go], dim=-1)
-
+        variant_scores = None
         if self.use_pvc:
             z_pvc = self.varformer(
                 x["pvc"]["pathogenicity"].to(device),
                 x["pvc"]["position"].to(device),
                 x["pvc"]["mutation"].to(device),
                 mask,
+                allele_frequency=x["pvc"].get("allele_frequency", None).to(device)
+                if x["pvc"].get("allele_frequency", None) is not None else None,
+                relative_position=x["pvc"].get("relative_position", None).to(device)
+                if x["pvc"].get("relative_position", None) is not None else None,
+                frequency_confidence=x["pvc"].get("frequency_confidence", None).to(device)
+                if x["pvc"].get("frequency_confidence", None) is not None else None,
             )
-            z_var, variant_attn_weights = self.gene_variant_attention(
-                z_gene,
-                z_pvc,
-                key_padding_mask=(
-                    mask if self.hyperparams.get("mask_cross_attention_padding", True) else None
-                ),
-            )
-            concatenated_features = torch.cat([z_gene, z_var], dim=-1)
+            if self.variant_head is not None:
+                variant_scores = self.variant_head(z_pvc).squeeze(-1)
+
+            if z_gene is not None:
+                z_var, variant_attn_weights = self.gene_variant_attention(
+                    z_gene,
+                    z_pvc,
+                    key_padding_mask=(
+                        mask if self.hyperparams.get("mask_cross_attention_padding", True) else None
+                    ),
+                )
+                concatenated_features = torch.cat([z_gene, z_var], dim=-1)
+            else:
+                valid = (~mask).unsqueeze(-1).to(z_pvc.dtype)
+                pooled = (z_pvc * valid).sum(dim=1) / valid.sum(dim=1).clamp_min(1)
+                z_var = self.pvc_pool_projection(pooled)
+                variant_attn_weights = valid.squeeze(-1) / valid.sum(dim=1).clamp_min(1)
+                concatenated_features = z_var
         else:
             z_var = None
             variant_attn_weights = None
@@ -211,9 +261,12 @@ class Varformer(nn.Module):
         binary_predictions = (scores > float(self.hyperparams["threshold"])).float()
 
         if self.hyperparams["return_attn"]:
-            return logits, scores, binary_predictions, z_var, variant_attn_weights
+            output = (logits, scores, binary_predictions, z_var, variant_attn_weights)
         else:
-            return logits, scores, binary_predictions, z_var
+            output = (logits, scores, binary_predictions, z_var)
+        if self.variant_head is not None:
+            output = output + (variant_scores,)
+        return output
 
     # ------------------------------------------------------------------
     # Public SDK class methods
@@ -221,7 +274,7 @@ class Varformer(nn.Module):
 
     @classmethod
     def from_pretrained(cls, population: str, seed=42):
-        """Load a published checkpoint for a given population and seed.
+        """Load a locally available checkpoint for a given population and seed.
 
         Resolves the checkpoint path from the configured checkpoint root
         (``Config.paths.ckpt_root``), builds the model with data-derived
@@ -243,7 +296,8 @@ class Varformer(nn.Module):
 
         Raises:
             FileNotFoundError: if no checkpoint matching the (population, seed)
-                pair is found under the checkpoint root.
+                pair is found under the checkpoint root. Checkpoint availability
+                depends on the local installation and applicable data licences.
 
         Example:
             >>> model = Varformer.from_pretrained("nfe", seed=42)
@@ -344,8 +398,10 @@ class Varformer(nn.Module):
             num_mutations=num_mutations,
             max_seq_len=cfg["hyperparameters"]["max_seq_len"],
             num_genes=num_genes,
-            class_prior=None,
+            class_prior=first["class_prior"],
             use_pvc=cfg["hyperparameters"].get("use_pvc", True),
+            use_gc=cfg["hyperparameters"].get("use_gc", True),
+            use_go=cfg["hyperparameters"].get("use_go", True),
         )
         raw_ckpt = load_checkpoint(ckpt_path)
         lm.load_state_dict(raw_ckpt["state_dict"], strict=False)
@@ -384,7 +440,13 @@ class Varformer(nn.Module):
         return instance
 
     @classmethod
-    def trainer(cls, population, config_overrides=None, output_dir=None):
+    def trainer(
+        cls,
+        population,
+        config_overrides=None,
+        output_dir=None,
+        frozen_split_manifest=None,
+    ):
         """Create a ``VarformerTrainer`` configured for the given population.
 
         Convenience factory that constructs a ``VarformerTrainer`` instance.
@@ -399,6 +461,9 @@ class Varformer(nn.Module):
             output_dir: Optional directory path where checkpoints will be
                 written.  When ``None`` the trainer uses the default checkpoint
                 path from ``Config``.
+            frozen_split_manifest: Optional exact split manifest. When supplied,
+                training fails unless its population, seed, train/validation
+                universe, and benchmark genes match the materialized data.
 
         Returns:
             A ``VarformerTrainer`` instance.
@@ -408,7 +473,12 @@ class Varformer(nn.Module):
             >>> ckpt_paths = trainer.fit(seeds=[7, 42, 85])
         """
         from varformer.training.train import VarformerTrainer
-        return VarformerTrainer(population=population, config_overrides=config_overrides, output_dir=output_dir)
+        return VarformerTrainer(
+            population=population,
+            config_overrides=config_overrides,
+            output_dir=output_dir,
+            frozen_split_manifest=frozen_split_manifest,
+        )
 
 
     def predict(self, genes, return_attention=False):
@@ -452,6 +522,29 @@ class Varformer(nn.Module):
         """
         from varformer.inference.predict import predict_subset
         return predict_subset(self, genes, return_attention=return_attention)
+
+    def score_variants(self, genes=None):
+        """Score individual missense variants with the variant head.
+
+        Requires a model trained with ``variant_head=True``.
+
+        Args:
+            genes: List of Ensembl gene IDs to score, or ``None`` to score
+                every gene in the cached loaders.
+
+        Returns:
+            A dict mapping each recognised gene ID to a payload dict with the
+            following keys, each a ``numpy.ndarray`` with one entry per
+            retained variant in the model's token order (descending
+            pathogenicity):
+
+            * ``"variant_scores"`` — the variant-head score; higher values rank
+              a variant higher.
+            * ``"pathogenicity"``, ``"position"``, ``"mutation"`` — the token
+              inputs, for alignment with the source variant table.
+        """
+        from varformer.inference.predict import score_variants_subset
+        return score_variants_subset(self, genes)
 
     def evaluate(self, test_set: str) -> dict:
         """Evaluate the model on a labelled holdout set and return metrics.

@@ -10,6 +10,16 @@ from varformer.data.splits import load_combined_labels, combine_features_and_lab
 from varformer.data.features.base import BaseFeatures
 
 
+# Inputs removed together in the leakage/feature-overlap sensitivity models.
+TRACTABILITY_CONSTRAINT_FEATURES = (
+    "hasPocket",
+    "hasLigand",
+    "hasSmallMoleculeBinder",
+    "hasHighQualityChemicalProbes",
+    "geneticConstraint",
+)
+
+
 # data preprocessing
 class GeneCharacterisationPreprocessor(BaseFeatures):
     """
@@ -29,7 +39,36 @@ class GeneCharacterisationPreprocessor(BaseFeatures):
 
         self.features = self.load_opentargets_features()
 
+        # Benchmark construction historically uses geneticConstraint to define
+        # the unlabelled comparator cohort.  Keep that metadata separate from
+        # the model-input frame so overlap-feature sensitivity models can drop
+        # the column without changing or breaking the frozen benchmark split.
+        benchmark_columns = {"targetId", "geneticConstraint"}
+        missing_benchmark_columns = sorted(benchmark_columns.difference(self.features.columns))
+        if missing_benchmark_columns:
+            raise ValueError(
+                "Benchmark-selection metadata is missing required columns: "
+                f"{missing_benchmark_columns}"
+            )
+        benchmark_selection = self.features[["targetId", "geneticConstraint"]].copy()
+
+        excluded = list(config["hyperparameters"].get("gc_exclude_features", []))
+        unknown = sorted(set(excluded).difference(self.features.columns))
+        if unknown:
+            raise ValueError(f"Requested GC exclusions are not present: {unknown}")
+        if excluded:
+            self.features = self.features.drop(columns=excluded)
+            print(f"Excluded GC features for sensitivity analysis: {excluded}")
+
         self.features = self.features[self.features['targetId'].isin(self.pop_data['Gene'])]
+        benchmark_selection = benchmark_selection[
+            benchmark_selection["targetId"].isin(self.pop_data["Gene"])
+        ]
+        if benchmark_selection["targetId"].duplicated().any():
+            raise ValueError("Benchmark-selection metadata contains duplicate targetId values")
+        self.benchmark_genetic_constraint = (
+            benchmark_selection.set_index("targetId")["geneticConstraint"].fillna(0)
+        )
         nan_percentages = self.features.isna().mean() * 100
         high_nan_features = nan_percentages[nan_percentages > 99].index.tolist()
         if high_nan_features:
@@ -81,4 +120,3 @@ class GeneCharacterisationPreprocessor(BaseFeatures):
         cols_to_keep = [col for col in cols if col not in cols_rm]
         ot_df = ot_df[cols_to_keep]
         return ot_df
-

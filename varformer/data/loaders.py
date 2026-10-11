@@ -7,6 +7,8 @@ from sklearn.model_selection import train_test_split
 
 from varformer.data.datasets import MultiModalData
 from varformer.data.samplers import MultiModalDataLoader
+from varformer.data.splits import load_and_validate_frozen_split
+from varformer.data.variant_labels import load_variant_labels
 
 from varformer.training.lightning_module import VarformerLightningModule
 
@@ -42,7 +44,7 @@ def _rows_by_gene(frame, genes, label=""):
 
 
 class ModelPreprocessorEval:
-    def __init__(self, config, data):
+    def __init__(self, config, data, frozen_split_manifest=None):
         self.config = config
         self.data = data
         self.gc_data = data['train']['gc']
@@ -57,8 +59,25 @@ class ModelPreprocessorEval:
         self.num_features = data['num_features']
         self.test_data = data['test_data']
         self.test_genes = data['test_genes']
-        self.train_genes, self.val_genes = train_test_split(self.genes, test_size=0.2,
-                                                            random_state=config['hyperparameters']['seed'])
+        self.frozen_split_source = None
+        if frozen_split_manifest is None:
+            self.train_genes, self.val_genes = train_test_split(
+                self.genes,
+                test_size=0.2,
+                random_state=config['hyperparameters']['seed'],
+            )
+        else:
+            (
+                self.train_genes,
+                self.val_genes,
+                self.frozen_split_source,
+            ) = load_and_validate_frozen_split(
+                frozen_split_manifest,
+                population=config['hyperparameters']['population'],
+                seed=int(config['hyperparameters']['seed']),
+                available_train_genes=self.genes,
+                test_genes_by_task=self.test_labels_per_source,
+            )
         self.class_prior = data['class_prior']
         self.torch_dtype = torch.bfloat16 if config['hyperparameters']['precision'] == 'bf16-mixed' else torch.float32
         torch.set_default_dtype(self.torch_dtype)
@@ -108,7 +127,10 @@ class ModelPreprocessorEval:
          num_samples_per_class) = self.normalise_data(train_raw, val_raw, labels, test_labels, train_genes, val_genes,
                                                       test_genes, test, torch_dtype, config)
 
-        use_pvc = 'pvc' in train_raw
+        # PVC is loaded for every decisive configuration so all ablations use
+        # the identical gene universe and splits. Whether the model consumes it
+        # is an explicit configuration choice, not inferred from data presence.
+        use_pvc = bool(hyperparams.get('use_pvc', True))
 
         if use_pvc:
             max_genes_pvc = max([train_raw['pvc'][gene].shape[0] for gene in train_raw['pvc'].keys()])
@@ -131,7 +153,9 @@ class ModelPreprocessorEval:
             num_genes=max_genes_pvc,
             num_samples_per_class=num_samples_per_class,
             class_prior=self.class_prior,
-            use_pvc=use_pvc
+            use_pvc=use_pvc,
+            use_gc=bool(hyperparams.get("use_gc", True)),
+            use_go=bool(hyperparams.get("use_go", True)),
         )
 
         accelerator = 'gpu' if torch.cuda.is_available() else 'cpu'
@@ -204,13 +228,16 @@ class ModelPreprocessorEval:
                         test_source=key
                     )
             else:
+                variant_labels = load_variant_labels(config, hparams["population"])
+
                 train_datasets[module_str] = MultiModalData(
                     data=None,
                     labels=None,
                     gene_names=train_genes,
                     dtype=torch_dtype,
                     variant_data={'data': train_data, 'labels': labels},
-                    max_variants=hparams['max_seq_len']
+                    max_variants=hparams['max_seq_len'],
+                    variant_labels=variant_labels
                 )
 
                 val_datasets[module_str] = MultiModalData(
@@ -219,7 +246,8 @@ class ModelPreprocessorEval:
                     gene_names=val_genes,
                     dtype=torch_dtype,
                     variant_data={'data': val_raw[module_str], 'labels': labels},
-                    max_variants=hparams['max_seq_len']
+                    max_variants=hparams['max_seq_len'],
+                    variant_labels=variant_labels
                 )
 
                 for key, modalities in test_raw.items():

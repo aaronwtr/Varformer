@@ -65,6 +65,60 @@ def test_positional_encoder_shape():
     assert out.shape == (B, S, 32)
 
 
+def test_absolute_positions_beyond_lookup_are_supported_and_collision_free():
+    pe = PositionalEncoder(max_seq_len=16, d_model=32, dropout=0.0)
+    x = torch.zeros(1, 2, 32)
+    # These would collide under modulo-16 sharding.
+    out = pe(x, torch.tensor([[2, 18]]))
+    assert out.shape == (1, 2, 32)
+    assert not torch.allclose(out[:, 0], out[:, 1])
+
+
+@pytest.mark.parametrize(
+    "schema,continuous_width",
+    [("af", 2), ("af_relative_position", 3),
+     ("af_relative_position_confidence", 4)],
+)
+def test_enhanced_variant_token_schemas(schema, continuous_width):
+    encoder = VariantEncoder(
+        max_seq_len=16, num_muts=50, dropout=0.0, d_model=32,
+        dim_feedforward=64, nhead=4, num_encoder_layers=1,
+        variant_token_schema=schema,
+    )
+    batch, sequence = 2, 6
+    kwargs = {
+        "pathogenicity": torch.rand(batch, sequence),
+        "position": torch.randint(0, 16, (batch, sequence)),
+        "mutation": torch.randint(0, 50, (batch, sequence)),
+        "mask": torch.zeros(batch, sequence, dtype=torch.bool),
+        "allele_frequency": torch.rand(batch, sequence),
+        "relative_position": torch.rand(batch, sequence),
+        "frequency_confidence": torch.rand(batch, sequence),
+    }
+    output = encoder(**kwargs)
+    assert output.shape == (batch, sequence, 32)
+    assert encoder.pathogenicity_projection.in_features == continuous_width
+
+
+def test_relative_schema_does_not_use_modulo_position():
+    encoder = VariantEncoder(
+        max_seq_len=16, num_muts=50, dropout=0.0, d_model=32,
+        dim_feedforward=64, nhead=4, num_encoder_layers=1,
+        variant_token_schema="af_relative_position",
+    ).eval()
+    kwargs = {
+        "pathogenicity": torch.rand(1, 5),
+        "mutation": torch.randint(0, 50, (1, 5)),
+        "mask": torch.zeros(1, 5, dtype=torch.bool),
+        "allele_frequency": torch.rand(1, 5),
+        "relative_position": torch.rand(1, 5),
+    }
+    with torch.no_grad():
+        left = encoder(position=torch.zeros(1, 5), **kwargs)
+        right = encoder(position=torch.full((1, 5), 1023), **kwargs)
+    assert torch.equal(left, right)
+
+
 def test_deterministic_in_eval_mode(tiny_ve):
     """Dropout=0 and eval mode: output must be deterministic."""
     tiny_ve.eval()

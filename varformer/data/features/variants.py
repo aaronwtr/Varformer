@@ -11,6 +11,23 @@ from tqdm import tqdm
 from varformer.data.parsers.alphamissense import merge_am_data
 
 
+def resolve_variant_features_dir(config, population):
+    """Resolve an optional experiment-isolated PVC cache directory."""
+    override = os.environ.get("VARFORMER_VARIANT_FEATURE_DIR")
+    if override:
+        return override
+    default = f"{config['paths']['FEATURES_DIR']}/{population}"
+    active_link = os.path.join(default, "active_variant_features")
+    if os.path.islink(active_link):
+        resolved = os.path.realpath(active_link)
+        if not os.path.isdir(resolved):
+            raise FileNotFoundError(
+                f"Active PVC feature link is broken: {active_link} -> {resolved}"
+            )
+        return resolved
+    return default
+
+
 class PopulationVariantPreprocessor:
     """
     This class processes protein variant information, specifically it obtains and processes amino acid sequence embeddings
@@ -32,19 +49,73 @@ class PopulationVariantPreprocessor:
 
         self.num_features = config['hyperparameters']['max_seq_len']
 
-        features_dir = f"{config['paths']['FEATURES_DIR']}/{self.population}"
+        features_dir = resolve_variant_features_dir(config, self.population)
         print("Obtaining AlphaMissense pathogenicity embeddings...")
-        if not os.path.exists(f'{features_dir}/var_pat_features.pkl'):
+        token_schema = config['hyperparameters'].get('variant_token_schema', 'original')
+        frequency_qc = bool(config['hyperparameters'].get('variant_frequency_qc', False))
+        enhanced_cache = f'{features_dir}/variant_token_features_v1.pkl'
+        use_enhanced_cache = token_schema != 'original' or frequency_qc
+        cache_path = enhanced_cache if use_enhanced_cache else f'{features_dir}/var_pat_features.pkl'
+        if use_enhanced_cache and not os.path.exists(cache_path):
+            raise FileNotFoundError(
+                f"{cache_path} is required for schema={token_schema!r} with "
+                f"variant_frequency_qc={frequency_qc}. Build it with "
+                "validation/build_enhanced_variant_cache.py."
+            )
+        if not os.path.exists(cache_path):
             print("Preparing variant features...")
             self.variant_gh_data(config)
             self.var_pat_features, self.var_gene_map = self.varformer_pathogenicity_input()
             with open(f'{features_dir}/var_pat_features.pkl', 'wb') as file:
                 pkl.dump(self.var_pat_features, file)
         else:
-            with open(f'{features_dir}/var_pat_features.pkl', 'rb') as f:
+            with open(cache_path, 'rb') as f:
                 self.var_pat_features = pkl.load(f)
             with open(f'{features_dir}/gene_loc_var_map.pkl', 'rb') as f:
                 self.var_gene_map = pkl.load(f)
+
+        if use_enhanced_cache:
+            for gene, tensor in self.var_pat_features.items():
+                if tensor.ndim != 2 or tensor.shape[1] != 7:
+                    raise ValueError(f"Enhanced PVC tensor for {gene} must have 7 columns")
+
+        # Callability is retained as an optional sensitivity analysis. It must
+        # not be applied merely because an enhanced token schema is selected:
+        # population-relative AN thresholds remove every variant from hundreds
+        # of genes in NFE/AFR/AMR and would therefore change the frozen gene
+        # universe and splits.
+        if frequency_qc:
+            threshold = float(config['hyperparameters'].get('min_callability_fraction', 0.8))
+            if not 0 <= threshold <= 1:
+                raise ValueError(f"min_callability_fraction must be in [0,1], got {threshold}")
+            filtered = {}
+            filtered_gene_map = {}
+            emptied = []
+            for gene, tensor in self.var_pat_features.items():
+                keep = tensor[:, 6] >= threshold
+                if not torch.any(keep):
+                    emptied.append(gene)
+                else:
+                    filtered[gene] = tensor[keep]
+                    variant_ids = self.var_gene_map.get(gene, [])
+                    if len(variant_ids) != tensor.shape[0]:
+                        raise ValueError(f"{gene}: enhanced tensor/gene-map row mismatch")
+                    filtered_gene_map[gene] = [
+                        variant for variant, retained in zip(variant_ids, keep.tolist()) if retained
+                    ]
+            if emptied:
+                raise ValueError(
+                    f"Callability threshold {threshold} removes every variant from "
+                    f"{len(emptied)} genes (examples: {emptied[:3]}), which would change splits."
+                )
+            self.var_pat_features = filtered
+            self.var_gene_map = filtered_gene_map
+
+        position_encoding = config['hyperparameters'].get('position_encoding', 'modulo')
+        if position_encoding == 'absolute':
+            self._restore_absolute_positions(features_dir)
+        elif position_encoding != 'modulo':
+            raise ValueError(f"Unknown position_encoding: {position_encoding}")
 
         self.norm = False
 
@@ -55,6 +126,47 @@ class PopulationVariantPreprocessor:
         self.data = {key: value for key, value in self.var_pat_features.items()}
         self.data = {key: value for key, value in self.var_pat_features.items()}
         self.data['labels'] = self.labels
+
+    def _restore_absolute_positions(self, features_dir):
+        """Replace cached modulo positions with collision-free protein positions."""
+        raw_path = f'{features_dir}/am_pop_merge.pkl'
+        if not os.path.exists(raw_path):
+            raise FileNotFoundError(
+                f"Absolute-coordinate sensitivity requires {raw_path}."
+            )
+        raw = pd.read_pickle(raw_path)
+        required = {'variant_id', 'Protein_position'}
+        missing_columns = required.difference(raw.columns)
+        if missing_columns:
+            raise ValueError(f"Missing absolute-position columns: {sorted(missing_columns)}")
+        positions = (
+            raw.dropna(subset=['variant_id', 'Protein_position'])
+            .drop_duplicates('variant_id')
+            .set_index('variant_id')['Protein_position']
+        )
+        restored = {}
+        missing_variants = []
+        for gene, tensor in self.var_pat_features.items():
+            variant_ids = self.var_gene_map.get(gene, [])
+            if len(variant_ids) != tensor.shape[0]:
+                raise ValueError(
+                    f"{gene}: {len(variant_ids)} variant IDs for {tensor.shape[0]} cached rows."
+                )
+            gene_missing = [variant for variant in variant_ids if variant not in positions.index]
+            missing_variants.extend(gene_missing)
+            if gene_missing:
+                continue
+            updated = tensor.clone()
+            updated[:, 1] = torch.as_tensor(
+                [positions.loc[variant] for variant in variant_ids], dtype=updated.dtype
+            )
+            restored[gene] = updated
+        if missing_variants:
+            raise ValueError(
+                f"Could not restore absolute positions for {len(missing_variants)} variants "
+                f"(examples: {missing_variants[:3]})."
+            )
+        self.var_pat_features = restored
 
     def variant_gh_data(self, config):
         print("Preparing GH data for variant-level embeddings...")

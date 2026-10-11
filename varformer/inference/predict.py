@@ -47,3 +47,43 @@ def predict_subset(model, genes, return_attention=False):
             payload.pop("attn_weights", None)
 
     return results
+
+
+def score_variants_subset(model, genes=None):
+    """Score individual missense variants with the variant head.
+
+    Uses the loaders cached on ``model`` by ``Varformer._build_and_load``.
+
+    Args:
+        model: A ``Varformer`` instance trained with ``variant_head=True``.
+        genes: Ensembl gene IDs to score, or ``None`` for every cached gene.
+
+    Returns:
+        dict mapping gene_id -> {"variant_scores", "pathogenicity", "position",
+        "mutation"}. Each value is a NumPy array with one entry per retained
+        variant, in the model's token order.
+    """
+    if model.variant_head is None:
+        raise ValueError("This model was trained without a variant head")
+
+    gene_set = None if genes is None else set(genes)
+    results: dict = {}
+    model.eval()
+    with torch.no_grad():
+        for loader in model._test_loaders.values():
+            for batch in loader:
+                pvc = batch["pvc"]
+                output = model({"gc": batch["gc"], "go": batch["go"], "pvc": pvc}, pvc["mask"])
+                scores = output[-1].float().cpu().numpy()
+                real = ~pvc["mask"].bool().cpu().numpy()
+                for i, gid in enumerate(pvc["gene_name"]):
+                    if gene_set is not None and gid not in gene_set:
+                        continue
+                    results[gid] = {
+                        "variant_scores": scores[i][real[i]],
+                        **{
+                            key: pvc[key][i].cpu().numpy()[real[i]]
+                            for key in ("pathogenicity", "position", "mutation")
+                        },
+                    }
+    return results

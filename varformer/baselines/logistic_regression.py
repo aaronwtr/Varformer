@@ -1,7 +1,8 @@
 """Logistic-regression baseline: a linear model over the same GC/GO/PVC features."""
 import os
-import datetime
 import pickle as pkl
+import re
+import subprocess
 
 import wandb
 import numpy as np
@@ -102,8 +103,15 @@ def logistic_regression(**modules):
     })
 
     # Save the model
-    current_date = datetime.datetime.now().strftime("%d-%m-%Y")
-    current_time = datetime.datetime.now().strftime("%H-%M-%S")
+    observed = subprocess.run(
+        ["date", "+%d-%m-%Y|%H-%M-%S"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if not re.fullmatch(r"[0-9]{2}-[0-9]{2}-[0-9]{4}\|[0-9]{2}-[0-9]{2}-[0-9]{2}", observed):
+        raise ValueError(f"Runtime-host date returned an unexpected checkpoint time: {observed!r}")
+    current_date, current_time = observed.split("|", 1)
     checkpoint_dir = f'checkpoints/{current_date}'
     os.makedirs(checkpoint_dir, exist_ok=True)
 

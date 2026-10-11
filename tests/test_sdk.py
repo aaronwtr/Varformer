@@ -52,3 +52,28 @@ def test_trainer_passes_output_directory_to_training(tmp_path):
     train.assert_called_once_with(processed, output_dir=tmp_path)
     assert paths == [Path(tmp_path / "nfe" / "seed42.ckpt")]
 
+
+def test_trainer_passes_explicit_frozen_split_to_training(tmp_path):
+    split = tmp_path / "donor.split_manifest.json"
+    trainer = VarformerTrainer(
+        population="nfe",
+        output_dir=tmp_path,
+        frozen_split_manifest=split,
+    )
+    processed = {"synthetic": "data"}
+
+    with (
+        patch("varformer.data.pipeline.ModuleDataProcessor.process", return_value=processed),
+        patch(
+            "varformer.training.train.train_model",
+            return_value=str(tmp_path / "nfe" / "seed42.ckpt"),
+        ) as train,
+    ):
+        paths = trainer.fit(seeds=[42])
+
+    train.assert_called_once_with(
+        processed,
+        output_dir=tmp_path,
+        frozen_split_manifest=split,
+    )
+    assert paths == [Path(tmp_path / "nfe" / "seed42.ckpt")]

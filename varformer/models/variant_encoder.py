@@ -32,9 +32,24 @@ class PositionalEncoder(nn.Module):
         return pe
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
-        pe = self.pe.to(positions.device)
         pos_idx = positions.to(torch.long)
-        pe = pe[pos_idx]
+        if torch.any(pos_idx < 0):
+            raise ValueError("Protein positions must be non-negative.")
+
+        # Preserve the original lookup path for modulo inputs while allowing
+        # collision-free absolute protein coordinates beyond max_seq_len.
+        if pos_idx.numel() == 0 or int(pos_idx.max()) < self.max_seq_len:
+            pe = self.pe.to(device=positions.device, dtype=x.dtype)[pos_idx]
+        else:
+            pos = pos_idx.to(device=positions.device, dtype=torch.float32).unsqueeze(-1)
+            periodicity = torch.exp(
+                torch.arange(0, self.d_model, 2, device=positions.device, dtype=torch.float32)
+                * (-math.log(10000.0) / self.d_model)
+            )
+            pe = torch.zeros(*pos_idx.shape, self.d_model, device=positions.device)
+            pe[..., 0::2] = torch.sin(pos * periodicity)
+            pe[..., 1::2] = torch.cos(pos * periodicity)
+            pe = pe.to(dtype=x.dtype)
         x = x + pe
         return self.dropout(x)
 
@@ -73,17 +88,31 @@ class VariantEncoder(nn.Module):
         nhead: int = 8,
         num_encoder_layers: int = 2,
         mutation_embedding_max_norm: float = None,
+        variant_token_schema: str = "original",
+        token_ablate: tuple = (),
     ):
         super().__init__()
         self.d_model = d_model
         self.max_seq_len = max_seq_len
+        self.variant_token_schema = variant_token_schema
+        self.token_ablate = tuple(token_ablate)
 
         # mutation_embedding_max_norm caps each embedding vector's L2 norm;
         # None leaves the embedding unconstrained.
         self.mutation_embedding = nn.Embedding(
             num_muts, d_model // 2, max_norm=mutation_embedding_max_norm
         )
-        self.pathogenicity_projection = nn.Linear(1, d_model // 2)
+        continuous_dimensions = {
+            "original": 1,
+            "af": 2,
+            "af_relative_position": 3,
+            "af_relative_position_confidence": 4,
+        }
+        if variant_token_schema not in continuous_dimensions:
+            raise ValueError(f"Unknown variant token schema: {variant_token_schema}")
+        self.pathogenicity_projection = nn.Linear(
+            continuous_dimensions[variant_token_schema], d_model // 2
+        )
 
         self.positional_encoder = PositionalEncoder(max_seq_len, d_model, dropout)
 
@@ -105,6 +134,9 @@ class VariantEncoder(nn.Module):
         position: torch.Tensor,
         mutation: torch.Tensor,
         mask: torch.Tensor,
+        allele_frequency: torch.Tensor = None,
+        relative_position: torch.Tensor = None,
+        frequency_confidence: torch.Tensor = None,
     ) -> torch.Tensor:
         """Encode a batch of variant sequences.
 
@@ -117,11 +149,34 @@ class VariantEncoder(nn.Module):
         Returns:
             Tensor [B, S, d_model] — contextualised variant embeddings.
         """
-        path_emb = self.pathogenicity_projection(pathogenicity.unsqueeze(-1))
+        continuous = [pathogenicity]
+        if self.variant_token_schema != "original":
+            if allele_frequency is None:
+                raise ValueError(f"{self.variant_token_schema} requires allele_frequency")
+            continuous.append(allele_frequency)
+        if self.variant_token_schema in {
+            "af_relative_position", "af_relative_position_confidence"
+        }:
+            if relative_position is None:
+                raise ValueError(f"{self.variant_token_schema} requires relative_position")
+            continuous.append(relative_position)
+        if self.variant_token_schema == "af_relative_position_confidence":
+            if frequency_confidence is None:
+                raise ValueError("af_relative_position_confidence requires frequency_confidence")
+            continuous.append(frequency_confidence)
+        path_emb = self.pathogenicity_projection(torch.stack(continuous, dim=-1))
         mut_emb = self.mutation_embedding(mutation.long())
+        if "mutation" in self.token_ablate:
+            mut_emb = torch.zeros_like(mut_emb)
 
         var_token = torch.cat([path_emb, mut_emb], dim=-1)
-        var_token = self.positional_encoder(var_token, position)
+        # The enhanced relative-position schemas carry q/L directly as a
+        # continuous token feature. They deliberately do not also add the
+        # collision-prone q modulo 1,024 positional encoding.
+        if self.variant_token_schema in {"original", "af"} and "position" not in self.token_ablate:
+            var_token = self.positional_encoder(var_token, position)
+        else:
+            var_token = self.positional_encoder.dropout(var_token)
 
         B, S, _ = var_token.size()
 

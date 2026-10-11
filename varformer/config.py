@@ -24,13 +24,16 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 REPO_CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 PACKAGE_CONFIGS = Path(__file__).resolve().parent / "configs"
 CONFIGS = REPO_CONFIGS if REPO_CONFIGS.is_dir() else PACKAGE_CONFIGS
 
 Population = Literal["sas", "nfe", "afr", "amr"]
+VariantTokenSchema = Literal[
+    "original", "af", "af_relative_position", "af_relative_position_confidence"
+]
 
 
 class Hyperparameters(BaseModel):
@@ -50,7 +53,27 @@ class Hyperparameters(BaseModel):
     weight_decay: float = 3e-4
     mutation_embedding_max_norm: Optional[float] = None
     stop_on_nan: bool = True
+    use_gc: bool = True
+    use_go: bool = True
     use_pvc: bool = True
+    shuffle_pvc_across_genes: bool = False
+    gc_exclude_features: list[str] = Field(default_factory=list)
+    position_encoding: Literal["modulo", "absolute"] = "modulo"
+    variant_token_schema: VariantTokenSchema = "original"
+    variant_head: bool = False
+    variant_loss_weight: float = 0.0
+    variant_token_ablate: list[Literal["mutation", "position"]] = Field(default_factory=list)
+    variant_labels_path: Optional[str] = None
+    variant_objective: Literal["pooled_bce", "within_gene_ranking"] = "pooled_bce"
+    variant_pairs_per_gene: int = 256
+    variant_pairs_per_side: int = 96
+    variant_frequency_qc: bool = False
+    min_callability_fraction: float = 0.8
+    af_log10_floor: float = -6.0
+    pu_class_prior: Optional[float] = None
+    threshold_positive_fraction: Optional[float] = None
+    evaluate_holdout_after_fit: bool = True
+    run_name: Optional[str] = None
     include_open_targets_labels: bool = True
     mask_cross_attention_padding: bool = True
 

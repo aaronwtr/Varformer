@@ -1,4 +1,4 @@
-"""Checkpoint utilities: loading published checkpoints and discovering them on disk."""
+"""Discover and load locally available, trusted Varformer checkpoints."""
 from __future__ import annotations
 
 import re

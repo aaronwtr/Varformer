@@ -92,6 +92,43 @@ def test_no_pvc_branch(tiny_config):
     assert z_var is None
 
 
+def test_pvc_only_branch(tiny_config):
+    model = Varformer(
+        config=tiny_config,
+        num_features_gc=30,
+        num_features_go=20,
+        num_mutations=50,
+        max_seq_len=16,
+        num_genes=100,
+        use_gc=False,
+        use_go=False,
+        use_pvc=True,
+    )
+    x, mask = _make_batch(B=3)
+    mask[0, 8:] = True
+    logits, probas, _, z_var, weights = model(x, mask)
+    assert logits.shape == (3,)
+    assert probas.shape == (3,)
+    assert z_var.shape == (3, tiny_config["hyperparameters"]["gv_attn_dim"])
+    assert weights.shape == (3, 10)
+    assert torch.allclose(weights.sum(dim=1), torch.ones(3))
+
+
+def test_rejects_empty_modality_set(tiny_config):
+    with pytest.raises(ValueError, match="At least one"):
+        Varformer(
+            config=tiny_config,
+            num_features_gc=30,
+            num_features_go=20,
+            num_mutations=50,
+            max_seq_len=16,
+            num_genes=100,
+            use_gc=False,
+            use_go=False,
+            use_pvc=False,
+        )
+
+
 def test_attribute_names_for_checkpoint(tiny_model):
     """Key attribute names must match checkpoint state_dict keys."""
     names = {name for name, _ in tiny_model.named_children()}
