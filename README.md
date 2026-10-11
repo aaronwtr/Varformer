@@ -162,7 +162,7 @@ varformer/         # the importable package
   utils/           # seeding, aa_codes
   config.py        # Pydantic Config + Hyperparameters
 configs/           # default.yml + paths/{local,hpc}.example.yml
-scores/            # gene and variant scores from the paper
+scores/            # variant scores from the paper
 docs/figures/      # README assets
 checkpoints/       # trained model checkpoints (gitignored)
 ```
@@ -171,10 +171,7 @@ checkpoints/       # trained model checkpoints (gitignored)
 
 | File | Content |
 |---|---|
-| `scores/gene_scores.tsv.gz` | Gene scores for AFR, AMR, NFE and SAS, averaged over five seeds (74,908 rows). |
 | `scores/gnh_variant_scores.tsv.gz` | Variant scores from the SAS model for missense variants observed in Genes & Health, averaged over five seeds (2,264,706 variant annotations, 1,299,645 GRCh38 variants, 15,725 genes). |
-
-Columns of `gene_scores.tsv.gz`: `population`, `gene_id` (Ensembl), `mean_prediction` (mean score over seeds), `mean_seed_rank_percentile` (mean of the within-seed rank percentiles), `seeds` (number of seeds), `rank_percentile` (rank percentile of `mean_seed_rank_percentile` within the population) and `label` (1 for a positive target from Open Targets, Citeline Pharmaprojects or the Human Protein Atlas, including the positives held out for the benchmarks; 0 for an unlabelled gene).
 
 Columns of `gnh_variant_scores.tsv.gz`: `key` (`chrom_pos_ref_alt`, GRCh38), `variant_id` (`key` plus the amino-acid change), `gene` (Ensembl), `s_v` (variant score) and `gene_score` (gene score of the same model). The file contains no genotypes, allele counts, phenotypes or individual-level data.
 
