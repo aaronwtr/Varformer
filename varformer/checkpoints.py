@@ -50,6 +50,15 @@ def load_checkpoint(ckpt_path: str | Path) -> dict:
     return ckpt
 
 
+def saved_gc_exclusions(ckpt: dict, default: list[str]) -> list[str]:
+    """Return the gene features that a checkpoint was trained without."""
+    saved = ckpt.get("hyper_parameters", {}).get("config")
+    if not isinstance(saved, dict) or "hyperparameters" not in saved:
+        return list(default)
+    # Checkpoints saved before the option existed used every feature.
+    return list(saved["hyperparameters"].get("gc_exclude_features", []))
+
+
 def find_checkpoint(ckpt_root: Path, population: str, seed: int) -> Path:
     pattern = f"seed{seed}-epoch=*-val_spearman=*.ckpt"
     matches = list((ckpt_root / population).glob(pattern))

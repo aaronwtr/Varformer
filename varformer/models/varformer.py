@@ -359,7 +359,7 @@ class Varformer(nn.Module):
         import pickle
         import pandas as pd
 
-        from varformer.checkpoints import load_checkpoint
+        from varformer.checkpoints import load_checkpoint, saved_gc_exclusions
         from varformer.training.lightning_module import VarformerLightningModule
         from varformer.data.pipeline import ModuleDataProcessor
         from varformer.data.loaders import ModelPreprocessorInference
@@ -377,6 +377,12 @@ class Varformer(nn.Module):
             },
             "paths": config.paths.as_dict,
         }
+
+        # The gene inputs must match those the checkpoint was trained with.
+        raw_ckpt = load_checkpoint(ckpt_path)
+        cfg["hyperparameters"]["gc_exclude_features"] = saved_gc_exclusions(
+            raw_ckpt, cfg["hyperparameters"]["gc_exclude_features"]
+        )
 
         # Run the data pipeline to derive the model's input dimensions.
         data = ModuleDataProcessor(gc=True, go=True, pvc=True, config=cfg).process()
@@ -403,7 +409,6 @@ class Varformer(nn.Module):
             use_gc=cfg["hyperparameters"].get("use_gc", True),
             use_go=cfg["hyperparameters"].get("use_go", True),
         )
-        raw_ckpt = load_checkpoint(ckpt_path)
         lm.load_state_dict(raw_ckpt["state_dict"], strict=False)
 
         # Cache the test loaders so predict_subset can reuse them.

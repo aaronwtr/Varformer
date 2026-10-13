@@ -57,7 +57,7 @@ class Hyperparameters(BaseModel):
     use_go: bool = True
     use_pvc: bool = True
     shuffle_pvc_across_genes: bool = False
-    gc_exclude_features: list[str] = Field(default_factory=list)
+    gc_exclude_features: list[str] = Field(default_factory=lambda: ["geneticConstraint"])
     position_encoding: Literal["modulo", "absolute"] = "modulo"
     variant_token_schema: VariantTokenSchema = "original"
     variant_head: bool = False

@@ -28,7 +28,8 @@ hyperparameters:
   use_go: True
   use_pvc: True
   shuffle_pvc_across_genes: False
-  gc_exclude_features: []
+  gc_exclude_features: ["geneticConstraint"]   # selects the benchmark
+                                               # negatives, so it is not a model input.
   position_encoding: "modulo"
   variant_token_schema: "original"
   variant_head: False

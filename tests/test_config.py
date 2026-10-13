@@ -20,6 +20,11 @@ def test_load_default_local():
     assert c.hyperparameters.optimizer == "AdamW"
 
 
+def test_genetic_constraint_is_not_a_default_model_input():
+    assert Config.load(profile="local").hyperparameters.gc_exclude_features == ["geneticConstraint"]
+    assert Hyperparameters().gc_exclude_features == ["geneticConstraint"]
+
+
 def test_load_hpc_profile():
     # The hpc profile resolves (to hpc.yml if present, else hpc.example.yml)
     # and yields both path roots.

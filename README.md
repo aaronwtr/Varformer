@@ -91,7 +91,7 @@ Trained weights will be released on the Hugging Face Hub alongside the paper. In
 
 Following the design in the paper, Varformer is structured around two complementary modules whose representations are fused by cross-modal attention before classification:
 
-- **Gene Characterisation (GC) module** — captures gene-centric biology independent of the population. In the implementation this is split across two parallel MLP projections: one over the Open Targets tractability features, and one over Gene Ontology-derived features. Their outputs are concatenated into a single gene-level representation `z_gene`.
+- **Gene Characterisation (GC) module** — captures gene-centric biology independent of the population. In the implementation this is split across two parallel MLP projections: one over nine Open Targets tractability and safety features, and one over Gene Ontology-derived features. Their outputs are concatenated into a single gene-level representation `z_gene`. The Open Targets `geneticConstraint` feature is excluded by default (`gc_exclude_features`), because the paper uses it to select the benchmark negatives.
 - **Population Variant Characterisation (PVC) module** — encodes a pathogenicity-ranked, masked set of up to 1,024 missense variants observed in a population for each gene. Each variant is represented by its AlphaMissense pathogenicity score, protein position modulo 1,024, and mutation-type index. A small transformer encoder (`VariantEncoder`) produces contextualised variant embeddings. Allele frequency is not an explicit PVC token field in the paper-era model.
 
 `z_gene` then attends over the per-variant embeddings (`GeneVariantAttention`), producing a single variant-informed embedding `z_var`. The classification head concatenates `z_gene` with `z_var` and produces a target-prioritization score.
@@ -125,7 +125,7 @@ checkpoint_paths = trainer.fit(seeds=[7, 42, 85])
 
 ### Training with the variant head
 
-The variant head is a shared linear layer on the contextual variant tokens. It is trained jointly with the gene objective, `L = L_gene + variant_loss_weight * L_variant`, and is off by default. The variant scores in the paper use these settings:
+The variant head is a shared linear layer on the contextual variant tokens. It is trained jointly with the gene objective, `L = L_gene + variant_loss_weight * L_variant`, and is off by default. The models in the paper use these settings:
 
 ```python
 trainer = Varformer.trainer(
@@ -139,6 +139,8 @@ trainer = Varformer.trainer(
     },
 )
 ```
+
+The gene-level results in the paper come from models with these settings and the default gene features. The variant scores used in the Genes & Health analyses come from SAS models that were trained with the same settings and with `geneticConstraint` as an additional gene input (`"gc_exclude_features": []`). `from_pretrained` and `from_checkpoint` read this setting from the checkpoint.
 
 `variant_labels_path` points to a Parquet table with the columns `variant_id`, `label`, `observed` and `stratum`. In the paper, `label` is 1 when the maximum adjusted allele frequency across the gnomAD v4.1 AFR, AMR, NFE and SAS groups is below 10⁻³ and 0 otherwise; `observed` marks variants with a usable frequency; `stratum` is the substitution class (for example `C>T`). Variant labels on a fixed 15% of genes are withheld from the variant loss for evaluation.
 
