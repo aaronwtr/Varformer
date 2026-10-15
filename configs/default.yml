@@ -4,7 +4,7 @@ hyperparameters:
   # training & optimization
   optimizer: AdamW
   pusb: True
-  precision: "16-mixed"    # fp16 mixed precision (uses a GradScaler).
+  precision: "32-true"
   epochs: 100
   gradient_clip_val: 1.0   # bounds gradient norm; without it the mutation
                            # embedding grows unboundedly and the cross-attention
@@ -32,8 +32,8 @@ hyperparameters:
                                                # negatives, so it is not a model input.
   position_encoding: "modulo"
   variant_token_schema: "original"
-  variant_head: False
-  variant_loss_weight: 0.0
+  variant_head: True
+  variant_loss_weight: 0.1   # needs variant_labels_path
   variant_token_ablate: []
   variant_labels_path: null
   variant_objective: "pooled_bce"
@@ -68,7 +68,7 @@ hyperparameters:
   class_weight: "balanced"
 
   # misc
-  wandb: True
+  wandb: False
   return_attn: True
   num_workers: 0
   seed: 57

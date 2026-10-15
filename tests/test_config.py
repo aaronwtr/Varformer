@@ -25,6 +25,12 @@ def test_genetic_constraint_is_not_a_default_model_input():
     assert Hyperparameters().gc_exclude_features == ["geneticConstraint"]
 
 
+def test_defaults_match_the_paper_models():
+    expected = {"precision": "32-true", "variant_head": True, "variant_loss_weight": 0.1, "wandb": False}
+    for hp in (Config.load(profile="local").hyperparameters, Hyperparameters()):
+        assert {k: hp[k] for k in expected} == expected
+
+
 def test_load_hpc_profile():
     # The hpc profile resolves (to hpc.yml if present, else hpc.example.yml)
     # and yields both path roots.
