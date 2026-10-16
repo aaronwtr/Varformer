@@ -11,6 +11,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/aaronwtr/Varformer/actions/workflows/ci.yml/badge.svg)](https://github.com/aaronwtr/Varformer/actions/workflows/ci.yml)
 [![Paper](https://img.shields.io/badge/paper-preprint%20pending-lightgrey.svg)](#)
+[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-weights-yellow)](https://huggingface.co/aaronw1290/Varformer)
 
 </div>
 
@@ -37,7 +38,7 @@ Requires Python 3.9 and a CUDA-capable GPU for inference at scale (CPU works for
 ```python
 from varformer import Varformer
 
-# Load the best-scoring local checkpoint for a population (see Checkpoints).
+# Download a released model of the paper (see Released models).
 model = Varformer.from_pretrained("nfe", seed="best")
 
 # Rank a list of Ensembl gene IDs with the target-prioritization score.
@@ -75,16 +76,21 @@ Each `payload` dict contains NumPy arrays with one entry per retained variant, i
 
 The variant score ranks variants for research prioritization. It is not calibrated or validated for clinical variant classification.
 
-### Checkpoints
+### Released models
 
-Trained weights are not distributed. Train models with the default settings, which are the settings of the paper (see [Training with the variant head](#training-with-the-variant-head)). `from_pretrained` loads the requested `(population, seed)` from the configured local checkpoint root, with the filename pattern `checkpoints/<label>/seed{N}-epoch=*-val_spearman=*.ckpt`.
+The weights of the 25 models in the paper are on the [Hugging Face Hub](https://huggingface.co/aaronw1290/Varformer) under the **CC BY-NC-SA 4.0** license (see [License](#license)). All models were trained with the default settings (see [Training with the variant head](#training-with-the-variant-head)), with five seeds each (13, 23, 42, 85, 482).
 
-| Code label | Cohort |
-|---|---|
-| `nfe` | Non-Finnish European (gnomAD) |
-| `sas` | South Asian — Genes & Health (Bangladeshi + Pakistani), N=44,288 |
-| `afr` | African (gnomAD) |
-| `amr` | Admixed American (gnomAD) |
+| Model | Cohort | Use in the paper |
+|---|---|---|
+| `afr` | African (gnomAD) | gene prioritization |
+| `amr` | Admixed American (gnomAD) | gene prioritization |
+| `nfe` | Non-Finnish European (gnomAD) | gene prioritization |
+| `sas` | South Asian — Genes & Health (Bangladeshi + Pakistani), N=44,288 | gene prioritization |
+| `sas-gnh` | South Asian — Genes & Health | variant scores in the Genes & Health analyses; trained with `geneticConstraint` as an additional gene input |
+
+`Varformer.from_pretrained(model, seed)` downloads the weights and checks them against their SHA-256 checksum. `seed` is one of the five seeds or `"best"`, the seed with the highest validation Spearman correlation. `local_dir` loads a downloaded copy of the release instead. The weights contain no training data: the model inputs are built from your local copies of the input data (see [Data sources](#data-sources)), and `from_pretrained` stops if their dimensions differ from those of the released model.
+
+Models that you train yourself load with `Varformer.from_checkpoint(path)`.
 
 ## Model
 
@@ -137,13 +143,19 @@ To train without the variant head, set `"variant_head": False` and `"variant_los
 
 `variant_labels_path` points to a Parquet table with the columns `variant_id`, `label`, `observed` and `stratum`. In the paper, `label` is 1 when the maximum adjusted allele frequency across the gnomAD v4.1 AFR, AMR, NFE and SAS groups is below 10⁻³ and 0 otherwise; `observed` marks variants with a usable frequency; `stratum` is the substitution class (for example `C>T`). Variant labels on a fixed 15% of genes are withheld from the variant loss for evaluation.
 
-### Using a different pathogenicity predictor
+### Training without AlphaMissense
 
-The variant branch treats pathogenicity as an opaque per-variant scalar (`nn.Linear(1, ...)`), so AlphaMissense is not required when training a new model. You can substitute another missense-pathogenicity predictor by putting its score in the pathogenicity column of the variant table. This is the route for anyone who cannot use AlphaMissense for licensing reasons (it is released under the non-commercial CC BY-NC-SA 4.0) or whose variants fall outside its coverage.
+AlphaMissense is released under CC BY-NC-SA 4.0, which does not allow commercial use. The variant encoder reads the pathogenicity score as one number per variant (`nn.Linear(1, ...)`), so you can train a model with another missense predictor instead. **[ESM-1v](https://github.com/facebookresearch/esm)** is a good choice: it is MIT-licensed and scores any variant from the protein sequence. Other predictors (for example EVE, REVEL, PolyPhen-2 or SIFT) also work; check that their licenses allow your use.
 
-**[ESM-1v](https://github.com/facebookresearch/esm) is the recommended alternative**: it is MIT-licensed (commercial use permitted), computed on demand directly from the protein sequence (so it needs no precomputed table and covers any transcript or organism), and its per-variant log-likelihood ratio drops straight into the scalar slot. Other options include EVE, REVEL, and PolyPhen-2/SIFT.
+1. Score every missense variant in your variant data with the other predictor.
+2. Make higher scores mean more damaging variants. For ESM-1v, use the negative log-likelihood ratio. The encoder keeps the 1,024 highest-scoring variants of each gene, so the direction matters.
+3. Rescale the scores to the range 0 to 1, the range of AlphaMissense, for example with a rank transform.
+4. Write the scores in the layout of the AlphaMissense files: a gzipped, tab-separated file with three comment lines, then a header with the columns `#CHROM`, `POS`, `REF`, `ALT`, `protein_variant` (for example `A123T`) and `am_pathogenicity` (your score). Use the chromosome names of your variant data (for example `chr1`).
+5. Save this file as both `<data_root>/alphamissense/AlphaMissense_isoforms_hg38.tsv.gz` and `<data_root>/alphamissense/AlphaMissense_hg38.tsv.gz`. Variants without a score are left out of the model input.
+6. Delete `var_pat_features.pkl` and `gene_loc_var_map.pkl` in `<data_root>/features/<population>/`, so that the variant tokens are built again from the new scores.
+7. Train with `Varformer.trainer` as above. The variant labels come from allele frequencies, so they do not change.
 
-The only constraint is consistency: the predictor used to train a model must also be used at inference time, because pathogenicity scores from different predictors are not calibrated to one another. For the same reason, models trained on AlphaMissense scores, such as the models in the paper, **require AlphaMissense scores** at inference. Feeding a different predictor's scores to those models produces out-of-distribution inputs and unreliable predictions.
+Use the same predictor at inference as in training, because scores from different predictors are not calibrated to one another. For this reason the released models of the paper **require AlphaMissense scores**: other scores give them out-of-distribution inputs and unreliable predictions.
 
 ## Repository layout
 
@@ -187,7 +199,7 @@ The downstream AlphaMissense licence (CC BY-NC-SA 4.0) limits commercial use of 
 
 ## Updates
 
-- **Pending** — Release with the paper: the code and the variant scores from the paper. Trained weights are not distributed.
+- **Pending** — Release with the paper: the code, the variant scores from the paper and the weights of the 25 paper models on the [Hugging Face Hub](https://huggingface.co/aaronw1290/Varformer).
 
 ## Acknowledgements
 
@@ -211,7 +223,9 @@ please cite the v1.0.0 software release; machine-readable metadata is provided i
 
 ## License
 
-MIT — see `LICENSE`. Note that Varformer's per-variant features depend on AlphaMissense scores, which are released under CC BY-NC-SA 4.0; downstream commercial use of the trained model therefore requires a separate AlphaMissense licence.
+- **Code:** MIT, see [`LICENSE`](LICENSE).
+- **Released weights and the variant scores in `scores/`:** [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). The models take AlphaMissense scores as input, and AlphaMissense is released under CC BY-NC-SA 4.0. So the weights and the scores derived from them are shared under the same terms: attribution, non-commercial use only, and the same license for derived works.
+- **Commercial use:** train your own model with a predictor whose license allows it (see [Training without AlphaMissense](#training-without-alphamissense)), or obtain a separate AlphaMissense license.
 
 ## Contact
 
