@@ -1,12 +1,19 @@
-"""Discover and load locally available, trusted Varformer checkpoints."""
+"""Load the released Varformer weights and locally trained, trusted checkpoints."""
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from pathlib import Path
 from typing import Any
 
 import torch
 
+
+HUB_REPO_ID = "aaronw1290/Varformer"
+# Released model -> population of its input data. sas-gnh: the SAS models with
+# geneticConstraint as an input, used for the Genes & Health variant analyses.
+RELEASED_MODELS = {"afr": "afr", "amr": "amr", "nfe": "nfe", "sas": "sas", "sas-gnh": "sas"}
 
 _METRIC_KEY_RE = re.compile(r"^model\.(acc|auroc|recall|precision|f1|auprc|spearman)\.")
 _DEAD_CLASSIFIER_RE = re.compile(r"^model\.varformer\.classifier\.")
@@ -84,3 +91,54 @@ def best_seed(ckpt_root: Path, population: str) -> int:
     if best[0] is None:
         raise FileNotFoundError(f"No checkpoints found in {ckpt_root / population}")
     return best[0]
+
+
+def _release_file(name: str, repo_id: str, revision: str | None, local_dir: str | Path | None) -> Path:
+    if local_dir is not None:
+        path = Path(local_dir) / name
+        if not path.is_file():
+            raise FileNotFoundError(f"{name} not found in {local_dir}")
+        return path
+    from huggingface_hub import hf_hub_download
+
+    return Path(hf_hub_download(repo_id=repo_id, filename=name, revision=revision))
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def load_released(
+    model: str,
+    seed: int | str = 42,
+    repo_id: str = HUB_REPO_ID,
+    revision: str | None = None,
+    local_dir: str | Path | None = None,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    """Return ``(population, state_dict, description)`` for a released model.
+
+    Files come from the Hugging Face Hub, or from ``local_dir`` when it holds a
+    copy of the release. ``seed="best"`` selects the seed with the highest
+    validation Spearman correlation. The weights are checked against the
+    SHA-256 checksum in their description.
+    """
+    if model not in RELEASED_MODELS:
+        raise ValueError(f"Unknown model {model!r}; choose one of {sorted(RELEASED_MODELS)}")
+    if seed == "best":
+        index = json.loads(_release_file("index.json", repo_id, revision, local_dir).read_text())
+        entries = [e for e in index if e["file"].startswith(f"{model}/")]
+        if not entries:
+            raise FileNotFoundError(f"No released seeds for {model!r}")
+        seed = max(entries, key=lambda e: e["validation_spearman"])["seed"]
+    stem = f"{model}/seed{int(seed)}"
+    description = json.loads(_release_file(f"{stem}.json", repo_id, revision, local_dir).read_text())
+    weights = _release_file(f"{stem}.safetensors", repo_id, revision, local_dir)
+    if _sha256(weights) != description["weights_sha256"]:
+        raise ValueError(f"Checksum mismatch for {stem}.safetensors")
+    from safetensors.torch import load_file
+
+    return RELEASED_MODELS[model], _remap_state_dict(load_file(str(weights))), description
