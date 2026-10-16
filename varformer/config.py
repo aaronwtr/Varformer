@@ -41,7 +41,7 @@ class Hyperparameters(BaseModel):
     optimizer: str = "AdamW"
     optimizer_foreach: Optional[bool] = None
     pusb: bool = True
-    precision: str = "16-mixed"
+    precision: str = "32-true"
     epochs: int = 100
     gradient_clip_val: Optional[float] = None
     batch_size: int = 128
@@ -60,8 +60,8 @@ class Hyperparameters(BaseModel):
     gc_exclude_features: list[str] = Field(default_factory=list)
     position_encoding: Literal["modulo", "absolute"] = "modulo"
     variant_token_schema: VariantTokenSchema = "original"
-    variant_head: bool = False
-    variant_loss_weight: float = 0.0
+    variant_head: bool = True
+    variant_loss_weight: float = 0.1
     variant_token_ablate: list[Literal["mutation", "position"]] = Field(default_factory=list)
     variant_labels_path: Optional[str] = None
     variant_objective: Literal["pooled_bce", "within_gene_ranking"] = "pooled_bce"
@@ -98,7 +98,7 @@ class Hyperparameters(BaseModel):
     class_weight: str = "balanced"
 
     # misc
-    wandb: bool = True
+    wandb: bool = False
     return_attn: bool = True
     num_workers: int = 0
     seed: int = 57

@@ -11,6 +11,7 @@ requires-python = "==3.9.*"
 keywords = [
     "drug discovery",
     "drug target prioritization",
+    "variant prioritization",
     "population genetics",
     "transformers",
     "positive-unlabeled learning",

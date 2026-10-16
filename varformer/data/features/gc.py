@@ -39,10 +39,9 @@ class GeneCharacterisationPreprocessor(BaseFeatures):
 
         self.features = self.load_opentargets_features()
 
-        # Benchmark construction historically uses geneticConstraint to define
-        # the unlabelled comparator cohort.  Keep that metadata separate from
-        # the model-input frame so overlap-feature sensitivity models can drop
-        # the column without changing or breaking the frozen benchmark split.
+        # geneticConstraint selects the benchmark negatives. Keep it apart from
+        # the model-input frame so that the column can be dropped from the inputs
+        # without changing the benchmark split.
         benchmark_columns = {"targetId", "geneticConstraint"}
         missing_benchmark_columns = sorted(benchmark_columns.difference(self.features.columns))
         if missing_benchmark_columns:
@@ -58,7 +57,7 @@ class GeneCharacterisationPreprocessor(BaseFeatures):
             raise ValueError(f"Requested GC exclusions are not present: {unknown}")
         if excluded:
             self.features = self.features.drop(columns=excluded)
-            print(f"Excluded GC features for sensitivity analysis: {excluded}")
+            print(f"Excluded GC features from the model inputs: {excluded}")
 
         self.features = self.features[self.features['targetId'].isin(self.pop_data['Gene'])]
         benchmark_selection = benchmark_selection[

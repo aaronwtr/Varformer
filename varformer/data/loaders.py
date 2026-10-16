@@ -184,17 +184,7 @@ class ModelPreprocessorEval:
         test_datasets = {key: {} for key in test_raw.keys()}
         for module_str, train_data in train_raw.items():
             if module_str != "pvc":
-                # Index BY GENE, never by row position. The previous form paired
-                # gene names to frame rows positionally
-                #     {gene: frame.values[i] for i, gene in enumerate(genes)}
-                # which is only correct when the frame's row order happens to
-                # match `genes`. It did for the train/val frames (built via
-                # `.loc[train_genes]`, which preserves list order -- verified:
-                # 0/15098 train and 0/3775 val misaligned for both gc and go),
-                # but NOT for the test frames, which come from
-                # `data['test_data']` and carry their own row order. There, 98%
-                # of genes were receiving another gene's GO vector -- 527 of the
-                # 547 input features. See private_repro/HANDOFF.md.
+                # Index by gene: frame row order can differ from the gene list.
                 train_norm = _rows_by_gene(train_data, train_genes, f"train/{module_str}")
                 val_norm = _rows_by_gene(val_raw[module_str], val_genes, f"val/{module_str}")
 

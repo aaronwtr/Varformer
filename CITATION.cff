@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: >-
   If you use Varformer, please cite this software. The accompanying paper
   citation will be added when its preprint DOI is available.
-title: "Varformer: a multimodal transformer for population-scale drug target prioritization"
+title: "Varformer: a multimodal transformer for population-scale drug target and variant prioritization"
 type: software
 version: 1.0.0
 license: MIT
@@ -22,6 +22,7 @@ authors:
     given-names: M. R.
 keywords:
   - drug target prioritization
+  - variant prioritization
   - population genetics
   - multimodal learning
   - transformers

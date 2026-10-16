@@ -5,19 +5,18 @@
   <img src="docs/figures/varformer_logo.png" alt="Varformer logo" width="130">
 </picture>
 
-# Varformer: a multimodal transformer for population-scale drug target prioritization
+# Varformer: a multimodal transformer for population-scale drug target and variant prioritization
 
 [![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/release/python-390/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/aaronwtr/Varformer/actions/workflows/ci.yml/badge.svg)](https://github.com/aaronwtr/Varformer/actions/workflows/ci.yml)
 [![Paper](https://img.shields.io/badge/paper-preprint%20pending-lightgrey.svg)](#)
-[![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-checkpoints%20pending-yellow)](#)
 
 </div>
 
 **Varformer** is a disease-agnostic model that ranks clinically promising targets from gene and population-genetic evidence. A cross-modal attention mechanism combines gene-level biological features with pathogenicity-ranked, masked sets of up to 1,024 missense variants observed in a population. The resulting output is a target-prioritization score associated with selected Phase III/approval labels, not a calibrated probability of programme or clinical-trial success.
 
-The paper-era release contains separately trained models for four variant catalogues: African/African-American (AFR), Admixed American (AMR), Non-Finnish European (NFE), and South Asian (SAS, via the Genes & Health British Bangladeshi and Pakistani cohort).
+The paper trains separate models for four variant catalogues: African/African-American (AFR), Admixed American (AMR), Non-Finnish European (NFE), and South Asian (SAS, via the Genes & Health British Bangladeshi and Pakistani cohort).
 
 <p align="center">
   <img src="docs/figures/overview_figure.png" alt="Varformer architecture overview" width="780"/>
@@ -33,12 +32,12 @@ uv sync          # or: pip install -e .
 
 Requires Python 3.9 and a CUDA-capable GPU for inference at scale (CPU works for small batches).
 
-## Inference on a published population
+## Inference with a trained model
 
 ```python
 from varformer import Varformer
 
-# Load the best-scoring checkpoint for a population.
+# Load the best-scoring local checkpoint for a population (see Checkpoints).
 model = Varformer.from_pretrained("nfe", seed="best")
 
 # Rank a list of Ensembl gene IDs with the target-prioritization score.
@@ -76,7 +75,9 @@ Each `payload` dict contains NumPy arrays with one entry per retained variant, i
 
 The variant score ranks variants for research prioritization. It is not calibrated or validated for clinical variant classification.
 
-### Available checkpoints
+### Checkpoints
+
+Trained weights are not distributed. Train models with the default settings, which are the settings of the paper (see [Training with the variant head](#training-with-the-variant-head)). `from_pretrained` loads the requested `(population, seed)` from the configured local checkpoint root, with the filename pattern `checkpoints/<label>/seed{N}-epoch=*-val_spearman=*.ckpt`.
 
 | Code label | Cohort |
 |---|---|
@@ -85,14 +86,12 @@ The variant score ranks variants for research prioritization. It is not calibrat
 | `afr` | African (gnomAD) |
 | `amr` | Admixed American (gnomAD) |
 
-Trained weights will be released on the Hugging Face Hub alongside the paper. In this release candidate, `from_pretrained` resolves the requested `(population, seed)` from the configured local checkpoint root using the filename pattern `checkpoints/<label>/seed{N}-epoch=*-val_spearman=*.ckpt`; remote download support is not yet implemented.
-
 ## Model
 
 Following the design in the paper, Varformer is structured around two complementary modules whose representations are fused by cross-modal attention before classification:
 
-- **Gene Characterisation (GC) module** — captures gene-centric biology independent of the population. In the implementation this is split across two parallel MLP projections: one over the Open Targets tractability features, and one over Gene Ontology-derived features. Their outputs are concatenated into a single gene-level representation `z_gene`.
-- **Population Variant Characterisation (PVC) module** — encodes a pathogenicity-ranked, masked set of up to 1,024 missense variants observed in a population for each gene. Each variant is represented by its AlphaMissense pathogenicity score, protein position modulo 1,024, and mutation-type index. A small transformer encoder (`VariantEncoder`) produces contextualised variant embeddings. Allele frequency is not an explicit PVC token field in the paper-era model.
+- **Gene Characterisation (GC) module** — captures gene-centric biology independent of the population. In the implementation this is split across two parallel MLP projections: one over nine Open Targets tractability and safety features, and one over Gene Ontology-derived features. Their outputs are concatenated into a single gene-level representation `z_gene`. The Open Targets `geneticConstraint` feature is excluded by default (`gc_exclude_features`), because the paper uses it to select the benchmark negatives.
+- **Population Variant Characterisation (PVC) module** — encodes a pathogenicity-ranked, masked set of up to 1,024 missense variants observed in a population for each gene. Each variant is represented by its AlphaMissense pathogenicity score, protein position modulo 1,024, and mutation-type index. A small transformer encoder (`VariantEncoder`) produces contextualised variant embeddings. Allele frequency is not a PVC token field in the models of the paper.
 
 `z_gene` then attends over the per-variant embeddings (`GeneVariantAttention`), producing a single variant-informed embedding `z_var`. The classification head concatenates `z_gene` with `z_var` and produces a target-prioritization score.
 
@@ -115,7 +114,7 @@ from varformer import Varformer
 
 trainer = Varformer.trainer(
     population="<your-label>",
-    config_overrides={"epochs": 50, "lr_start": 3e-5},
+    config_overrides={"variant_labels_path": "variant_labels.parquet", "lr_start": 3e-5},
     output_dir="./checkpoints/",
 )
 checkpoint_paths = trainer.fit(seeds=[7, 42, 85])
@@ -125,20 +124,16 @@ checkpoint_paths = trainer.fit(seeds=[7, 42, 85])
 
 ### Training with the variant head
 
-The variant head is a shared linear layer on the contextual variant tokens. It is trained jointly with the gene objective, `L = L_gene + variant_loss_weight * L_variant`, and is off by default. The variant scores in the paper use these settings:
+The variant head is a shared linear layer on the contextual variant tokens. It is trained jointly with the gene objective, `L = L_gene + variant_loss_weight * L_variant`. The defaults are the settings of the paper: `variant_head: True`, `variant_loss_weight: 0.1`, `variant_objective: "pooled_bce"` and `precision: "32-true"`. Training therefore needs a variant label table:
 
 ```python
 trainer = Varformer.trainer(
     population="sas",
-    config_overrides={
-        "variant_head": True,
-        "variant_loss_weight": 0.1,
-        "variant_objective": "pooled_bce",
-        "variant_labels_path": "variant_labels.parquet",
-        "precision": "32-true",
-    },
+    config_overrides={"variant_labels_path": "variant_labels.parquet"},
 )
 ```
+
+To train without the variant head, set `"variant_head": False` and `"variant_loss_weight": 0.0`.
 
 `variant_labels_path` points to a Parquet table with the columns `variant_id`, `label`, `observed` and `stratum`. In the paper, `label` is 1 when the maximum adjusted allele frequency across the gnomAD v4.1 AFR, AMR, NFE and SAS groups is below 10⁻³ and 0 otherwise; `observed` marks variants with a usable frequency; `stratum` is the substitution class (for example `C>T`). Variant labels on a fixed 15% of genes are withheld from the variant loss for evaluation.
 
@@ -148,7 +143,7 @@ The variant branch treats pathogenicity as an opaque per-variant scalar (`nn.Lin
 
 **[ESM-1v](https://github.com/facebookresearch/esm) is the recommended alternative**: it is MIT-licensed (commercial use permitted), computed on demand directly from the protein sequence (so it needs no precomputed table and covers any transcript or organism), and its per-variant log-likelihood ratio drops straight into the scalar slot. Other options include EVE, REVEL, and PolyPhen-2/SIFT.
 
-The only constraint is consistency: the predictor used to train a model must also be used at inference time, because pathogenicity scores from different predictors are not calibrated to one another. For the same reason, the **paper-era checkpoints require AlphaMissense scores** because they were trained on them. Feeding a different predictor's scores to those checkpoints produces out-of-distribution inputs and unreliable predictions. Public release of the checkpoints remains subject to the licensing and governance gates below.
+The only constraint is consistency: the predictor used to train a model must also be used at inference time, because pathogenicity scores from different predictors are not calibrated to one another. For the same reason, models trained on AlphaMissense scores, such as the models in the paper, **require AlphaMissense scores** at inference. Feeding a different predictor's scores to those models produces out-of-distribution inputs and unreliable predictions.
 
 ## Repository layout
 
@@ -192,7 +187,7 @@ The downstream AlphaMissense licence (CC BY-NC-SA 4.0) limits commercial use of 
 
 ## Updates
 
-- **Pending** — Initial public release with the trained NFE, SAS, AFR, and AMR checkpoints on the Hugging Face Hub, coinciding with the paper.
+- **Pending** — Release with the paper: the code and the variant scores from the paper. Trained weights are not distributed.
 
 ## Acknowledgements
 
@@ -206,7 +201,7 @@ please cite the v1.0.0 software release; machine-readable metadata is provided i
 
 ```bibtex
 @software{wenteler2026varformer,
-  title   = {Varformer: a multimodal transformer for population-scale drug target prioritization},
+  title   = {Varformer: a multimodal transformer for population-scale drug target and variant prioritization},
   author  = {Wenteler, Aaron and Neduva, V. and Cabrera, Claudia P. and Wei, W.  and Barnes, Michael R.},
   year    = {2026},
   version = {1.0.0},

@@ -1,7 +1,7 @@
 import re
 import torch
 from pathlib import Path
-from varformer.checkpoints import _remap_state_dict
+from varformer.checkpoints import _remap_state_dict, saved_gc_exclusions
 
 
 def test_strip_metric_keys():
@@ -82,3 +82,15 @@ def test_real_checkpoint_remap():
     # Sanity: known-good keys should still be present
     assert any(k.startswith("model.gc_projection.") for k in cleaned)
     assert any(k.startswith("model.varformer.variant_transformer.") for k in cleaned)
+
+
+def test_saved_gc_exclusions():
+    default = ["geneticConstraint"]
+    saved = {"hyper_parameters": {"config": {"hyperparameters": {"gc_exclude_features": []}}}}
+    assert saved_gc_exclusions(saved, default) == []
+    saved["hyper_parameters"]["config"]["hyperparameters"]["gc_exclude_features"] = ["geneticConstraint"]
+    assert saved_gc_exclusions(saved, default) == ["geneticConstraint"]
+    # Saved before the option existed: all features were inputs.
+    assert saved_gc_exclusions({"hyper_parameters": {"config": {"hyperparameters": {}}}}, default) == []
+    # No saved configuration: keep the current default.
+    assert saved_gc_exclusions({"state_dict": {}}, default) == default
