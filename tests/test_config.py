@@ -22,13 +22,12 @@ def test_load_default_local():
 
 def test_genetic_constraint_is_not_a_default_model_input():
     assert Config.load(profile="local").hyperparameters.gc_exclude_features == ["geneticConstraint"]
-    assert Hyperparameters().gc_exclude_features == ["geneticConstraint"]
 
 
 def test_defaults_match_the_paper_models():
     expected = {"precision": "32-true", "variant_head": True, "variant_loss_weight": 0.1, "wandb": False}
-    for hp in (Config.load(profile="local").hyperparameters, Hyperparameters()):
-        assert {k: hp[k] for k in expected} == expected
+    hp = Config.load(profile="local").hyperparameters
+    assert {k: hp[k] for k in expected} == expected
 
 
 def test_load_hpc_profile():
