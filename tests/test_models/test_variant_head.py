@@ -236,17 +236,17 @@ def test_dataset_emits_probe_strata_and_disjoint_masks():
     assert not item["variant_probe_mask"][3:].any()
 
 
-def cached_loader_model(hyperparams, **overrides):
+def cached_loader_model(hyperparams, monkeypatch, **overrides):
     x, mask = batch()
     x["pvc"]["mask"] = mask
     x["pvc"]["gene_name"] = [f"ENSG{i}" for i in range(B)]
     model = build(hyperparams, **overrides)
-    object.__setattr__(model, "_test_loaders", {"all": [x]})
+    monkeypatch.setattr("varformer.inference.predict._gene_loader", lambda model, genes=None: [x])
     return model, x, mask
 
 
-def test_score_variants_returns_unpadded_token_scores(tiny_hyperparams):
-    model, x, mask = cached_loader_model(tiny_hyperparams, variant_head=True)
+def test_score_variants_returns_unpadded_token_scores(tiny_hyperparams, monkeypatch):
+    model, x, mask = cached_loader_model(tiny_hyperparams, monkeypatch, variant_head=True)
     scored = model.score_variants()
     with torch.no_grad():
         expected = model(x, mask)[-1]
@@ -262,12 +262,22 @@ def test_score_variants_returns_unpadded_token_scores(tiny_hyperparams):
         )
 
 
-def test_score_variants_filters_genes(tiny_hyperparams):
-    model, _, _ = cached_loader_model(tiny_hyperparams, variant_head=True)
-    assert set(model.score_variants(["ENSG1", "ENSG_missing"])) == {"ENSG1"}
+def test_gene_loader_keeps_requested_genes_present_in_all_modalities():
+    import pandas as pd
+
+    from varformer.data.loaders import ModelPreprocessorInference
+
+    genes = ["G1", "G2", "G3"]
+    data = {"gc": pd.DataFrame({"a": [1.0, 2.0, 3.0]}, index=genes),
+            "go": pd.DataFrame({"b": [1.0, 2.0, 3.0]}, index=genes)}
+    pvc = {g: torch.tensor([[0.5, 1, 2, 0]]) for g in ("G1", "G2")}
+    config = {"hyperparameters": {"max_seq_len": 4}}
+    loader = ModelPreprocessorInference.create_gene_loader(config, data, pvc, ["G1", "G3", "missing"], torch.float32)
+    assert [b["pvc"]["gene_name"] for b in loader] == [["G1"]]
+    assert ModelPreprocessorInference.create_gene_loader(config, data, pvc, ["missing"], torch.float32) is None
 
 
-def test_score_variants_requires_head(tiny_hyperparams):
-    model, _, _ = cached_loader_model(tiny_hyperparams)
+def test_score_variants_requires_head(tiny_hyperparams, monkeypatch):
+    model, _, _ = cached_loader_model(tiny_hyperparams, monkeypatch)
     with pytest.raises(ValueError, match="variant head"):
         model.score_variants()

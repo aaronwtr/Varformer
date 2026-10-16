@@ -422,6 +422,43 @@ class ModelPreprocessorInference:
         return unlabeled_loader, dataset_size
 
     @staticmethod
+    def create_gene_loader(config, consolidated_data, pvc_data, genes, dtype):
+        """Loader over the given genes that are present in all modalities, or None."""
+        available_genes = [
+            gene for gene in dict.fromkeys(genes)
+            if gene in consolidated_data['gc'].index and
+               gene in consolidated_data['go'].index and
+               gene in pvc_data
+        ]
+        if not available_genes:
+            return None
+        gc_data_dict = {
+            gene: consolidated_data['gc'].loc[gene].drop(labels=['target'], errors='ignore').values.flatten()
+            for gene in available_genes
+        }
+        go_data_dict = {
+            gene: consolidated_data['go'].loc[gene].drop(labels=['target'], errors='ignore').values.flatten()
+            for gene in available_genes
+        }
+        # Placeholder labels: inference does not use them.
+        labels = {gene: 1 for gene in available_genes}
+        gc_dataset = MultiModalData(data=gc_data_dict, labels=labels, gene_names=available_genes, dtype=dtype)
+        go_dataset = MultiModalData(data=go_data_dict, labels=labels, gene_names=available_genes, dtype=dtype)
+        pvc_dataset = MultiModalData(
+            data=None,
+            labels=None,
+            gene_names=available_genes,
+            dtype=dtype,
+            variant_data={'data': {gene: pvc_data[gene] for gene in available_genes}, 'labels': labels},
+            max_variants=config['hyperparameters']['max_seq_len']
+        )
+        return MultiModalDataLoader(
+            datasets={'gc': gc_dataset, 'go': go_dataset, 'pvc': pvc_dataset},
+            batch_size=min(32, len(available_genes)),
+            shuffle=False
+        )
+
+    @staticmethod
     def create_test_loaders(config, consolidated_data, pvc_data, torch_dtype):
         """
         Create dataloaders for test genes (approved targets) from pfam, rcnt, and pharos test sets.
@@ -464,66 +501,14 @@ class ModelPreprocessorInference:
 
             test_genes = test_gene_ids[test_name]
 
-            # Filter to genes available in all modalities
-            available_genes = [
-                gene for gene in test_genes
-                if gene in consolidated_data['gc'].index and
-                   gene in consolidated_data['go'].index and
-                   gene in pvc_data
-            ]
-
-            if len(available_genes) == 0:
+            loader = ModelPreprocessorInference.create_gene_loader(
+                config, consolidated_data, pvc_data, test_genes, dtype
+            )
+            if loader is None:
                 print(f"  Skipping {test_name}: no genes available in data ({len(test_genes)} total)")
                 continue
-
-            print(f"  Creating {test_name} loader: {len(available_genes)}/{len(test_genes)} genes")
-
-            # Create datasets (same pattern as unlabeled)
-            gc_data_dict = {
-                gene: consolidated_data['gc'].loc[gene].drop(labels=['target'], errors='ignore').values.flatten()
-                for gene in available_genes
-            }
-
-            go_data_dict = {
-                gene: consolidated_data['go'].loc[gene].drop(labels=['target'], errors='ignore').values.flatten()
-                for gene in available_genes
-            }
-
-            # Labels are all 1 (positive/approved targets)
-            labels = {gene: 1 for gene in available_genes}
-
-            gc_dataset = MultiModalData(
-                data=gc_data_dict,
-                labels=labels,
-                gene_names=available_genes,
-                dtype=dtype
-            )
-
-            go_dataset = MultiModalData(
-                data=go_data_dict,
-                labels=labels,
-                gene_names=available_genes,
-                dtype=dtype
-            )
-
-            pvc_dataset = MultiModalData(
-                data=None,
-                labels=None,
-                gene_names=available_genes,
-                dtype=dtype,
-                variant_data={
-                    'data': {gene: pvc_data[gene] for gene in available_genes},
-                    'labels': labels
-                },
-                max_variants=config['hyperparameters']['max_seq_len']
-            )
-
-            # Create loader
-            test_loaders[test_name] = MultiModalDataLoader(
-                datasets={'gc': gc_dataset, 'go': go_dataset, 'pvc': pvc_dataset},
-                batch_size=min(32, len(available_genes)),
-                shuffle=False
-            )
+            print(f"  Creating {test_name} loader: {len(loader.datasets['gc'])}/{len(test_genes)} genes")
+            test_loaders[test_name] = loader
 
         print(f"Created {len(test_loaders)} test loaders: {list(test_loaders.keys())}")
         return test_loaders

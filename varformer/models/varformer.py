@@ -273,46 +273,39 @@ class Varformer(nn.Module):
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_pretrained(cls, population: str, seed=42):
-        """Load a locally available checkpoint for a given population and seed.
+    def from_pretrained(cls, model: str, seed=42, repo_id=None, revision=None, local_dir=None):
+        """Load one of the released paper models.
 
-        Resolves the checkpoint path from the configured checkpoint root
-        (``Config.paths.ckpt_root``), builds the model with data-derived
-        dimensions, and loads the weights via ``load_checkpoint``.
+        The weights come from the Hugging Face Hub (or from ``local_dir``, a local
+        copy of the release). The model inputs are built from the local data
+        configured in ``Config.paths``, so those data must be available.
 
         Args:
-            population: Population identifier.  One of ``"nfe"``, ``"sas"``,
-                ``"afr"``, ``"amr"``.
-            seed: Which model seed to load.  Accepts two forms:
-
-                * ``int`` — loads the checkpoint for exactly that seed (e.g.
-                  ``seed=42``).
-                * ``"best"`` — selects the seed whose checkpoint filename
-                  encodes the highest ``val_spearman`` score.
+            model: ``"afr"``, ``"amr"``, ``"nfe"`` or ``"sas"`` for the gene
+                models of the paper, or ``"sas-gnh"`` for the SAS models used
+                for the Genes & Health variant analyses (trained with
+                ``geneticConstraint`` as an input).
+            seed: ``13``, ``23``, ``42``, ``85``, ``482``, or ``"best"`` for the
+                seed with the highest validation Spearman correlation.
+            repo_id: Hub repository; defaults to ``varformer.checkpoints.HUB_REPO_ID``.
+            revision: Optional Hub revision (branch, tag or commit).
+            local_dir: Optional directory with a copy of the release.
 
         Returns:
-            A ``Varformer`` nn.Module instance ready for ``predict()`` and
-            ``evaluate()`` calls.
-
-        Raises:
-            FileNotFoundError: if no checkpoint matching the (population, seed)
-                pair is found under the checkpoint root. Checkpoint availability
-                depends on the local installation and applicable data licences.
+            A ``Varformer`` nn.Module instance ready for ``predict()``,
+            ``score_variants()`` and ``evaluate()`` calls.
 
         Example:
-            >>> model = Varformer.from_pretrained("nfe", seed=42)
+            >>> model = Varformer.from_pretrained("nfe", seed="best")
             >>> predictions = model.predict(["ENSG00000141510"])
-            >>> best_model = Varformer.from_pretrained("nfe", seed="best")
         """
         from varformer.config import Config
-        from varformer.checkpoints import find_checkpoint, best_seed
+        from varformer.checkpoints import HUB_REPO_ID, load_released
 
-        config = Config.load()
-        ckpt_root = config.paths.ckpt_root
-        if seed == "best":
-            seed = best_seed(ckpt_root, population)
-        ckpt_path = find_checkpoint(ckpt_root, population, int(seed))
-        return cls._build_and_load(config, population, ckpt_path)
+        population, state_dict, description = load_released(
+            model, seed, repo_id=repo_id or HUB_REPO_ID, revision=revision, local_dir=local_dir
+        )
+        return cls._build_and_load(Config.load(), population, state_dict=state_dict, description=description)
 
     @classmethod
     def from_checkpoint(cls, path):
@@ -349,7 +342,7 @@ class Varformer(nn.Module):
         return cls._build_and_load(config, population, p)
 
     @classmethod
-    def _build_and_load(cls, config, population, ckpt_path):
+    def _build_and_load(cls, config, population, ckpt_path=None, state_dict=None, description=None):
         """Build the LightningModule with data-derived dimensions and load a checkpoint.
 
         Returns the inner ``Varformer`` nn.Module, with the LightningModule and
@@ -378,11 +371,18 @@ class Varformer(nn.Module):
             "paths": config.paths.as_dict,
         }
 
-        # The gene inputs must match those the checkpoint was trained with.
-        raw_ckpt = load_checkpoint(ckpt_path)
-        cfg["hyperparameters"]["gc_exclude_features"] = saved_gc_exclusions(
-            raw_ckpt, cfg["hyperparameters"]["gc_exclude_features"]
-        )
+        # The model settings and gene inputs must match those used in training.
+        if description is not None:
+            for key, value in description["hyperparameters"].items():
+                if key not in cfg["hyperparameters"] or key in ("population", "precision", "mutation_embedding_max_norm"):
+                    continue
+                cfg["hyperparameters"][key] = value
+        else:
+            raw_ckpt = load_checkpoint(ckpt_path)
+            state_dict = raw_ckpt["state_dict"]
+            cfg["hyperparameters"]["gc_exclude_features"] = saved_gc_exclusions(
+                raw_ckpt, cfg["hyperparameters"]["gc_exclude_features"]
+            )
 
         # Run the data pipeline to derive the model's input dimensions.
         data = ModuleDataProcessor(gc=True, go=True, pvc=True, config=cfg).process()
@@ -395,6 +395,13 @@ class Varformer(nn.Module):
         with open(cfg["paths"]["MISSENSE_MAP"], "rb") as f:
             missense_map = pickle.load(f)
         num_mutations = len(missense_map)
+
+        if description is not None:
+            local = {"num_features_gc": num_features_gc, "num_features_go": num_features_go,
+                     "num_mutations": num_mutations}
+            expected = {k: description["dimensions"][k] for k in local}
+            if local != expected:
+                raise ValueError(f"Local input data do not match the released model: {local} != {expected}")
 
         lm = VarformerLightningModule(
             config=cfg,
@@ -409,7 +416,9 @@ class Varformer(nn.Module):
             use_gc=cfg["hyperparameters"].get("use_gc", True),
             use_go=cfg["hyperparameters"].get("use_go", True),
         )
-        lm.load_state_dict(raw_ckpt["state_dict"], strict=False)
+        result = lm.load_state_dict(state_dict, strict=False)
+        if description is not None and result.missing_keys:
+            raise ValueError(f"Released weights lack {len(result.missing_keys)} model keys, e.g. {result.missing_keys[:3]}")
 
         # Cache the test loaders so predict_subset can reuse them.
         consolidated_data = {
@@ -442,6 +451,8 @@ class Varformer(nn.Module):
         object.__setattr__(instance, "_config", config)
         object.__setattr__(instance, "_cfg_dict", cfg)
         object.__setattr__(instance, "_test_loaders", test_loaders)
+        dtype = torch.bfloat16 if cfg["hyperparameters"]["precision"] == "bf16-mixed" else torch.float32
+        object.__setattr__(instance, "_inference_inputs", (consolidated_data, consolidated_pvc, dtype))
         return instance
 
     @classmethod
@@ -494,8 +505,8 @@ class Varformer(nn.Module):
 
         Args:
             genes: List of Ensembl gene IDs (e.g. ``"ENSG00000141510"``) to
-                return predictions for.  Genes not present in the cached
-                loaders are silently omitted from the result.
+                return predictions for.  Genes not present in all three local
+                input modalities are omitted from the result.
             return_attention: When ``True``, include per-variant attention
                 weights in each gene's result dict.
 
@@ -535,7 +546,7 @@ class Varformer(nn.Module):
 
         Args:
             genes: List of Ensembl gene IDs to score, or ``None`` to score
-                every gene in the cached loaders.
+                every gene in the local input data.
 
         Returns:
             A dict mapping each recognised gene ID to a payload dict with the
