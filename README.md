@@ -5,7 +5,7 @@
   <img src="docs/figures/varformer_logo.png" alt="Varformer logo" width="130">
 </picture>
 
-# Varformer: a multimodal transformer for population-scale drug target prioritization
+# Varformer: a multimodal transformer for population-scale drug target and variant prioritization
 
 [![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/downloads/release/python-390/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -135,8 +135,6 @@ trainer = Varformer.trainer(
 
 To train without the variant head, set `"variant_head": False` and `"variant_loss_weight": 0.0`.
 
-The gene-level results in the paper come from models with these settings and the default gene features. The variant scores used in the Genes & Health analyses come from SAS models that were trained with the same settings and with `geneticConstraint` as an additional gene input (`"gc_exclude_features": []`). `from_pretrained` and `from_checkpoint` read this setting from the checkpoint.
-
 `variant_labels_path` points to a Parquet table with the columns `variant_id`, `label`, `observed` and `stratum`. In the paper, `label` is 1 when the maximum adjusted allele frequency across the gnomAD v4.1 AFR, AMR, NFE and SAS groups is below 10⁻³ and 0 otherwise; `observed` marks variants with a usable frequency; `stratum` is the substitution class (for example `C>T`). Variant labels on a fixed 15% of genes are withheld from the variant loss for evaluation.
 
 ### Using a different pathogenicity predictor
@@ -203,7 +201,7 @@ please cite the v1.0.0 software release; machine-readable metadata is provided i
 
 ```bibtex
 @software{wenteler2026varformer,
-  title   = {Varformer: a multimodal transformer for population-scale drug target prioritization},
+  title   = {Varformer: a multimodal transformer for population-scale drug target and variant prioritization},
   author  = {Wenteler, Aaron and Neduva, V. and Cabrera, Claudia P. and Wei, W.  and Barnes, Michael R.},
   year    = {2026},
   version = {1.0.0},
